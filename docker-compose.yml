@@ -6,4 +6,6 @@ services:
       - "8505:8000"
     volumes:
       - ./app:/app
+      - /multimedia/:/media
+      - /temp:/temp
     restart: unless-stopped

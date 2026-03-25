@@ -7,11 +7,7 @@
             <span class="mr-2">⚙️</span> New Profile Configuration
         </h2>
         
-        <form hx-post="/profiles" 
-              hx-target="#profile-list" 
-              hx-swap="beforeend" 
-              onhtmx:after-request="this.reset()"
-              class="space-y-4 text-sm">
+        <form action="/profiles" method="POST" class="space-y-4">
             
             <div>
                 <label class="block font-semibold mb-1">Profile Name</label>
