@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="flex justify-between items-center mb-8">
+    <h1 class="text-2xl font-bold text-slate-200">Processing Queue</h1>
+    <a href="/scan" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors">
+        🔄 Scan for New Media
+    </a>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <section class="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+        <h2 class="text-amber-400 font-bold mb-4 flex items-center">
+            <span class="mr-2">⏳</span> Pending ({{ pending|length }})
+        </h2>
+        <div class="space-y-3">
+            {% for file in pending %}
+                <div class="bg-slate-900 p-3 rounded border border-slate-700">
+                    <p class="text-sm text-slate-200 font-medium truncate">{{ file.file_name }}</p>
+                    <p class="text-[10px] text-slate-500 italic truncate">{{ file.library.name }}</p>
+                </div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+        <h2 class="text-blue-400 font-bold mb-4 flex items-center">
+            <span class="mr-2">⚙️</span> In Progress ({{ processing|length }})
+        </h2>
+        <div class="space-y-3">
+            {% for file in processing %}
+                <div class="bg-slate-900 p-3 rounded border border-blue-900 animate-pulse">
+                    <p class="text-sm text-blue-200 font-medium">{{ file.file_name }}</p>
+                    <div class="w-full bg-slate-800 h-1.5 mt-2 rounded-full overflow-hidden">
+                        <div class="bg-blue-500 h-full w-1/2"></div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+        <h2 class="text-green-400 font-bold mb-4 flex items-center">
+            <span class="mr-2">✅</span> Recently Completed
+        </h2>
+        <div class="space-y-3">
+            {% for file in completed %}
+                <div class="bg-slate-900 p-3 rounded border border-green-900/30 opacity-75">
+                    <p class="text-sm text-green-200 font-medium truncate">{{ file.file_name }}</p>
+                    <p class="text-[10px] text-slate-500">Finished</p>
+                </div>
+            {% endfor %}
+        </div>
+    </section>
+</div>
+{% endblock %}

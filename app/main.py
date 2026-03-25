@@ -4,6 +4,8 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 import models
 from database import engine, SessionLocal
+from scanner import scan_libraries
+
 
 # 1. Database setup
 models.Base.metadata.create_all(bind=engine)
@@ -110,3 +112,29 @@ async def delete_library(library_id: int, db: Session = Depends(get_db)):
         db.delete(library)
         db.commit()
     return RedirectResponse(url="/libraries", status_code=303)
+
+# 6. Scanner
+
+@app.get("/queue", response_class=HTMLResponse)
+async def get_queue(request: Request, db: Session = Depends(get_db)):
+    # Fetch files grouped by status or just all of them
+    pending = db.query(models.MediaFile).filter(models.MediaFile.status == "pending").all()
+    processing = db.query(models.MediaFile).filter(models.MediaFile.status == "processing").all()
+    completed = db.query(models.MediaFile).filter(models.MediaFile.status == "completed").limit(10).all()
+    
+    return templates.TemplateResponse(
+        request=request,
+        name="queue.html",
+        context={
+            "pending": pending,
+            "processing": processing,
+            "completed": completed
+        }
+    )
+
+@app.get("/scan")
+async def manual_scan(db: Session = Depends(get_db)):
+    from scanner import scan_libraries
+    new_count = scan_libraries(db)
+    # Redirect to queue to see the results
+    return RedirectResponse(url="/queue", status_code=303)

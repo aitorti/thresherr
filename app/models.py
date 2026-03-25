@@ -30,3 +30,14 @@ class Library(Base):
 
     # Relationship to access profile data from a library
     profile = relationship("Profile", back_populates="libraries")
+
+
+class MediaFile(Base):
+    __tablename__ = "media_files"
+    id = Column(Integer, primary_key=True, index=True)
+    file_name = Column(String)
+    full_path = Column(String, unique=True)
+    status = Column(String, default="pending") # pending, processing, completed, failed
+    library_id = Column(Integer, ForeignKey("libraries.id"))
+
+    library = relationship("Library")
