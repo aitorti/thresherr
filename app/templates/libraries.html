@@ -11,31 +11,31 @@
             <div>
                 <label class="block font-semibold mb-1 text-slate-300">Library Name</label>
                 <input type="text" name="name" placeholder="e.g. Movies 1080p" required 
-                       class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-200">
+                       class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-200 focus:border-amber-500 outline-none">
             </div>
 
             <div>
                 <label class="block font-semibold mb-1 text-blue-300">Media Path (DietPi)</label>
                 <input type="text" name="media_path" placeholder="/media/movies" required 
-                       class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-200">
+                       class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-200 focus:border-blue-500 outline-none">
             </div>
 
             <div>
                 <label class="block font-semibold mb-1 text-orange-300">Temp Path</label>
                 <input type="text" name="temp_path" placeholder="/temp" required 
-                       class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-200">
+                       class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-200 focus:border-orange-500 outline-none">
             </div>
 
             <div>
                 <label class="block font-semibold mb-1 text-green-300">Conversion Profile</label>
-                <select name="profile_id" required class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-200">
+                <select name="profile_id" required class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-200 focus:border-green-500 outline-none">
                     {% for profile in profiles %}
                         <option value="{{ profile.id }}">{{ profile.name }}</option>
                     {% endfor %}
                 </select>
             </div>
 
-            <button type="submit" class="w-full bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold py-3 rounded-lg mt-4">
+            <button type="submit" class="w-full bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold py-3 rounded-lg mt-4 transition-all transform active:scale-95">
                 ➕ Add Library
             </button>
         </form>
@@ -45,15 +45,23 @@
         <h2 class="text-xl font-bold mb-6 text-slate-300">Monitored Libraries</h2>
         <div class="space-y-4">
             {% for lib in libraries %}
-                <div class="bg-slate-900 p-4 rounded-lg border border-slate-700 flex justify-between items-center">
+                <div class="bg-slate-900 p-4 rounded-lg border border-slate-700 flex justify-between items-center shadow-inner">
                     <div>
                         <h3 class="font-bold text-amber-400">{{ lib.name }}</h3>
                         <p class="text-xs text-slate-500 mt-1 italic">{{ lib.media_path }}</p>
                     </div>
-                    <div class="text-right">
+                    <div class="flex items-center gap-4">
                         <span class="text-xs bg-slate-800 px-2 py-1 rounded border border-slate-600 text-slate-300">
                             Profile: {{ lib.profile.name }}
                         </span>
+                        
+                        <form action="/libraries/{{ lib.id }}/delete" method="POST" onsubmit="return confirm('Are you sure you want to delete this library?');">
+                            <button type="submit" class="text-red-500 hover:text-red-400 transition-colors p-1" title="Delete Library">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                            </button>
+                        </form>
                     </div>
                 </div>
             {% else %}

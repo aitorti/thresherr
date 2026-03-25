@@ -92,3 +92,21 @@ async def add_library(
     db.add(new_library)
     db.commit()
     return RedirectResponse(url="/libraries", status_code=303)
+
+# 5. Delete Logic
+
+@app.post("/profiles/{profile_id}/delete")
+async def delete_profile(profile_id: int, db: Session = Depends(get_db)):
+    profile = db.query(models.Profile).filter(models.Profile.id == profile_id).first()
+    if profile:
+        db.delete(profile)
+        db.commit()
+    return RedirectResponse(url="/profiles", status_code=303)
+
+@app.post("/libraries/{library_id}/delete")
+async def delete_library(library_id: int, db: Session = Depends(get_db)):
+    library = db.query(models.Library).filter(models.Library.id == library_id).first()
+    if library:
+        db.delete(library)
+        db.commit()
+    return RedirectResponse(url="/libraries", status_code=303)

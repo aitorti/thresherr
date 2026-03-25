@@ -12,14 +12,14 @@
             <div>
                 <label class="block font-semibold mb-1">Profile Name</label>
                 <input type="text" name="name" placeholder="e.g. High Quality 4K" required 
-                       class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 focus:border-amber-500 outline-none">
+                       class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 focus:border-amber-500 outline-none text-slate-200">
             </div>
 
             <div class="grid grid-cols-2 gap-3">
                 <div>
                     <label class="block font-semibold mb-1">Video Codec</label>
-                    <select name="video_codec" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2">
-                        <option value="h264">H.264</option>
+                    <select name="video_codec" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 text-slate-200">
+                        <option value="h264" selected>H.264</option>
                         <option value="h265">H.265 (HEVC)</option>
                         <option value="av1">AV1</option>
                         <option value="vp9">VP9</option>
@@ -27,8 +27,8 @@
                 </div>
                 <div>
                     <label class="block font-semibold mb-1">Container</label>
-                    <select name="container" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2">
-                        <option value="mkv">MKV</option>
+                    <select name="container" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 text-slate-200">
+                        <option value="mkv" selected>MKV</option>
                         <option value="mp4">MP4</option>
                         <option value="avi">AVI</option>
                         <option value="webm">WebM</option>
@@ -39,7 +39,7 @@
             <div class="grid grid-cols-2 gap-3">
                 <div>
                     <label class="block font-semibold mb-1">Max Resolution</label>
-                    <select name="video_max_res" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2">
+                    <select name="video_max_res" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 text-slate-200">
                         <option value="480">480p</option>
                         <option value="720">720p</option>
                         <option value="1080" selected>1080p</option>
@@ -49,10 +49,10 @@
                 </div>
                 <div>
                     <label class="block font-semibold mb-1">Max Bitrate</label>
-                    <select name="video_max_bitrate" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2">
+                    <select name="video_max_bitrate" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 text-slate-200">
                         <option value="2000">2 Mbps (SD)</option>
                         <option value="5000">5 Mbps (HD)</option>
-                        <option value="10000">10 Mbps (Full HD)</option>
+                        <option value="10000" selected>10 Mbps (Full HD)</option>
                         <option value="25000">25 Mbps (4K Light)</option>
                         <option value="50000">50 Mbps (4K High)</option>
                     </select>
@@ -64,9 +64,9 @@
             <div class="grid grid-cols-2 gap-3">
                 <div>
                     <label class="block font-semibold mb-1 text-blue-300">Audio Codec</label>
-                    <select name="audio_codec" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2">
+                    <select name="audio_codec" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 text-slate-200">
                         <option value="aac">AAC</option>
-                        <option value="eac3">E-AC3</option>
+                        <option value="eac3" selected>E-AC3</option>
                         <option value="ac3">AC3</option>
                         <option value="dts">DTS</option>
                         <option value="flac">FLAC</option>
@@ -75,12 +75,12 @@
                 </div>
                 <div>
                     <label class="block font-semibold mb-1 text-blue-300">Def. Audio Lang</label>
-                    <input type="text" name="audio_def_language" placeholder="eng" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2">
+                    <input type="text" name="audio_def_language" placeholder="eng" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 text-slate-200">
                 </div>
             </div>
             <div>
                 <label class="block font-semibold mb-1 text-blue-300 text-xs">Whitelist Audio Lang (comma separated)</label>
-                <input type="text" name="audio_languages" placeholder="eng,spa,fra" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 text-xs">
+                <input type="text" name="audio_languages" placeholder="eng,spa,fra" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 text-xs text-slate-200">
             </div>
 
             <hr class="border-slate-700 my-4">
@@ -88,8 +88,8 @@
             <div class="grid grid-cols-2 gap-3">
                 <div>
                     <label class="block font-semibold mb-1 text-green-300">Subtitle Codec</label>
-                    <select name="subtitle_codec" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2">
-                        <option value="subrip">SubRip (SRT)</option>
+                    <select name="subtitle_codec" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 text-slate-200">
+                        <option value="subrip" selected>SubRip (SRT)</option>
                         <option value="vtt">VTT</option>
                         <option value="ass">ASS/SSA</option>
                         <option value="pgs">PGS</option>
@@ -97,12 +97,12 @@
                 </div>
                 <div>
                     <label class="block font-semibold mb-1 text-green-300">Def. Sub Lang</label>
-                    <input type="text" name="subtitle_def_language" placeholder="spa" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2">
+                    <input type="text" name="subtitle_def_language" placeholder="spa" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 text-slate-200">
                 </div>
             </div>
             <div>
                 <label class="block font-semibold mb-1 text-green-300 text-xs">Whitelist Sub Lang (comma separated)</label>
-                <input type="text" name="subtitle_languages" placeholder="eng,spa" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 text-xs">
+                <input type="text" name="subtitle_languages" placeholder="eng,spa" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 text-xs text-slate-200">
             </div>
 
             <button type="submit" class="w-full bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold py-3 rounded-lg transition-all transform active:scale-95 mt-4">
@@ -116,12 +116,23 @@
        <div id="profile-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
            {% for profile in profiles %}
                <div class="bg-slate-900 p-4 rounded-lg border border-slate-700 shadow-inner">
-                   <h3 class="font-bold text-amber-400 mb-2 border-b border-slate-800 pb-1">{{ profile.name }}</h3>
+                   <div class="flex justify-between items-start mb-2 border-b border-slate-800 pb-1">
+                       <h3 class="font-bold text-amber-400">{{ profile.name }}</h3>
+                       
+                       <form action="/profiles/{{ profile.id }}/delete" method="POST" onsubmit="return confirm('Delete profile? All related libraries will also be deleted.');">
+                           <button type="submit" class="text-red-500 hover:text-red-400 transition-colors" title="Delete Profile">
+                               <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                               </svg>
+                           </button>
+                       </form>
+                   </div>
+
                    <div class="grid grid-cols-2 gap-2 text-xs text-slate-400">
                        <p>🎥 <span class="text-slate-200">{{ profile.video_codec|upper }} / {{ profile.video_max_res }}p</span></p>
                        <p>📦 <span class="text-slate-200">{{ profile.container|upper }}</span></p>
-                       <p>🔊 <span class="text-slate-200">{{ profile.audio_codec|upper }} ({{ profile.audio_def_language }}{% if profile.audio_languages %}, {{ profile.audio_languages }}{% endif %})</span></p>
-                       <p>📝 <span class="text-slate-200">{{ profile.subtitle_codec|upper }} ({{ profile.subtitle_def_language }}{% if profile.subtitle_languages %}, {{ profile.subtitle_languages }}{% endif %})</span></p>
+                       <p>🔊 <span class="text-slate-200">{{ profile.audio_codec|upper }} ({{ profile.audio_def_language or 'None' }}{% if profile.audio_languages %}, {{ profile.audio_languages }}{% endif %})</span></p>
+                       <p>📝 <span class="text-slate-200">{{ profile.subtitle_codec|upper }} ({{ profile.subtitle_def_language or 'None' }}{% if profile.subtitle_languages %}, {{ profile.subtitle_languages }}{% endif %})</span></p>
                    </div>
                </div>
            {% else %}
