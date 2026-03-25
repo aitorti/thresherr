@@ -1,0 +1,9 @@
+services:
+  app:
+    build: .
+    container_name: thresherr
+    ports:
+      - "8505:8000"
+    volumes:
+      - ./app:/app
+    restart: unless-stopped
