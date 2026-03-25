@@ -81,17 +81,18 @@ async def create_profile(
     db.commit()
     db.refresh(new_profile)
     
-    # HTML Fragment for HTMX (no quotes or \n issues)
+# HTML Fragment for HTMX
     html_content = f"""
     <div class="bg-slate-900 p-4 rounded-lg border border-slate-700 shadow-inner">
         <h3 class="font-bold text-amber-400 mb-2 border-b border-slate-800 pb-1">{name}</h3>
         <div class="grid grid-cols-2 gap-2 text-xs text-slate-400">
             <p>🎥 <span class="text-slate-200">{video_codec.upper()} / {video_max_res}p</span></p>
             <p>📦 <span class="text-slate-200">{container.upper()}</span></p>
-            <p>🔊 <span class="text-slate-200">{audio_codec.upper()} ({audio_def_language or 'N/A'})</span></p>
-            <p>📝 <span class="text-slate-200">{subtitle_codec.upper()}</span></p>
+            <p>🔊 <span class="text-slate-200">{audio_codec.upper()} ({audio_def_language or 'N/A'}{f', {audio_languages}' if audio_languages else ''})</span></p>
+            <p>📝 <span class="text-slate-200">{subtitle_codec.upper()} ({subtitle_def_language or 'N/A'}{f', {subtitle_languages}' if subtitle_languages else ''})</span></p>
         </div>
     </div>
+    <div id="empty-msg" hx-swap-oob="delete"></div>
     """
     
     return HTMLResponse(content=html_content, status_code=200)

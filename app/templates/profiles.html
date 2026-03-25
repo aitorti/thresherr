@@ -117,21 +117,21 @@
 
     <section class="lg:col-span-2 bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-2xl">
         <h2 class="text-xl font-bold mb-6 text-slate-300">Active Profiles</h2>
-        <div id="profile-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {% for profile in profiles %}
-                <div class="bg-slate-900 p-4 rounded-lg border border-slate-700 shadow-inner">
-                    <h3 class="font-bold text-amber-400 mb-2 border-b border-slate-800 pb-1">{{ profile.name }}</h3>
-                    <div class="grid grid-cols-2 gap-2 text-xs text-slate-400">
-                        <p>🎥 <span class="text-slate-200">{{ profile.video_codec }} / {{ profile.video_max_res }}p</span></p>
-                        <p>📦 <span class="text-slate-200">{{ profile.container }}</span></p>
-                        <p>🔊 <span class="text-slate-200">{{ profile.audio_codec }} ({{ profile.audio_def_language }})</span></p>
-                        <p>📝 <span class="text-slate-200">{{ profile.subtitle_codec }}</span></p>
-                    </div>
-                </div>
-            {% else %}
-                <p id="empty-msg" class="text-slate-500 italic">No profiles created yet.</p>
-            {% endfor %}
-        </div>
+       <div id="profile-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+           {% for profile in profiles %}
+               <div class="bg-slate-900 p-4 rounded-lg border border-slate-700 shadow-inner">
+                   <h3 class="font-bold text-amber-400 mb-2 border-b border-slate-800 pb-1">{{ profile.name }}</h3>
+                   <div class="grid grid-cols-2 gap-2 text-xs text-slate-400">
+                       <p>🎥 <span class="text-slate-200">{{ profile.video_codec|upper }} / {{ profile.video_max_res }}p</span></p>
+                       <p>📦 <span class="text-slate-200">{{ profile.container|upper }}</span></p>
+                       <p>🔊 <span class="text-slate-200">{{ profile.audio_codec|upper }} ({{ profile.audio_def_language }}{% if profile.audio_languages %}, {{ profile.audio_languages }}{% endif %})</span></p>
+                       <p>📝 <span class="text-slate-200">{{ profile.subtitle_codec|upper }} ({{ profile.subtitle_def_language }}{% if profile.subtitle_languages %}, {{ profile.subtitle_languages }}{% endif %})</span></p>
+                   </div>
+               </div>
+           {% else %}
+               <p id="empty-msg" class="text-slate-500 italic">No profiles created yet.</p>
+           {% endfor %}
+       </div>
     </section>
 </div>
 {% endblock %}
