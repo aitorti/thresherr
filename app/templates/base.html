@@ -3,23 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Thresherr 🌾</title>
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <title>Thresherr 🌾 - Media Converters</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.6"></script>
 </head>
-<body class="bg-slate-900 text-slate-100 font-sans">
-    <nav class="bg-slate-800 p-4 shadow-xl border-b border-slate-700">
-        <div class="container mx-auto flex justify-between items-center">
-            <h1 class="text-2xl font-bold text-amber-400">🌾 Thresherr</h1>
-            <div class="space-x-4">
-                <a href="/" class="hover:text-amber-400">Dashboard</a>
-                <a href="/profiles" class="hover:text-amber-400">Profiles</a>
-            </div>
-        </div>
-    </nav>
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
 
-    <main class="container mx-auto mt-8 p-4">
-        {% block content %}{% endblock %}
+    <header class="bg-slate-900 border-b border-slate-700 shadow-md">
+        <div class="container mx-auto px-6 py-4 flex items-center justify-between">
+            <div class="flex items-center space-x-2">
+                <span class="text-3xl">🌾</span>
+                <span class="text-3xl font-bold text-amber-400">Thresherr</span>
+            </div>
+
+            <nav class="flex items-center space-x-8 text-sm font-medium">
+                <a href="/" class="text-slate-200 hover:text-amber-400 transition-colors">Dashboard</a>
+                <a href="/profiles" class="text-slate-200 hover:text-amber-400 transition-colors">Profiles</a>
+                <a href="/libraries" class="text-slate-200 hover:text-amber-400 transition-colors">Libraries</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container mx-auto px-6 py-10">
+        {% block content %}
+        {% endblock %}
     </main>
+
 </body>
 </html>

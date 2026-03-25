@@ -30,11 +30,14 @@ class Profile(Base):
     # Relationship with libraries
     libraries = relationship("Library", back_populates="profile")
 
+
 class Library(Base):
     """
     Represents a physical media folder linked to a specific Profile.
     """
     __tablename__ = "libraries"
+    # This line tells SQLAlchemy: "If the table already exists in metadata, just extend/use it"
+    __table_args__ = {'extend_existing': True}
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True)
@@ -43,3 +46,4 @@ class Library(Base):
     
     profile_id = Column(Integer, ForeignKey("profiles.id"))
     profile = relationship("Profile", back_populates="libraries")
+

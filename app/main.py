@@ -96,3 +96,48 @@ async def create_profile(
     """
     
     return HTMLResponse(content=html_content, status_code=200)
+
+@app.get("/libraries", response_class=HTMLResponse)
+async def get_libraries(request: Request, db: Session = Depends(get_db)):
+    libraries = db.query(models.Library).all()
+    profiles = db.query(models.Profile).all()
+    return templates.TemplateResponse(
+        request=request, 
+        name="libraries.html", 
+        context={"libraries": libraries, "profiles": profiles}
+    )
+
+@app.post("/libraries")
+async def create_library(
+    name: str = Form(...),
+    media_path: str = Form(...),
+    temp_path: str = Form(...),
+    profile_id: int = Form(...),
+    db: Session = Depends(get_db)
+):
+    new_lib = models.Library(
+        name=name, 
+        media_path=media_path, 
+        temp_path=temp_path, 
+        profile_id=profile_id
+    )
+    db.add(new_lib)
+    db.commit()
+    db.refresh(new_lib)
+    
+    # Fragmento HTML para HTMX con el nombre del perfil incluido
+    html_content = f"""
+    <div class="bg-slate-900 p-4 rounded-lg border border-slate-700 flex justify-between items-center shadow-inner">
+        <div>
+            <h3 class="font-bold text-amber-400">{name}</h3>
+            <p class="text-xs text-slate-500 mt-1 italic">{media_path}</p>
+        </div>
+        <div class="text-right">
+            <span class="text-xs bg-slate-800 px-2 py-1 rounded border border-slate-600 text-slate-300">
+                Target: {new_lib.profile.name}
+            </span>
+        </div>
+    </div>
+    <div id="empty-lib-msg" hx-swap-oob="delete"></div>
+    """
+    return HTMLResponse(content=html_content)

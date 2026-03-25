@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+    <section class="lg:col-span-1 bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-2xl">
+        <h2 class="text-xl font-bold mb-6 text-amber-400 flex items-center">
+            <span class="mr-2">📚</span> New Library
+        </h2>
+        
+        <form hx-post="/libraries" hx-target="#library-list" hx-swap="beforeend" onhtmx:after-request="this.reset()" class="space-y-4 text-sm">
+            <div>
+                <label class="block font-semibold mb-1">Library Name</label>
+                <input type="text" name="name" placeholder="e.g. Movies 4K" required class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 outline-none focus:border-amber-500">
+            </div>
+
+            <div>
+                <label class="block font-semibold mb-1 text-blue-300">Media Path (DietPi)</label>
+                <input type="text" name="media_path" placeholder="/mnt/dietpi_userdata/Media/Movies" required class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 outline-none">
+            </div>
+
+            <div>
+                <label class="block font-semibold mb-1 text-orange-300">Temp Path</label>
+                <input type="text" name="temp_path" placeholder="/mnt/dietpi_userdata/transcode_temp" required class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 outline-none">
+            </div>
+
+            <div>
+                <label class="block font-semibold mb-1 text-green-300">Conversion Profile</label>
+                <select name="profile_id" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 outline-none">
+                    {% for profile in profiles %}
+                        <option value="{{ profile.id }}">{{ profile.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <button type="submit" class="w-full bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold py-3 rounded-lg transition-all mt-4">
+                ➕ Add Library
+            </button>
+        </form>
+    </section>
+
+    <section class="lg:col-span-2 bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-2xl">
+        <h2 class="text-xl font-bold mb-6 text-slate-300">Monitored Libraries</h2>
+        <div id="library-list" class="space-y-4">
+            {% for lib in libraries %}
+                <div class="bg-slate-900 p-4 rounded-lg border border-slate-700 flex justify-between items-center shadow-inner">
+                    <div>
+                        <h3 class="font-bold text-amber-400">{{ lib.name }}</h3>
+                        <p class="text-xs text-slate-500 mt-1 italic">{{ lib.media_path }}</p>
+                    </div>
+                    <div class="text-right">
+                        <span class="text-xs bg-slate-800 px-2 py-1 rounded border border-slate-600 text-slate-300">
+                            Target: {{ lib.profile.name }}
+                        </span>
+                    </div>
+                </div>
+            {% else %}
+                <p id="empty-lib-msg" class="text-slate-500 italic text-center py-10">No libraries added yet.</p>
+            {% endfor %}
+        </div>
+    </section>
+</div>
+{% endblock %}
