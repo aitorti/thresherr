@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+    <section class="lg:col-span-1 bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-2xl">
+        <h2 class="text-xl font-bold mb-6 text-amber-400 flex items-center">
+            <span class="mr-2">⚙️</span> New Profile Configuration
+        </h2>
+        
+        <form hx-post="/profiles" 
+              hx-target="#profile-list" 
+              hx-swap="beforeend" 
+              onhtmx:after-request="this.reset()"
+              class="space-y-4 text-sm">
+            
+            <div>
+                <label class="block font-semibold mb-1">Profile Name</label>
+                <input type="text" name="name" placeholder="e.g. High Quality 4K" required 
+                       class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 focus:border-amber-500 outline-none">
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block font-semibold mb-1">Video Codec</label>
+                    <select name="video_codec" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2">
+                        <option value="h264">H.264</option>
+                        <option value="h265">H.265 (HEVC)</option>
+                        <option value="av1">AV1</option>
+                        <option value="vp9">VP9</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block font-semibold mb-1">Container</label>
+                    <select name="container" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2">
+                        <option value="mkv">MKV</option>
+                        <option value="mp4">MP4</option>
+                        <option value="avi">AVI</option>
+                        <option value="webm">WebM</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block font-semibold mb-1">Max Resolution</label>
+                    <select name="video_max_res" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2">
+                        <option value="480">480p</option>
+                        <option value="720">720p</option>
+                        <option value="1080" selected>1080p</option>
+                        <option value="1440">1440p</option>
+                        <option value="2160">2160p (4K)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block font-semibold mb-1">Max Bitrate</label>
+                    <select name="video_max_bitrate" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2">
+                        <option value="2000">2 Mbps (SD)</option>
+                        <option value="5000">5 Mbps (HD)</option>
+                        <option value="10000">10 Mbps (Full HD)</option>
+                        <option value="25000">25 Mbps (4K Light)</option>
+                        <option value="50000">50 Mbps (4K High)</option>
+                    </select>
+                </div>
+            </div>
+
+            <hr class="border-slate-700 my-4">
+
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block font-semibold mb-1 text-blue-300">Audio Codec</label>
+                    <select name="audio_codec" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2">
+                        <option value="aac">AAC</option>
+                        <option value="eac3">E-AC3</option>
+                        <option value="ac3">AC3</option>
+                        <option value="dts">DTS</option>
+                        <option value="flac">FLAC</option>
+                        <option value="mp3">MP3</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block font-semibold mb-1 text-blue-300">Def. Audio Lang</label>
+                    <input type="text" name="audio_def_language" placeholder="eng" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2">
+                </div>
+            </div>
+            <div>
+                <label class="block font-semibold mb-1 text-blue-300 text-xs">Whitelist Audio Lang (comma separated)</label>
+                <input type="text" name="audio_languages" placeholder="eng,spa,fra" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 text-xs">
+            </div>
+
+            <hr class="border-slate-700 my-4">
+
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block font-semibold mb-1 text-green-300">Subtitle Codec</label>
+                    <select name="subtitle_codec" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2">
+                        <option value="subrip">SubRip (SRT)</option>
+                        <option value="vtt">VTT</option>
+                        <option value="ass">ASS/SSA</option>
+                        <option value="pgs">PGS</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block font-semibold mb-1 text-green-300">Def. Sub Lang</label>
+                    <input type="text" name="subtitle_def_language" placeholder="spa" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2">
+                </div>
+            </div>
+            <div>
+                <label class="block font-semibold mb-1 text-green-300 text-xs">Whitelist Sub Lang (comma separated)</label>
+                <input type="text" name="subtitle_languages" placeholder="eng,spa" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 text-xs">
+            </div>
+
+            <button type="submit" class="w-full bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold py-3 rounded-lg transition-all transform active:scale-95 mt-4">
+                🌾 Save Profile
+            </button>
+        </form>
+    </section>
+
+    <section class="lg:col-span-2 bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-2xl">
+        <h2 class="text-xl font-bold mb-6 text-slate-300">Active Profiles</h2>
+        <div id="profile-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {% for profile in profiles %}
+                <div class="bg-slate-900 p-4 rounded-lg border border-slate-700 shadow-inner">
+                    <h3 class="font-bold text-amber-400 mb-2 border-b border-slate-800 pb-1">{{ profile.name }}</h3>
+                    <div class="grid grid-cols-2 gap-2 text-xs text-slate-400">
+                        <p>🎥 <span class="text-slate-200">{{ profile.video_codec }} / {{ profile.video_max_res }}p</span></p>
+                        <p>📦 <span class="text-slate-200">{{ profile.container }}</span></p>
+                        <p>🔊 <span class="text-slate-200">{{ profile.audio_codec }} ({{ profile.audio_def_language }})</span></p>
+                        <p>📝 <span class="text-slate-200">{{ profile.subtitle_codec }}</span></p>
+                    </div>
+                </div>
+            {% else %}
+                <p id="empty-msg" class="text-slate-500 italic">No profiles created yet.</p>
+            {% endfor %}
+        </div>
+    </section>
+</div>
+{% endblock %}
