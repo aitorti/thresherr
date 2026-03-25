@@ -7,17 +7,56 @@ import models
 # Common video extensions
 VIDEO_EXTENSIONS = ('.mkv', '.mp4', '.avi', '.mov', '.m4v')
 
+def get_resolution_name(height):
+    """
+    Converts vertical pixels to common resolution names (e.g., 1080p).
+    All comments in English as requested.
+    """
+    if not height: 
+        return "Unknown"
+    
+    if height >= 2160: return "4K"
+    if height >= 1440: return "1440p"
+    if height >= 1080: return "1080p"
+    if height >= 720:  return "720p"
+    if height >= 480:  return "480p"
+    return f"{height}p"
+
+def get_refined_language(stream_tags):
+    """
+    Checks language and title tags to distinguish between Spanish (Castellano) and Latino.
+    If 'lat', 'latin', or 'latino' is found in the title or lang tag, returns 'latam'.
+    """
+    # Get language and title, defaulting to empty strings if not present
+    lang = stream_tags.get("language", "und").lower()
+    title = stream_tags.get("title", "").lower()
+    
+    # Keywords that indicate Latin American Spanish
+    latam_keywords = ["lat", "latin", "latino", "america", "lati"]
+    
+    # Check if the language is marked as Spanish
+    if lang in ["spa", "es", "esp"]:
+        # If the title contains any latam keyword, we re-tag it as latam
+        if any(key in title for key in latam_keywords):
+            return "latam"
+        return "spa"
+    
+    # Also check if the language tag itself is a latam keyword
+    if any(key == lang for key in latam_keywords):
+        return "latam"
+        
+    return lang
+
 def get_video_metadata(file_path):
     """
-    Uses ffprobe to extract technical details from the video file.
-    All comments in English as requested.
+    Uses ffprobe to extract technical details and refines language tags.
     """
     cmd = [
         "ffprobe", "-v", "quiet", "-print_format", "json",
         "-show_streams", "-show_format", file_path
     ]
     try:
-        # Run ffprobe and capture output
+        # Run ffprobe with a 15-second timeout
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
         data = json.loads(result.stdout)
         
@@ -30,18 +69,21 @@ def get_video_metadata(file_path):
         for stream in data.get("streams", []):
             stype = stream.get("codec_type")
             codec = stream.get("codec_name", "unknown")
-            # Get language tag, default to 'und' (undefined)
-            lang = stream.get("tags", {}).get("language", "und")
+            tags = stream.get("tags", {})
+            
+            # Apply the Latino detection logic
+            refined_lang = get_refined_language(tags)
 
             if stype == "video" and not info["v_codec"]:
                 info["v_codec"] = codec
-                info["res"] = f"{stream.get('width')}x{stream.get('height')}"
+                height = stream.get("height")
+                info["res"] = get_resolution_name(height)
             elif stype == "audio":
                 info["a_codec"].add(codec)
-                info["a_langs"].add(lang)
+                info["a_langs"].add(refined_lang)
             elif stype == "subtitle":
                 info["s_codec"].add(codec)
-                info["s_langs"].add(lang)
+                info["s_langs"].add(refined_lang)
 
         return {
             "video_codec": info["v_codec"],
@@ -54,22 +96,19 @@ def get_video_metadata(file_path):
     except Exception as e:
         print(f"Error probing {file_path}: {e}")
         return {
-            "video_codec": "unknown", 
-            "resolution": "---",
-            "audio_codec": "n/a", 
-            "audio_languages": "und"
+            "video_codec": "unknown", "resolution": "---",
+            "audio_codec": "n/a", "audio_languages": "und"
         }
 
 def scan_libraries(db: Session):
     """
-    Scans paths and populates the database with new files and their metadata.
+    Scans media paths and populates the database with metadata.
     """
     libraries = db.query(models.Library).all()
     new_files_count = 0
 
     for lib in libraries:
         if not os.path.exists(lib.media_path):
-            print(f"Path not found: {lib.media_path}")
             continue
 
         for root, dirs, files in os.walk(lib.media_path):
@@ -77,11 +116,11 @@ def scan_libraries(db: Session):
                 if file.lower().endswith(VIDEO_EXTENSIONS):
                     full_path = os.path.join(root, file)
                     
-                    # Avoid duplicates
+                    # Check if file is already in the database
                     exists = db.query(models.MediaFile).filter(models.MediaFile.full_path == full_path).first()
                     
                     if not exists:
-                        # Extract metadata using ffprobe
+                        # Extract metadata with ffprobe and Latino check
                         meta = get_video_metadata(full_path)
                         
                         new_media = models.MediaFile(
@@ -90,7 +129,7 @@ def scan_libraries(db: Session):
                             library_id=lib.id,
                             status="pending",
                             size_original=os.path.getsize(full_path),
-                            **meta # Injects video_codec, resolution, etc.
+                            **meta
                         )
                         db.add(new_media)
                         new_files_count += 1
