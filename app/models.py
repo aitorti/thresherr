@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey 
+from sqlalchemy import Column, Integer, String, ForeignKey, BigInteger
 from sqlalchemy.orm import relationship 
 from database import Base 
 
@@ -17,7 +17,6 @@ class Profile(Base):
     subtitle_def_language = Column(String, nullable=True) 
     subtitle_languages = Column(String, nullable=True) 
 
-    # Relation to handle libraries and allow cascade deletion
     libraries = relationship("Library", back_populates="profile", cascade="all, delete-orphan")
 
 class Library(Base): 
@@ -28,9 +27,7 @@ class Library(Base):
     temp_path = Column(String) 
     profile_id = Column(Integer, ForeignKey("profiles.id")) 
 
-    # Relationship to access profile data from a library
     profile = relationship("Profile", back_populates="libraries")
-
 
 class MediaFile(Base):
     __tablename__ = "media_files"
@@ -38,6 +35,10 @@ class MediaFile(Base):
     file_name = Column(String)
     full_path = Column(String, unique=True)
     status = Column(String, default="pending") # pending, processing, completed, failed
+    
+    # Tracking space (BigInteger for large files in bytes)
+    size_original = Column(BigInteger, nullable=True)
+    size_final = Column(BigInteger, nullable=True)
+    
     library_id = Column(Integer, ForeignKey("libraries.id"))
-
     library = relationship("Library")

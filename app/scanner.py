@@ -17,15 +17,18 @@ def scan_libraries(db: Session):
                 if file.lower().endswith(VIDEO_EXTENSIONS):
                     full_path = os.path.join(root, file)
                     
-                    # Check if file already exists in DB
                     exists = db.query(models.MediaFile).filter(models.MediaFile.full_path == full_path).first()
                     
                     if not exists:
+                        # Get original size in bytes
+                        size_bytes = os.path.getsize(full_path)
+                        
                         new_media = models.MediaFile(
                             file_name=file,
                             full_path=full_path,
                             library_id=lib.id,
-                            status="pending"
+                            status="pending",
+                            size_original=size_bytes
                         )
                         db.add(new_media)
                         new_files_count += 1

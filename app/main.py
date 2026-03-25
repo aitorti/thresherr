@@ -2,10 +2,10 @@ from fastapi import FastAPI, Request, Form, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 import models
 from database import engine, SessionLocal
 from scanner import scan_libraries
-
 
 # 1. Database setup
 models.Base.metadata.create_all(bind=engine)
@@ -25,11 +25,31 @@ def get_db():
 # 4. Routes
 
 @app.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request):
-    # Fixed: Passing request as the first argument as required by modern Starlette
+async def dashboard(request: Request, db: Session = Depends(get_db)):
+    # Calculate global statistics for the dashboard
+    # Total size of all discovered files
+    total_orig = db.query(func.sum(models.MediaFile.size_original)).scalar() or 0
+    
+    # Original size of ONLY completed files
+    total_done_orig = db.query(func.sum(models.MediaFile.size_original)).filter(models.MediaFile.status == "completed").scalar() or 0
+    
+    # Final size of ONLY completed files
+    total_done_final = db.query(func.sum(models.MediaFile.size_final)).filter(models.MediaFile.status == "completed").scalar() or 0
+    
+    # Savings calculation
+    savings = total_done_orig - total_done_final
+    savings_pct = (savings / total_done_orig * 100) if total_done_orig > 0 else 0
+
     return templates.TemplateResponse(
-        request=request,
-        name="base.html"
+        request=request, 
+        name="dashboard.html", 
+        context={
+            "total_gb": round(total_orig / (1024**3), 2),
+            "processed_orig_gb": round(total_done_orig / (1024**3), 2),
+            "processed_final_gb": round(total_done_final / (1024**3), 2),
+            "savings_gb": round(savings / (1024**3), 2),
+            "savings_pct": round(savings_pct, 1)
+        }
     )
 
 @app.get("/profiles", response_class=HTMLResponse)
@@ -95,7 +115,28 @@ async def add_library(
     db.commit()
     return RedirectResponse(url="/libraries", status_code=303)
 
-# 5. Delete Logic
+@app.get("/queue", response_class=HTMLResponse)
+async def get_queue(request: Request, db: Session = Depends(get_db)):
+    pending = db.query(models.MediaFile).filter(models.MediaFile.status == "pending").all()
+    processing = db.query(models.MediaFile).filter(models.MediaFile.status == "processing").all()
+    completed = db.query(models.MediaFile).filter(models.MediaFile.status == "completed").order_by(models.MediaFile.id.desc()).limit(10).all()
+    
+    return templates.TemplateResponse(
+        request=request,
+        name="queue.html",
+        context={
+            "pending": pending,
+            "processing": processing,
+            "completed": completed
+        }
+    )
+
+@app.get("/scan")
+async def manual_scan(db: Session = Depends(get_db)):
+    new_count = scan_libraries(db)
+    return RedirectResponse(url="/queue", status_code=303)
+
+# --- DELETE ROUTES ---
 
 @app.post("/profiles/{profile_id}/delete")
 async def delete_profile(profile_id: int, db: Session = Depends(get_db)):
@@ -112,29 +153,3 @@ async def delete_library(library_id: int, db: Session = Depends(get_db)):
         db.delete(library)
         db.commit()
     return RedirectResponse(url="/libraries", status_code=303)
-
-# 6. Scanner
-
-@app.get("/queue", response_class=HTMLResponse)
-async def get_queue(request: Request, db: Session = Depends(get_db)):
-    # Fetch files grouped by status or just all of them
-    pending = db.query(models.MediaFile).filter(models.MediaFile.status == "pending").all()
-    processing = db.query(models.MediaFile).filter(models.MediaFile.status == "processing").all()
-    completed = db.query(models.MediaFile).filter(models.MediaFile.status == "completed").limit(10).all()
-    
-    return templates.TemplateResponse(
-        request=request,
-        name="queue.html",
-        context={
-            "pending": pending,
-            "processing": processing,
-            "completed": completed
-        }
-    )
-
-@app.get("/scan")
-async def manual_scan(db: Session = Depends(get_db)):
-    from scanner import scan_libraries
-    new_count = scan_libraries(db)
-    # Redirect to queue to see the results
-    return RedirectResponse(url="/queue", status_code=303)
