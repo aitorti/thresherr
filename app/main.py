@@ -26,19 +26,16 @@ def get_db():
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request, db: Session = Depends(get_db)):
-    # Calculate global statistics for the dashboard
-    # Total size of all discovered files
+    # Statistics calculations
     total_orig = db.query(func.sum(models.MediaFile.size_original)).scalar() or 0
-    
-    # Original size of ONLY completed files
     total_done_orig = db.query(func.sum(models.MediaFile.size_original)).filter(models.MediaFile.status == "completed").scalar() or 0
-    
-    # Final size of ONLY completed files
     total_done_final = db.query(func.sum(models.MediaFile.size_final)).filter(models.MediaFile.status == "completed").scalar() or 0
     
-    # Savings calculation
     savings = total_done_orig - total_done_final
     savings_pct = (savings / total_done_orig * 100) if total_done_orig > 0 else 0
+
+    # THIS LINE IS CRITICAL:
+    media_files = db.query(models.MediaFile).order_by(models.MediaFile.id.desc()).all()
 
     return templates.TemplateResponse(
         request=request, 
@@ -48,7 +45,8 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
             "processed_orig_gb": round(total_done_orig / (1024**3), 2),
             "processed_final_gb": round(total_done_final / (1024**3), 2),
             "savings_gb": round(savings / (1024**3), 2),
-            "savings_pct": round(savings_pct, 1)
+            "savings_pct": round(savings_pct, 1),
+            "media_files": media_files # Verify this variable name matches the template
         }
     )
 

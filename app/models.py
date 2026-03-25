@@ -34,9 +34,17 @@ class MediaFile(Base):
     id = Column(Integer, primary_key=True, index=True)
     file_name = Column(String)
     full_path = Column(String, unique=True)
-    status = Column(String, default="pending") # pending, processing, completed, failed
+    status = Column(String, default="pending")
     
-    # Tracking space (BigInteger for large files in bytes)
+    # Technical Metadata
+    video_codec = Column(String, nullable=True)
+    resolution = Column(String, nullable=True)
+    audio_codec = Column(String, nullable=True)
+    audio_languages = Column(String, nullable=True)
+    subtitle_codec = Column(String, nullable=True)
+    subtitle_languages = Column(String, nullable=True)
+    
+    # Space Tracking
     size_original = Column(BigInteger, nullable=True)
     size_final = Column(BigInteger, nullable=True)
     

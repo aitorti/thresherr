@@ -2,28 +2,28 @@
 
 {% block content %}
 <div class="mb-8">
-    <h1 class="text-3xl font-bold text-slate-100">Global Statistics</h1>
+    <h1 class="text-3xl font-bold text-slate-100 tracking-tight">Global Statistics</h1>
     <p class="text-slate-400">Overview of space savings across all libraries.</p>
 </div>
 
-<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
     <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
-        <p class="text-slate-400 text-sm font-medium uppercase tracking-wider">Total Monitored</p>
+        <p class="text-slate-400 text-xs font-bold uppercase tracking-widest">Total Monitored</p>
         <p class="text-2xl font-bold text-slate-100 mt-2">{{ total_gb }} GB</p>
     </div>
 
     <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
-        <p class="text-amber-400 text-sm font-medium uppercase tracking-wider">Before Processing</p>
+        <p class="text-amber-400 text-xs font-bold uppercase tracking-widest">Before Processing</p>
         <p class="text-2xl font-bold text-slate-100 mt-2">{{ processed_orig_gb }} GB</p>
     </div>
 
     <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg border-l-4 border-l-green-500">
-        <p class="text-green-400 text-sm font-medium uppercase tracking-wider">After Processing</p>
+        <p class="text-green-400 text-xs font-bold uppercase tracking-widest">After Processing</p>
         <p class="text-2xl font-bold text-slate-100 mt-2">{{ processed_final_gb }} GB</p>
     </div>
 
-    <div class="bg-blue-900/30 p-6 rounded-xl border border-blue-500/50 shadow-lg">
-        <p class="text-blue-300 text-sm font-medium uppercase tracking-wider">Total Savings</p>
+    <div class="bg-blue-900/20 p-6 rounded-xl border border-blue-500/50 shadow-lg">
+        <p class="text-blue-300 text-xs font-bold uppercase tracking-widest">Total Savings</p>
         <div class="flex items-baseline gap-2">
             <p class="text-2xl font-bold text-blue-100 mt-2">{{ savings_gb }} GB</p>
             <p class="text-blue-400 text-sm font-bold">({{ savings_pct }}%)</p>
@@ -31,15 +31,97 @@
     </div>
 </div>
 
-<div class="mt-12 bg-slate-800/40 p-8 rounded-2xl border border-dashed border-slate-700 text-center">
-    <h2 class="text-xl font-semibold text-slate-300 mb-4">Ready to optimize more?</h2>
+<div class="bg-slate-800/40 p-6 rounded-2xl border border-dashed border-slate-700 text-center mb-8">
+    <h2 class="text-sm font-semibold text-slate-400 mb-4 uppercase tracking-tighter">Ready to optimize more?</h2>
     <div class="flex justify-center gap-4">
-        <a href="/scan" class="bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold py-2 px-6 rounded-lg transition-colors">
+        <a href="/scan" class="bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold py-2 px-6 rounded-lg transition-all transform active:scale-95 text-xs uppercase">
             Scan Libraries
         </a>
-        <a href="/queue" class="bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold py-2 px-6 rounded-lg transition-colors">
+        <a href="/queue" class="bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold py-2 px-6 rounded-lg transition-all transform active:scale-95 text-xs uppercase">
             View Queue
         </a>
+    </div>
+</div>
+
+<div class="bg-slate-800 rounded-xl border border-slate-700 shadow-2xl overflow-hidden">
+    <div class="p-4 border-b border-slate-700 bg-slate-900/30 flex justify-between items-center">
+        <h2 class="font-bold text-slate-200 text-sm uppercase tracking-wider flex items-center">
+            <span class="mr-2">📁</span> Monitored Media Files
+        </h2>
+        <span class="text-[10px] text-slate-500 bg-slate-900 px-2 py-1 rounded border border-slate-700">
+            Total Files: {{ media_files|length }}
+        </span>
+    </div>
+    
+    <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+            <thead class="bg-slate-900/80 text-slate-500 uppercase text-[10px] tracking-widest border-b border-slate-700">
+                <tr>
+                    <th class="px-4 py-4 font-bold">Library</th>
+                    <th class="px-4 py-4 font-bold">Title</th>
+                    <th class="px-4 py-4 font-bold">Video Codec</th>
+                    <th class="px-4 py-4 font-bold">Resolution</th>
+                    <th class="px-4 py-4 font-bold">Audio</th>
+                    <th class="px-4 py-4 font-bold">Subtitles</th>
+                    <th class="px-4 py-4 font-bold text-right">Original Size</th>
+                    <th class="px-4 py-4 font-bold text-right">Processed</th>
+                    <th class="px-4 py-4 font-bold text-center">Status</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-700/50">
+                {% for file in media_files %}
+                <tr class="hover:bg-slate-700/20 transition-colors text-[11px]">
+                    <td class="px-4 py-3 text-slate-500 font-mono">{{ file.library.name }}</td>
+                    <td class="px-4 py-3 font-semibold text-slate-200 truncate max-w-[200px]" title="{{ file.file_name }}">
+                        {{ file.file_name }}
+                    </td>
+                    <td class="px-4 py-3">
+                        <span class="bg-slate-900 text-amber-500/90 px-2 py-0.5 rounded border border-slate-700 font-mono text-[10px]">
+                            {{ file.video_codec|upper if file.video_codec else '???' }}
+                        </span>
+                    </td>
+                    <td class="px-4 py-3 text-slate-400 font-mono">
+                        {{ file.resolution if file.resolution else '---' }}
+                    </td>
+                    <td class="px-4 py-3">
+                        <div class="text-blue-400 font-medium uppercase">{{ file.audio_codec if file.audio_codec else 'None' }}</div>
+                        <div class="text-[9px] text-slate-500 italic">{{ file.audio_languages if file.audio_languages else '-' }}</div>
+                    </td>
+                    <td class="px-4 py-3">
+                        <div class="text-green-400 font-medium uppercase">{{ file.subtitle_codec if file.subtitle_codec else 'None' }}</div>
+                        <div class="text-[9px] text-slate-500 italic">{{ file.subtitle_languages if file.subtitle_languages else '-' }}</div>
+                    </td>
+                    <td class="px-4 py-3 text-right text-slate-300 font-mono">
+                        {{ (file.size_original / (1024**2))|round(1) if file.size_original else '0' }} MB
+                    </td>
+                    <td class="px-4 py-3 text-right text-slate-300 font-mono">
+                        {% if file.status == 'completed' %}
+                            <span class="text-green-400">{{ (file.size_final / (1024**2))|round(1) }} MB</span>
+                        {% else %}
+                            <span class="text-slate-600">-</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3 text-center">
+                        {% if file.status == 'completed' %}
+                            <span class="px-2 py-0.5 rounded bg-green-900/30 text-green-400 text-[9px] font-bold uppercase border border-green-800/50">Completed</span>
+                        {% elif file.status == 'processing' %}
+                            <span class="px-2 py-0.5 rounded bg-blue-900/30 text-blue-400 text-[9px] font-bold uppercase border border-blue-800/50 animate-pulse">In Progress</span>
+                        {% elif file.status == 'failed' %}
+                            <span class="px-2 py-0.5 rounded bg-red-900/30 text-red-400 text-[9px] font-bold uppercase border border-red-800/50">Failed</span>
+                        {% else %}
+                            <span class="px-2 py-0.5 rounded bg-slate-700/50 text-slate-500 text-[9px] font-bold uppercase border border-slate-600/50">Queued</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="9" class="px-4 py-12 text-center text-slate-500 italic bg-slate-900/10">
+                        No media files found. Make sure you have libraries configured and click "Scan Libraries".
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
 </div>
 {% endblock %}
