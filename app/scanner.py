@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 import json
 from sqlalchemy.orm import Session
@@ -7,10 +8,33 @@ import models
 # Common video extensions
 VIDEO_EXTENSIONS = ('.mkv', '.mp4', '.avi', '.mov', '.m4v')
 
+def clean_stream_title(title):
+    """
+    Removes advertising and unwanted tags from stream titles.
+    Examples: "English [byTony]" -> "English"
+    """
+    if not title:
+        return ""
+    
+    # List of patterns to remove (websites, usernames, etc.)
+    spam_patterns = [
+        r"\[.*?\]",          # Anything inside square brackets: [tony32]
+        r"\(.*?\)",          # Anything inside parentheses: (tusdescargas.org)
+        r"www\..*?\.[a-z]+", # Website URLs
+        r"@[a-zA-Z0-9_]+",   # Telegram/Social media tags
+        r"by\w+",            # "byTony", "byUser"
+    ]
+    
+    clean_title = title
+    for pattern in spam_patterns:
+        clean_title = re.sub(pattern, "", clean_title, flags=re.IGNORECASE)
+    
+    # Remove extra spaces left after cleaning
+    return clean_title.strip()
+
 def get_resolution_name(height):
     """
     Converts vertical pixels to common resolution names (e.g., 1080p).
-    All comments in English as requested.
     """
     if not height: 
         return "Unknown"
@@ -29,7 +53,7 @@ def get_refined_language(stream_tags):
     """
     # Get language and title, defaulting to empty strings if not present
     lang = stream_tags.get("language", "und").lower()
-    title = stream_tags.get("title", "").lower()
+    title = clean_stream_title(stream_tags.get("title", "")).lower()
     
     # Keywords that indicate Latin American Spanish
     latam_keywords = ["lat", "latin", "latino", "america", "lati"]
