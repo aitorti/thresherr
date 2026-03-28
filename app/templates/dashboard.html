@@ -1,6 +1,30 @@
 {% extends "base.html" %}
 
 {% block content %}
+<style>
+    .filter-input {
+        background: rgba(15, 23, 42, 0.6);
+        border: 1px solid rgba(51, 65, 85, 0.5);
+        color: #94a3b8;
+        font-size: 10px;
+        padding: 4px 8px;
+        border-radius: 4px;
+        width: 100%;
+        outline: none;
+        transition: all 0.2s;
+    }
+    .filter-input:focus {
+        border-color: #f59e0b;
+        background: rgba(15, 23, 42, 0.9);
+        color: #f1f5f9;
+    }
+    .filter-input::placeholder {
+        color: #475569;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+</style>
+
 <div class="mb-8">
     <h1 class="text-3xl font-bold text-slate-100 tracking-tight">Global Statistics</h1>
     <p class="text-slate-400 text-base">Overview of space savings across all libraries.</p>
@@ -11,17 +35,14 @@
         <p class="text-slate-400 text-xs font-bold uppercase tracking-widest">Total Monitored</p>
         <p class="text-2xl font-bold text-slate-100 mt-2">{{ total_gb }} GB</p>
     </div>
-
     <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
         <p class="text-amber-400 text-xs font-bold uppercase tracking-widest">Before Processing</p>
         <p class="text-2xl font-bold text-slate-100 mt-2">{{ processed_orig_gb }} GB</p>
     </div>
-
     <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg border-l-4 border-l-green-500">
         <p class="text-green-400 text-xs font-bold uppercase tracking-widest">After Processing</p>
         <p class="text-2xl font-bold text-slate-100 mt-2">{{ processed_final_gb }} GB</p>
     </div>
-
     <div class="bg-blue-900/20 p-6 rounded-xl border border-blue-500/50 shadow-lg">
         <p class="text-blue-300 text-xs font-bold uppercase tracking-widest">Total Savings</p>
         <div class="flex items-baseline gap-2">
@@ -54,18 +75,28 @@
     </div>
     
     <div class="overflow-x-auto">
-        <table class="w-full text-left border-collapse">
+        <table class="w-full text-left border-collapse" id="mediaTable">
             <thead class="bg-slate-900/80 text-slate-500 uppercase text-[11px] tracking-widest border-b border-slate-700">
                 <tr>
-                    <th class="px-6 py-5 font-bold">Library</th>
-                    <th class="px-6 py-5 font-bold">Title</th>
-                    <th class="px-6 py-5 font-bold">Video Codec</th>
-                    <th class="px-6 py-5 font-bold">Resolution</th>
-                    <th class="px-6 py-5 font-bold">Audio</th>
-                    <th class="px-6 py-5 font-bold">Subtitles</th>
-                    <th class="px-6 py-5 font-bold text-right">Original Size</th>
-                    <th class="px-6 py-5 font-bold text-right">Processed</th>
-                    <th class="px-6 py-5 font-bold text-center">Status</th>
+                    <th class="px-6 py-4 font-bold">Library</th>
+                    <th class="px-6 py-4 font-bold">Title</th>
+                    <th class="px-6 py-4 font-bold">Video Codec</th>
+                    <th class="px-6 py-4 font-bold">Resolution</th>
+                    <th class="px-6 py-4 font-bold">Audio</th>
+                    <th class="px-6 py-4 font-bold">Subtitles</th>
+                    <th class="px-6 py-4 font-bold text-right">Original Size</th>
+                    <th class="px-6 py-4 font-bold text-right">Processed</th>
+                    <th class="px-6 py-4 font-bold text-center">Status</th>
+                </tr>
+                <tr class="bg-slate-900/40 border-b border-slate-700/50">
+                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="Filter..." onkeyup="filterTable(0)"></th>
+                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="Filter..." onkeyup="filterTable(1)"></th>
+                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="Filter..." onkeyup="filterTable(2)"></th>
+                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="Filter..." onkeyup="filterTable(3)"></th>
+                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="Filter..." onkeyup="filterTable(4)"></th>
+                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="Filter..." onkeyup="filterTable(5)"></th>
+                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="Size..." onkeyup="filterTable(6)"></th>
+                    <th class="px-4 py-2"></th> <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="Status..." onkeyup="filterTable(8)"></th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-slate-700/50">
@@ -103,7 +134,7 @@
                     </td>
                     <td class="px-6 py-4 text-center">
                         {% if file.status == 'completed' %}
-                            <span class="px-3 py-1 rounded bg-green-900/40 text-green-400 text-xs font-bold uppercase border border-green-800/50 shadow-sm shadow-green-900/20">Completed</span>
+                            <span class="px-3 py-1 rounded bg-green-900/40 text-green-400 text-xs font-bold uppercase border border-green-800/50">Completed</span>
                         {% elif file.status == 'processing' %}
                             <span class="px-3 py-1 rounded bg-blue-900/40 text-blue-400 text-xs font-bold uppercase border border-blue-800 animate-pulse">Processing</span>
                         {% elif file.status == 'failed' %}
@@ -113,15 +144,38 @@
                         {% endif %}
                     </td>
                 </tr>
-                {% else %}
-                <tr>
-                    <td colspan="9" class="px-6 py-20 text-center text-slate-500 italic bg-slate-900/10 text-base">
-                        No media files found. Click "Scan Libraries" to start monitoring.
-                    </td>
-                </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
 </div>
+
+<script>
+function filterTable(columnIndex) {
+    const table = document.getElementById("mediaTable");
+    const inputs = document.querySelectorAll(".filter-input");
+    const rows = table.getElementsByTagName("tbody")[0].getElementsByTagName("tr");
+
+    for (let i = 0; i < rows.length; i++) {
+        let shouldShow = true;
+        
+        // Comprobar cada input de filtro
+        inputs.forEach((input, idx) => {
+            const filterValue = input.value.toLowerCase();
+            if (filterValue) {
+                // Mapeo manual de índices de input a columnas de la tabla (ajustado por la fila de filtros)
+                // Usamos una lógica simple: si el input tiene valor, la celda correspondiente debe contenerlo
+                const cells = rows[i].getElementsByTagName("td");
+                const cellText = cells[idx].textContent.toLowerCase();
+                
+                if (cellText.indexOf(filterValue) === -1) {
+                    shouldShow = false;
+                }
+            }
+        });
+
+        rows[i].style.display = shouldShow ? "" : "none";
+    }
+}
+</script>
 {% endblock %}
