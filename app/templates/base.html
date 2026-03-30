@@ -1,34 +1,71 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <!-- Basic document configuration -->
     <meta charset="UTF-8">
+
+    <!-- Enables responsive behavior on mobile devices -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Browser tab title -->
     <title>Thresherr 🌾 - Media Converters</title>
+
+    <!-- Tailwind CSS loaded from CDN (utility-first CSS framework) -->
     <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- HTMX for dynamic, server-driven interactions without heavy JavaScript -->
     <script src="https://unpkg.com/htmx.org@1.9.6"></script>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
 
+<body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
+    <!-- 
+        MAIN HEADER
+        Contains the application branding and top navigation
+    -->
     <header class="bg-slate-900 border-b border-slate-700 shadow-md">
         <div class="container mx-auto px-6 py-4 flex items-center justify-between">
+            
+            <!-- Application logo and name -->
             <div class="flex items-center space-x-2">
                 <span class="text-3xl">🌾</span>
                 <span class="text-3xl font-bold text-amber-400">Thresherr</span>
             </div>
 
+            <!-- Primary navigation menu -->
             <nav class="flex items-center space-x-8 text-sm font-medium">
-                <a href="/" class="text-slate-200 hover:text-amber-400 transition-colors">Dashboard</a>
-                <a href="/profiles" class="text-slate-200 hover:text-amber-400 transition-colors">Profiles</a>
-                <a href="/libraries" class="text-slate-200 hover:text-amber-400 transition-colors">Libraries</a>
-                <a href="/queue" class="hover:text-amber-400 transition-colors">Queue</a>
+                <!-- Dashboard link -->
+                <a href="/" class="text-slate-200 hover:text-amber-400 transition-colors">
+                    Dashboard
+                </a>
+
+                <!-- Profiles section -->
+                <a href="/profiles" class="text-slate-200 hover:text-amber-400 transition-colors">
+                    Profiles
+                </a>
+
+                <!-- Libraries section -->
+                <a href="/libraries" class="text-slate-200 hover:text-amber-400 transition-colors">
+                    Libraries
+                </a>
+
+                <!-- Processing queue -->
+                <a href="/queue" class="hover:text-amber-400 transition-colors">
+                    Queue
+                </a>
             </nav>
         </div>
     </header>
 
+    <!-- 
+        MAIN CONTENT AREA
+        This block is filled by child templates using Jinja
+    -->
     <main class="container mx-auto px-6 py-10">
         {% block content %}
+        <!-- Page-specific content will be injected here -->
         {% endblock %}
     </main>
 
 </body>
 </html>
+``
