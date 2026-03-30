@@ -1,36 +1,99 @@
 {% extends "base.html" %}
+{# 
+    This template extends the base layout.
+    It displays the current processing queue, split into:
+    - Pending files
+    - Files currently being processed
+    - Recently completed files
+#}
 
 {% block content %}
+
+<!-- ========================= -->
+<!-- PAGE HEADER -->
+<!-- ========================= -->
 <div class="flex justify-between items-center mb-8">
-    <h1 class="text-2xl font-bold text-slate-200">Processing Queue</h1>
-    <a href="/scan" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors">
+
+    <!-- Page title -->
+    <h1 class="text-2xl font-bold text-slate-200">
+        Processing Queue
+    </h1>
+
+    {# 
+        Button that triggers a media scan.
+        Typically used to detect new files and enqueue them.
+    #}
+    <a 
+        href="/scan"
+        class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors"
+    >
         🔄 Scan for New Media
     </a>
 </div>
 
+<!-- ========================= -->
+<!-- QUEUE COLUMNS -->
+<!-- ========================= -->
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+    <!-- ========================= -->
+    <!-- PENDING FILES -->
+    <!-- ========================= -->
     <section class="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+
+        <!-- Section header with count -->
         <h2 class="text-amber-400 font-bold mb-4 flex items-center">
-            <span class="mr-2">⏳</span> Pending ({{ pending|length }})
+            <span class="mr-2">⏳</span>
+            Pending ({{ pending|length }})
         </h2>
+
+        <!-- List of pending files -->
         <div class="space-y-3">
             {% for file in pending %}
+                {# Single pending file card #}
                 <div class="bg-slate-900 p-3 rounded border border-slate-700">
-                    <p class="text-sm text-slate-200 font-medium truncate">{{ file.file_name }}</p>
-                    <p class="text-[10px] text-slate-500 italic truncate">{{ file.library.name }}</p>
+                    
+                    <!-- File name -->
+                    <p class="text-sm text-slate-200 font-medium truncate">
+                        {{ file.file_name }}
+                    </p>
+
+                    <!-- Library name (source of the file) -->
+                    <p class="text-[10px] text-slate-500 italic truncate">
+                        {{ file.library.name }}
+                    </p>
                 </div>
             {% endfor %}
         </div>
     </section>
 
+    <!-- ========================= -->
+    <!-- FILES IN PROGRESS -->
+    <!-- ========================= -->
     <section class="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+
+        <!-- Section header with count -->
         <h2 class="text-blue-400 font-bold mb-4 flex items-center">
-            <span class="mr-2">⚙️</span> In Progress ({{ processing|length }})
+            <span class="mr-2">⚙️</span>
+            In Progress ({{ processing|length }})
         </h2>
+
+        <!-- List of files currently being processed -->
         <div class="space-y-3">
             {% for file in processing %}
+                {# Single processing file card #}
                 <div class="bg-slate-900 p-3 rounded border border-blue-900 animate-pulse">
-                    <p class="text-sm text-blue-200 font-medium">{{ file.file_name }}</p>
+                    
+                    <!-- File name -->
+                    <p class="text-sm text-blue-200 font-medium">
+                        {{ file.file_name }}
+                    </p>
+
+                    {# 
+                        Visual progress bar.
+                        Width is static here (50%) and acts as a placeholder.
+                        Can be made dynamic later if real progress data exists.
+                    #}
                     <div class="w-full bg-slate-800 h-1.5 mt-2 rounded-full overflow-hidden">
                         <div class="bg-blue-500 h-full w-1/2"></div>
                     </div>
@@ -39,18 +102,36 @@
         </div>
     </section>
 
+    <!-- ========================= -->
+    <!-- RECENTLY COMPLETED FILES -->
+    <!-- ========================= -->
     <section class="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+
+        <!-- Section header -->
         <h2 class="text-green-400 font-bold mb-4 flex items-center">
-            <span class="mr-2">✅</span> Recently Completed
+            <span class="mr-2">✅</span>
+            Recently Completed
         </h2>
+
+        <!-- List of completed files -->
         <div class="space-y-3">
             {% for file in completed %}
+                {# Single completed file card #}
                 <div class="bg-slate-900 p-3 rounded border border-green-900/30 opacity-75">
-                    <p class="text-sm text-green-200 font-medium truncate">{{ file.file_name }}</p>
-                    <p class="text-[10px] text-slate-500">Finished</p>
+                    
+                    <!-- File name -->
+                    <p class="text-sm text-green-200 font-medium truncate">
+                        {{ file.file_name }}
+                    </p>
+
+                    <!-- Completion status -->
+                    <p class="text-[10px] text-slate-500">
+                        Finished
+                    </p>
                 </div>
             {% endfor %}
         </div>
     </section>
 </div>
+
 {% endblock %}
