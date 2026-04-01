@@ -1,10 +1,14 @@
+import os
 import time
 import json
 import subprocess
 import re
+import shutil
 from datetime import datetime
 
 from sqlalchemy.orm import Session
+
+from scanner import get_video_metadata
 
 from database import SessionLocal, engine
 import models
@@ -557,32 +561,239 @@ def build_job_plan(
 
 
 # -------------------------------------------------
-# Execution (NO-OP for now)
+# Execution
 # -------------------------------------------------
 
-def execute_job_plan(job_plan: dict) -> None:
+def execute_job_plan(job_plan: dict, input_path: str, temp_dir: str) -> str:
     """
-    Execute the job_plan.
+    Execute a real ffmpeg command based on job_plan (audio + subtitles only).
+    Video is always copied.
 
-    Phase 1:
-    - No real execution yet
-    - Placeholder for future audio/subtitle processing
+    - Works on a temp output file inside temp_dir (never touches the original).
+    - Uses absolute stream indices from ffprobe via '-map 0:<index>'.
+    - Applies default dispositions based on 'set_default'.
+    - Returns the temp output path.
+    - Raises RuntimeError on ffmpeg failure.
     """
-    return
+
+    os.makedirs(temp_dir, exist_ok=True)
+
+    # Always output MKV for safety/compatibility (EAC3 + subtitles are widely supported in MKV)
+    base = os.path.basename(input_path)
+    name, _ext = os.path.splitext(base)
+    output_path = os.path.join(temp_dir, f"{name}.thresherr.tmp.mkv")
+
+    cmd = ["ffmpeg", "-y", "-i", input_path]
+
+    # --- VIDEO: always copy ---
+    cmd += ["-map", "0:v", "-c:v", "copy"]
+
+    # Keep metadata + chapters (nice-to-have)
+    cmd += ["-map_metadata", "0", "-map_chapters", "0"]
+
+    # --- AUDIO: include only copy/transcode streams ---
+    audio_out_idx = 0
+    for s in job_plan.get("audio", {}).get("streams", []):
+        if s.get("action") not in ("copy", "transcode"):
+            continue
+
+        # Map by absolute stream index
+        cmd += ["-map", f"0:{s['index']}"]
+
+        # Codec per output audio index
+        if s["action"] == "copy":
+            cmd += [f"-c:a:{audio_out_idx}", "copy"]
+        else:
+            # target_codec must exist for transcode entries
+            cmd += [f"-c:a:{audio_out_idx}", s["target_codec"]]
+
+        # Default disposition
+        if s.get("set_default"):
+            cmd += [f"-disposition:a:{audio_out_idx}", "default"]
+        else:
+            cmd += [f"-disposition:a:{audio_out_idx}", "0"]
+
+        audio_out_idx += 1
+
+    # --- SUBTITLES: include only copy streams (no subtitle transcoding in your rules) ---
+    sub_out_idx = 0
+    for s in job_plan.get("subtitles", {}).get("streams", []):
+        if s.get("action") != "copy":
+            continue
+
+        cmd += ["-map", f"0:{s['index']}"]
+        cmd += [f"-c:s:{sub_out_idx}", "copy"]
+
+        if s.get("set_default"):
+            cmd += [f"-disposition:s:{sub_out_idx}", "default"]
+        else:
+            cmd += [f"-disposition:s:{sub_out_idx}", "0"]
+
+        sub_out_idx += 1
+
+    # Output path
+    cmd.append(output_path)
+
+    # Debug: print full command
+    print("[worker] ffmpeg cmd:", " ".join(cmd), flush=True)
+
+    # Run ffmpeg
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"ffmpeg failed: {result.stderr.strip()}")
+
+    return output_path
 
 
 # -------------------------------------------------
-# Verification (placeholder)
+# Verification
 # -------------------------------------------------
 
-def verify_result(media: models.MediaFile, profile: models.Profile) -> str:
+def verify_result(temp_output_path: str, job_plan: dict) -> str:
     """
-    Verify the result.
+    Robust verification of ffmpeg output against job_plan.
+    Focuses on existence and correctness, not strict identity.
+    """
 
-    Phase 1:
-    - Always return 'ok'
-    """
+    import subprocess, json
+
+    cmd = [
+        "ffprobe",
+        "-v", "error",
+        "-print_format", "json",
+        "-show_streams",
+        temp_output_path,
+    ]
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        return f"failed: ffprobe error: {result.stderr.strip()}"
+
+    try:
+        probe = json.loads(result.stdout)
+    except Exception as exc:
+        return f"failed: invalid ffprobe json: {exc}"
+
+    streams = probe.get("streams", [])
+
+    out_audio = []
+    out_subs = []
+
+    for s in streams:
+        stype = s.get("codec_type")
+        tags = s.get("tags", {}) or {}
+        disp = s.get("disposition", {}) or {}
+
+        entry = {
+            "codec": s.get("codec_name"),
+            "language": tags.get("language") or "und",
+            "default": bool(disp.get("default", 0)),
+        }
+
+        if stype == "audio":
+            out_audio.append(entry)
+        elif stype == "subtitle":
+            out_subs.append(entry)
+
+    # -------- AUDIO --------
+    planned_audio = [
+        s for s in job_plan["audio"]["streams"]
+        if s["action"] in ("copy", "transcode")
+    ]
+
+    if len(out_audio) != len(planned_audio):
+        return (
+            f"failed: audio count mismatch "
+            f"(expected {len(planned_audio)}, got {len(out_audio)})"
+        )
+
+    for plan in planned_audio:
+        expected_codec = (
+            plan["target_codec"]
+            if plan["action"] == "transcode"
+            else plan["codec"]
+        )
+
+        if not any(a["codec"] == expected_codec for a in out_audio):
+            return f"failed: expected audio codec not found ({expected_codec})"
+
+    if sum(a["default"] for a in out_audio) > 1:
+        return "failed: more than one audio default stream"
+
+    # -------- SUBTITLES --------
+    planned_subs = [
+        s for s in job_plan["subtitles"]["streams"]
+        if s["action"] == "copy"
+    ]
+
+    if len(out_subs) != len(planned_subs):
+        return (
+            f"failed: subtitle count mismatch "
+            f"(expected {len(planned_subs)}, got {len(out_subs)})"
+        )
+
+    for plan in planned_subs:
+        if not any(s["codec"] == plan["codec"] for s in out_subs):
+            return f"failed: expected subtitle codec not found ({plan['codec']})"
+
+    if sum(s["default"] for s in out_subs) > 1:
+        return "failed: more than one subtitle default stream"
+
     return "ok"
+
+# -------------------------------------------------
+# Safe replace of the original file
+# -------------------------------------------------
+
+def safe_replace_cross_fs(original_path: str, temp_path: str) -> None:
+    """
+    Safely replace original_path with temp_path when they are on different filesystems
+    (e.g. temp on SSD, media on HDD).
+
+    Strategy:
+    1. Copy temp_path to original_path + '.thresherr.new' (on destination filesystem)
+    2. fsync the copied file to ensure data is flushed to disk
+    3. Atomically rename '.thresherr.new' -> original_path (same filesystem)
+    4. Remove temp_path from temp filesystem
+
+    Guarantees:
+    - If anything fails, the original file is NOT touched
+    - Any partial '.thresherr.new' file is removed
+    """
+
+    if not os.path.exists(temp_path):
+        raise RuntimeError("temp output file does not exist")
+
+    if os.path.getsize(temp_path) == 0:
+        raise RuntimeError("temp output file is empty")
+
+    dst_tmp = original_path + ".thresherr.new"
+
+    try:
+        # 1. Copy temp file (SSD) -> destination temp file (HDD)
+        with open(temp_path, "rb") as src, open(dst_tmp, "wb") as dst:
+            shutil.copyfileobj(src, dst)
+
+            # 2. Ensure data is physically written to disk
+            dst.flush()
+            os.fsync(dst.fileno())
+
+        # 3. Atomic replace on destination filesystem (HDD)
+        os.replace(dst_tmp, original_path)
+
+        # 4. Remove temp file from SSD
+        os.remove(temp_path)
+
+    except Exception:
+        # Cleanup destination temp file if something went wrong
+        try:
+            if os.path.exists(dst_tmp):
+                os.remove(dst_tmp)
+        except Exception:
+            pass
+
+        # Re-raise so the worker marks the job as failed
+        raise
 
 
 # -------------------------------------------------
@@ -615,35 +826,37 @@ def run_worker():
             job.job_plan = json.dumps(job_plan, indent=2)
             db.commit()
 
-            execute_job_plan(job_plan)
+            
+            temp_output = execute_job_plan(job_plan, input_path=job.full_path, temp_dir=job.library.temp_path,)
             
             # Temporally
             print("[worker] audio plan:",[(s["index"], s["action"], s["language"], s["codec"], s.get("target_codec")) for s in job_plan["audio"]["streams"]], flush=True)
             
             print(
-                "[worker] subtitle plan:",
-                [
-                    (
-                        s["index"],
-                        s["action"],
-                        s["language"],
-                        s["codec"],
-                        "forced" if s.get("forced") else "full",
-                        "DEFAULT" if s.get("set_default") else ""
-                    )
-                    for s in job_plan["subtitles"]["streams"]
-                ],
-                flush=True,
-            )
+                "[worker] subtitle plan:",[(s["index"], s["action"], s["language"], s["codec"],"forced" if s.get("forced") else "full", "DEFAULT" if s.get("set_default") else "") for s in job_plan["subtitles"]["streams"]], flush=True,)
             #############
 
-            verification = verify_result(job, profile)
+            verification = verify_result(temp_output, job_plan)
+            
+            print(f"[worker] verification: {verification}", flush=True)
+            
             job.verification_result = verification
 
             if verification == "ok":
+                
+                safe_replace_cross_fs(job.full_path, temp_output)
+            
+                # Re-scan final file for UI metadata
+                final_meta = get_video_metadata(job.full_path)
+                job.video_codec = final_meta.get("video_codec")
+                job.resolution = final_meta.get("resolution")
+                job.audio_codec = final_meta.get("audio_codec")
+                job.audio_languages = final_meta.get("audio_languages")
+                job.subtitle_codec = final_meta.get("subtitle_codec")
+                job.subtitle_languages = final_meta.get("subtitle_languages")
+
                 job.status = "completed"
-                # Fase NO-OP: no transformamos el archivo, así que tamaño final = original
-                job.size_final = job.size_original
+                job.size_final = os.path.getsize(job.full_path)
             else:
                 job.status = "failed"
                 job.last_error = verification
