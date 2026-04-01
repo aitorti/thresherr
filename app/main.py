@@ -46,9 +46,11 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
             "processed_final_gb": round(total_done_final / (1024**3), 2),
             "savings_gb": round(savings / (1024**3), 2),
             "savings_pct": round(savings_pct, 1),
-            "media_files": media_files # Verify this variable name matches the template
+            "media_files": media_files
         }
     )
+
+# --- WORKGIN WITH PROFILES ---
 
 @app.get("/profiles", response_class=HTMLResponse)
 async def get_profiles(request: Request, db: Session = Depends(get_db)):
@@ -85,6 +87,8 @@ async def create_profile(
     db.commit()
     return RedirectResponse(url="/profiles", status_code=303)
 
+# --- WORKGIN WITH LIBRARIES ---
+
 @app.get("/libraries", response_class=HTMLResponse)
 async def get_libraries(request: Request, db: Session = Depends(get_db)):
     libraries = db.query(models.Library).all()
@@ -116,6 +120,7 @@ async def add_library(
 @app.get("/queue", response_class=HTMLResponse)
 async def get_queue(request: Request, db: Session = Depends(get_db)):
     pending = db.query(models.MediaFile).filter(models.MediaFile.status == "pending").all()
+    queued = db.query(models.MediaFile).filter(models.MediaFile.status == "queued").all()
     processing = db.query(models.MediaFile).filter(models.MediaFile.status == "processing").all()
     completed = db.query(models.MediaFile).filter(models.MediaFile.status == "completed").order_by(models.MediaFile.id.desc()).limit(10).all()
     
@@ -124,6 +129,7 @@ async def get_queue(request: Request, db: Session = Depends(get_db)):
         name="queue.html",
         context={
             "pending": pending,
+            "queued": queued,
             "processing": processing,
             "completed": completed
         }
@@ -134,7 +140,7 @@ async def manual_scan(db: Session = Depends(get_db)):
     new_count = scan_libraries(db)
     return RedirectResponse(url="/queue", status_code=303)
 
-# --- DELETE ROUTES ---
+# --- DELETE PROFILES & LIBRARIES ---
 
 @app.post("/profiles/{profile_id}/delete")
 async def delete_profile(profile_id: int, db: Session = Depends(get_db)):
@@ -151,3 +157,36 @@ async def delete_library(library_id: int, db: Session = Depends(get_db)):
         db.delete(library)
         db.commit()
     return RedirectResponse(url="/libraries", status_code=303)
+
+# --- WORKING WITH JOB QUEUE ---
+
+@app.post("/queue/{media_id}/enqueue")
+async def enqueue_media(media_id: int, db: Session = Depends(get_db)):
+    media = db.query(models.MediaFile).filter(models.MediaFile.id == media_id).first()
+    if media and media.status == "pending":
+        media.status = "queued"
+        db.commit()
+    return RedirectResponse(url="/queue", status_code=303)
+
+@app.post("/queue/{media_id}/dequeue")
+async def dequeue_media(media_id: int, db: Session = Depends(get_db)):
+    media = db.query(models.MediaFile).filter(models.MediaFile.id == media_id).first()
+    if media and media.status == "queued":
+        media.status = "pending"
+        db.commit()
+    return RedirectResponse(url="/queue", status_code=303)
+
+@app.post("/queue/{media_id}/rescan")
+async def rescan_media(media_id: int, db: Session = Depends(get_db)):
+    media = (db.query(models.MediaFile).filter(models.MediaFile.id == media_id).first())
+    if media and media.status == "completed":
+        media.status = "pending"
+        media.started_at = None
+        media.finished_at = None
+        media.job_plan = None
+        media.verification_result = None
+        media.last_error = None
+        db.commit()
+
+    return RedirectResponse(url="/queue", status_code=303)
+

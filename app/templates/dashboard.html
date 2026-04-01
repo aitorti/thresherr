@@ -248,17 +248,21 @@
 
                     <!-- Original file size (MB) -->
                     <td class="px-6 py-4 text-right text-slate-200 font-mono">
-                        {{ (file.size_original / 1048576) | round(0) | int }} MB
+                        {% if file.size_original is not none %}
+                          {{ (file.size_original / 1048576) | round(0) | int }} MB
+                        {% else %}
+                          -
+                        {% endif %}
                     </td>
 
                     <!-- Processed file size (only if completed) -->
                     <td class="px-6 py-4 text-right text-slate-300 font-mono">
-                        {% if file.status == 'completed' %}
-                            <span class="text-green-400">
-                                {{ (file.size_final / 1048576) | round(0) | int }} MB
-                            </span>
+                        {% if file.status == 'completed' and file.size_final is not none %}
+                          <span class="text-green-400">
+                            {{ (file.size_final / 1048576) | round(0) | int }} MB
+                          </span>
                         {% else %}
-                            <span class="text-slate-600">-</span>
+                          <span class="text-slate-600">-</span>
                         {% endif %}
                     </td>
 

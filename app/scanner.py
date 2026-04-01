@@ -6,157 +6,217 @@ from sqlalchemy.orm import Session
 import models
 
 # Common video extensions
-VIDEO_EXTENSIONS = ('.mkv', '.mp4', '.avi', '.mov', '.m4v')
+VIDEO_EXTENSIONS = (".mkv", ".mp4", ".avi", ".mov", ".m4v", ".webm")
 
-def clean_stream_title(title):
+# -------------------------------------------------
+# Helpers (scanner-only, UI oriented)
+# -------------------------------------------------
+
+def clean_stream_title(title: str) -> str:
     """
     Removes advertising and unwanted tags from stream titles.
-    Examples: "English [byTony]" -> "English"
+    Used ONLY for better language detection and UI display.
     """
     if not title:
         return ""
-    
-    # List of patterns to remove (websites, usernames, etc.)
+
     spam_patterns = [
-        r"\[.*?\]",          # Anything inside square brackets: [tony32]
-        r"\(.*?\)",          # Anything inside parentheses: (tusdescargas.org)
-        r"www\..*?\.[a-z]+", # Website URLs
-        r"@[a-zA-Z0-9_]+",   # Telegram/Social media tags
-        r"by\w+",            # "byTony", "byUser"
+        r"\[.*?\]",           # [bySomeone]
+        r"\(.*?\)",           # (www.example.com)
+        r"www\..*?\.[a-z]+",  # URLs
+        r"@[\w_]+",           # @username
+        r"\bby\s+\w+\b",      # by Tony
     ]
-    
-    clean_title = title
+
+    clean = title
     for pattern in spam_patterns:
-        clean_title = re.sub(pattern, "", clean_title, flags=re.IGNORECASE)
-    
-    # Remove extra spaces left after cleaning
-    return clean_title.strip()
+        clean = re.sub(pattern, "", clean, flags=re.IGNORECASE)
 
-def get_resolution_name(height):
-    """
-    Converts vertical pixels to common resolution names (e.g., 1080p).
-    """
-    if not height: 
-        return "Unknown"
-    
-    if height >= 2160: return "4K"
-    if height >= 1440: return "1440p"
-    if height >= 1080: return "1080p"
-    if height >= 720:  return "720p"
-    if height >= 480:  return "480p"
-    return f"{height}p"
+    return clean.strip().lower()
 
-def get_refined_language(stream_tags):
+
+def refine_spanish_language(tags: dict) -> str:
     """
-    Checks language and title tags to distinguish between Spanish (Castellano) and Latino.
-    If 'lat', 'latin', or 'latino' is found in the title or lang tag, returns 'latam'.
+    Distinguish between:
+    - spa  -> Castellano
+    - latam -> Spanish Latin American
+
+    Logic:
+    - Read both 'language' and 'title' tags
+    - If any reference to lat/latin/latino/latam appears -> latam
+    - Otherwise -> spa
     """
-    # Get language and title, defaulting to empty strings if not present
-    lang = stream_tags.get("language", "und").lower()
-    title = clean_stream_title(stream_tags.get("title", "")).lower()
-    
-    # Keywords that indicate Latin American Spanish
-    latam_keywords = ["lat", "latin", "latino", "america", "lati"]
-    
-    # Check if the language is marked as Spanish
-    if lang in ["spa", "es", "esp"]:
-        # If the title contains any latam keyword, we re-tag it as latam
-        if any(key in title for key in latam_keywords):
+
+    lang = (tags.get("language") or "").lower()
+    title = clean_stream_title(tags.get("title", ""))
+
+    latam_keywords = [
+        "lat",
+        "latin",
+        "latino",
+        "latam",
+        "latinoamericano",
+        "américa",
+        "americano",
+    ]
+
+    # If language tag explicitly says spa / es
+    if lang in {"spa", "es", "esp"}:
+        if any(keyword in title for keyword in latam_keywords):
             return "latam"
         return "spa"
-    
-    # Also check if the language tag itself is a latam keyword
-    if any(key == lang for key in latam_keywords):
-        return "latam"
-        
-    return lang
 
-def get_video_metadata(file_path):
+    # If language tag itself hints latam
+    if any(keyword == lang for keyword in latam_keywords):
+        return "latam"
+
+    # Fallback: return original language
+    return lang if lang else "und"
+
+
+def get_resolution_name(height: int | None) -> str:
+    if not height:
+        return "Unknown"
+    if height >= 2160:
+        return "2160p"
+    if height >= 1440:
+        return "1440p"
+    if height >= 1080:
+        return "1080p"
+    if height >= 720:
+        return "720p"
+    if height >= 480:
+        return "480p"
+    return f"{height}p"
+
+
+# -------------------------------------------------
+# Metadata extraction (SUMMARY ONLY)
+# -------------------------------------------------
+
+def get_video_metadata(file_path: str) -> dict:
     """
-    Uses ffprobe to extract technical details and refines language tags.
+    Uses ffprobe to extract *summary* metadata for UI.
+    This data MUST NOT be trusted by the worker.
     """
+
     cmd = [
-        "ffprobe", "-v", "quiet", "-print_format", "json",
-        "-show_streams", "-show_format", file_path
+        "ffprobe",
+        "-v", "quiet",
+        "-print_format", "json",
+        "-show_streams",
+        "-show_format",
+        file_path,
     ]
+
     try:
-        # Run ffprobe with a 15-second timeout
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+
         data = json.loads(result.stdout)
-        
-        info = {
-            "v_codec": None, "res": None, 
-            "a_codec": set(), "a_langs": set(),
-            "s_codec": set(), "s_langs": set()
-        }
-        
+
+        video_codec = None
+        resolution = None
+        audio_codecs = set()
+        audio_languages = set()
+        subtitle_codecs = set()
+        subtitle_languages = set()
+
         for stream in data.get("streams", []):
             stype = stream.get("codec_type")
             codec = stream.get("codec_name", "unknown")
             tags = stream.get("tags", {})
-            
-            # Apply the Latino detection logic
-            refined_lang = get_refined_language(tags)
 
-            if stype == "video" and not info["v_codec"]:
-                info["v_codec"] = codec
-                height = stream.get("height")
-                info["res"] = get_resolution_name(height)
+            if stype == "video" and not video_codec:
+                video_codec = codec
+                resolution = get_resolution_name(stream.get("height"))
+
             elif stype == "audio":
-                info["a_codec"].add(codec)
-                info["a_langs"].add(refined_lang)
+                audio_codecs.add(codec)
+                lang = refine_spanish_language(tags)
+                audio_languages.add(lang)
+
             elif stype == "subtitle":
-                info["s_codec"].add(codec)
-                info["s_langs"].add(refined_lang)
+                subtitle_codecs.add(codec)
+                lang = refine_spanish_language(tags)
+                subtitle_languages.add(lang)
 
         return {
-            "video_codec": info["v_codec"],
-            "resolution": info["res"],
-            "audio_codec": ", ".join(info["a_codec"]) if info["a_codec"] else "N/A",
-            "audio_languages": ", ".join(info["a_langs"]) if info["a_langs"] else "und",
-            "subtitle_codec": ", ".join(info["s_codec"]) if info["s_codec"] else None,
-            "subtitle_languages": ", ".join(info["s_langs"]) if info["s_langs"] else None
-        }
-    except Exception as e:
-        print(f"Error probing {file_path}: {e}")
-        return {
-            "video_codec": "unknown", "resolution": "---",
-            "audio_codec": "n/a", "audio_languages": "und"
+            "video_codec": video_codec,
+            "resolution": resolution,
+            "audio_codec": ", ".join(sorted(audio_codecs)) if audio_codecs else None,
+            "audio_languages": ", ".join(sorted(audio_languages)) if audio_languages else None,
+            "subtitle_codec": ", ".join(sorted(subtitle_codecs)) if subtitle_codecs else None,
+            "subtitle_languages": ", ".join(sorted(subtitle_languages)) if subtitle_languages else None,
         }
 
-def scan_libraries(db: Session):
+    except Exception as exc:
+        print(f"[scanner] ffprobe failed for {file_path}: {exc}")
+        return {
+            "video_codec": None,
+            "resolution": None,
+            "audio_codec": None,
+            "audio_languages": None,
+            "subtitle_codec": None,
+            "subtitle_languages": None,
+        }
+
+
+# -------------------------------------------------
+# Library scan
+# -------------------------------------------------
+
+def scan_libraries(db: Session) -> int:
     """
-    Scans media paths and populates the database with metadata.
+    Discover media files and register them in the database.
+
+    IMPORTANT:
+    - This function ONLY discovers files
+    - Status is always set to 'pending'
+    - No processing decisions are made here
     """
+
     libraries = db.query(models.Library).all()
     new_files_count = 0
 
-    for lib in libraries:
-        if not os.path.exists(lib.media_path):
+    for library in libraries:
+        if not os.path.exists(library.media_path):
             continue
 
-        for root, dirs, files in os.walk(lib.media_path):
+        for root, _, files in os.walk(library.media_path):
             for file in files:
-                if file.lower().endswith(VIDEO_EXTENSIONS):
-                    full_path = os.path.join(root, file)
-                    
-                    # Check if file is already in the database
-                    exists = db.query(models.MediaFile).filter(models.MediaFile.full_path == full_path).first()
-                    
-                    if not exists:
-                        # Extract metadata with ffprobe and Latino check
-                        meta = get_video_metadata(full_path)
-                        
-                        new_media = models.MediaFile(
-                            file_name=file,
-                            full_path=full_path,
-                            library_id=lib.id,
-                            status="pending",
-                            size_original=os.path.getsize(full_path),
-                            **meta
-                        )
-                        db.add(new_media)
-                        new_files_count += 1
-    
-    db.commit()
+                if not file.lower().endswith(VIDEO_EXTENSIONS):
+                    continue
+
+                full_path = os.path.join(root, file)
+
+                exists = (
+                    db.query(models.MediaFile)
+                    .filter(models.MediaFile.full_path == full_path)
+                    .first()
+                )
+
+                if exists:
+                    continue
+
+                meta = get_video_metadata(full_path)
+
+                media = models.MediaFile(
+                    file_name=file,
+                    full_path=full_path,
+                    library_id=library.id,
+                    status="pending",
+                    size_original=os.path.getsize(full_path),
+                    **meta,
+                )
+
+                db.add(media)
+                new_files_count += 1
+
+        db.commit()
+
     return new_files_count
