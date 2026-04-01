@@ -3,11 +3,13 @@
     This template extends the base layout.
     It displays the current processing queue, split into:
     - Pending files
+    - Queued files
     - Files currently being processed
     - Recently completed files
 #}
 
 {% block content %}
+<!-- <meta http-equiv="refresh" content="5"> -->
 
 <!-- ========================= -->
 <!-- PAGE HEADER -->
@@ -48,23 +50,68 @@
         </h2>
 
         <!-- List of pending files -->
-        <div class="space-y-3">
-            {% for file in pending %}
-                {# Single pending file card #}
-                <div class="bg-slate-900 p-3 rounded border border-slate-700">
-                    
-                    <!-- File name -->
-                    <p class="text-sm text-slate-200 font-medium truncate">
-                        {{ file.file_name }}
-                    </p>
+		<div class="space-y-3">
+			{% for file in pending %}
+				{# Single pending file card #}
+				<div class="bg-slate-900 p-3 rounded border border-slate-700 flex justify-between items-center">
 
-                    <!-- Library name (source of the file) -->
-                    <p class="text-[10px] text-slate-500 italic truncate">
-                        {{ file.library.name }}
-                    </p>
-                </div>
-            {% endfor %}
-        </div>
+					<!-- File info -->
+					<div class="min-w-0">
+						<!-- File name -->
+						<p class="text-sm text-slate-200 font-medium truncate">
+							{{ file.file_name }}
+						</p>
+						<!-- Library name (source of the file) -->
+						<p class="text-[10px] text-slate-500 italic truncate">
+							{{ file.library.name }}
+						</p>
+					</div>
+
+					<!-- Actions -->
+					<div class="flex items-center space-x-2 ml-4">
+
+						<!-- PLAY: pending -> queued -->
+						<form method="post" action="/queue/{{ file.id }}/enqueue">
+							<button
+								type="submit"
+								class="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded"
+								title="Queue file for processing"
+							>
+								▶️
+							</button>
+						</form>
+					</div>
+				</div>
+			{% endfor %}
+		</div>
+    </section>
+
+    <!-- ========================= -->
+    <!-- FILES QUEUED -->
+    <!-- ========================= -->
+    <section class="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+        <h2 class="text-yellow-400 font-bold mb-4">
+            Queued ({{ queued|length }})
+        </h2>
+        
+        {% for file in queued %}
+            {# Single queued file card #}
+            <div class="bg-slate-900 p-3 rounded border border-yellow-700 flex justify-between items-center">
+                <p class="text-sm text-yellow-200 truncate">
+                    {{ file.file_name }}
+                </p>
+            
+                <form method="post" action="/queue/{{ file.id }}/dequeue">
+                    <button
+                        type="submit"
+                        class="bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded"
+                        title="Remove from queue"
+                    >
+                        ⏹
+                    </button>
+                </form>
+            </div>
+        {% endfor %}
     </section>
 
     <!-- ========================= -->
@@ -105,7 +152,7 @@
     <!-- ========================= -->
     <!-- RECENTLY COMPLETED FILES -->
     <!-- ========================= -->
-    <section class="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+    <section class="bg-slate-800/50 p-4 rounded-xl border border-slate-700 lg:col-span-3">
 
         <!-- Section header -->
         <h2 class="text-green-400 font-bold mb-4 flex items-center">
@@ -117,17 +164,27 @@
         <div class="space-y-3">
             {% for file in completed %}
                 {# Single completed file card #}
-                <div class="bg-slate-900 p-3 rounded border border-green-900/30 opacity-75">
+                <div class="bg-slate-900 p-3 rounded border border-green-900/30 opacity-75 flex justify-between items-center">
+                    <div class="min-w-0">
+                        <!-- File name -->
+                        <p class="text-sm text-green-200 font-medium truncate">
+                            {{ file.file_name }}
+                        </p>
+                    </div>
                     
-                    <!-- File name -->
-                    <p class="text-sm text-green-200 font-medium truncate">
-                        {{ file.file_name }}
-                    </p>
-
-                    <!-- Completion status -->
-                    <p class="text-[10px] text-slate-500">
-                        Finished
-                    </p>
+                    <!-- Actions -->
+					<div class="flex items-center space-x-2 ml-4">
+					    <!-- RE-SCAN: completed -> pending -->
+                        <form method="post" action="/queue/{{ file.id }}/rescan">
+                            <button
+                                type="submit"
+                                class="bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs px-2 py-1 rounded"
+                                title="Re-scan file"
+                            >
+                                🔄
+                            </button>
+                        </form>
+                    </div>
                 </div>
             {% endfor %}
         </div>
