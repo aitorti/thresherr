@@ -44,125 +44,6 @@
     }
 </style>
 
-<!-- Global statistics header -->
-<div class="mb-8">
-    <h1 class="text-3xl font-bold text-slate-100 tracking-tight">
-        Global Statistics
-    </h1>
-    <p class="text-slate-400 text-base">
-        Overview of space savings across all libraries.
-    </p>
-</div>
-
-<!-- Summary cards showing aggregated storage metrics -->
-<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-    <!-- Total monitored size -->
-    <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
-        <p class="text-slate-400 text-xs font-bold uppercase tracking-widest">
-            Total Monitored
-        </p>
-        <p class="text-2xl font-bold text-slate-100 mt-2">
-            {{ total_gb }} GB
-        </p>
-    </div>
-
-    <!-- Size before any processing -->
-    <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg font-bold">
-        <p class="text-amber-400 text-xs font-bold uppercase tracking-widest">
-            Before Processing
-        </p>
-        <p class="text-2xl font-bold text-slate-100 mt-2">
-            {{ processed_orig_gb }} GB
-        </p>
-    </div>
-
-    <!-- Size after processing (completed jobs only) -->
-    <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg border-l-4 border-l-green-500">
-        <p class="text-green-400 text-xs font-bold uppercase tracking-widest">
-            After Processing
-        </p>
-        <p class="text-2xl font-bold text-slate-100 mt-2">
-            {{ processed_final_gb }} GB
-        </p>
-    </div>
-
-    <!-- Total savings in absolute value and percentage -->
-    <div class="bg-blue-900/20 p-6 rounded-xl border border-blue-500/50 shadow-lg font-bold">
-        <p class="text-blue-300 text-xs font-bold uppercase tracking-widest">
-            Total Savings
-        </p>
-        <div class="flex items-baseline gap-2">
-            <p class="text-2xl font-bold text-blue-100 mt-2">
-                {{ savings_gb }} GB
-            </p>
-            <p class="text-blue-400 text-sm">
-                ({{ savings_pct }}%)
-            </p>
-        </div>
-    </div>
-</div>
-
-<!-- Active task section -->
-<div class="mb-10">
-    {% if active_task %}
-    <!-- Display current processing task with progress bar -->
-    <div class="bg-slate-800/60 rounded-2xl border border-slate-700 overflow-hidden shadow-2xl">
-        <div class="p-6">
-            <!-- Task header with animated indicator -->
-            <div class="flex justify-between items-center mb-4">
-                <div class="flex items-center gap-3">
-                    <!-- Animated "working" indicator -->
-                    <span class="flex h-3 w-3 relative">
-                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                        <span class="relative inline-flex rounded-full h-3 w-3 bg-blue-500"></span>
-                    </span>
-                    <h3 class="text-slate-200 font-semibold italic text-lg">
-                        Working on: {{ active_task.file_name }}
-                    </h3>
-                </div>
-
-                <!-- Numeric progress percentage -->
-                <span class="text-blue-400 font-mono text-sm font-bold bg-blue-900/30 px-3 py-1 rounded-full border border-blue-800/50">
-                    {{ active_task.progress }}%
-                </span>
-            </div>
-            
-            <!-- Progress bar -->
-            <div class="w-full bg-slate-900 rounded-full h-12 p-1 border border-slate-700 relative overflow-hidden">
-                <!-- Filled part of the progress bar -->
-                <div
-                    class="bg-blue-600 h-full rounded-full transition-all duration-500 flex items-center justify-center relative z-10 progress-shimmer"
-                    style="width: {{ active_task.progress }}%;">
-                </div>
-
-                <!-- Centered progress label -->
-                <div class="absolute inset-0 flex items-center justify-center z-20">
-                    <span class="text-slate-100 font-medium text-sm tracking-wide drop-shadow-md">
-                        Transcoding {{ active_task.current_action }}...
-                    </span>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    {% else %}
-    <!-- Empty state shown when no task is currently running -->
-    <div class="bg-slate-800/40 p-8 rounded-2xl border border-dashed border-slate-700 text-center">
-        <h2 class="text-sm font-semibold text-slate-400 mb-5 uppercase tracking-tighter">
-            Ready to optimize more?
-        </h2>
-        <div class="flex justify-center gap-6">
-            <a href="/scan" class="bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold py-2.5 px-8 rounded-lg transition-all transform active:scale-95 text-xs uppercase shadow-lg shadow-amber-500/20">
-                Scan Libraries
-            </a>
-            <a href="/queue" class="bg-slate-700 hover:bg-slate-600 text-slate-200 font-bold py-2.5 px-8 rounded-lg transition-all transform active:scale-95 text-xs uppercase">
-                View Queue
-            </a>
-        </div>
-    </div>
-    {% endif %}
-</div>
-
 <!-- Media files table -->
 <div class="bg-slate-800 rounded-xl border border-slate-700 shadow-2xl overflow-hidden mb-12">
     <!-- Table header -->
@@ -280,9 +161,13 @@
                             <span class="px-3 py-1 rounded bg-red-900/40 text-red-400 text-xs font-bold uppercase border border-red-800/50">
                                 Failed
                             </span>
+                        {% elif file.status == 'queued' %}
+                            <span class="px-3 py-1 rounded bg-red-900/40 text-red-400 text-xs font-bold uppercase border border-red-800/50">
+                                Queued
+                            </span>
                         {% else %}
                             <span class="px-3 py-1 rounded bg-slate-700/60 text-slate-400 text-xs font-bold uppercase border border-slate-600/50">
-                                Queued
+                                Pending
                             </span>
                         {% endif %}
                     </td>
