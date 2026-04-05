@@ -51,9 +51,22 @@
         <h2 class="font-bold text-slate-200 text-base uppercase tracking-wider flex items-center">
             <span class="mr-3 text-xl">📁</span> Monitored Media Files
         </h2>
-        <span class="text-xs text-slate-400 bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-700 font-mono">
+
+        <div class="flex items-center gap-3">
+          <!-- Scan for new media -->
+          <a
+            href="/scan"
+            class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+            title="Scan libraries for new media files"
+          >
+            🔍 Scan for New Media
+          </a>
+        
+          <!-- Total files counter -->
+          <span class="text-xs text-slate-400 bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-700 font-mono">
             Total Files: {{ media_files|length }}
-        </span>
+          </span>
+        </div>
     </div>
 
     <!-- Scrollable table container -->
@@ -70,6 +83,7 @@
                     <th class="px-6 py-4 font-bold">Subtitles</th>
                     <th class="px-6 py-4 font-bold text-right">Original Size</th>
                     <th class="px-6 py-4 font-bold text-right">Processed</th>
+                    <th class="px-6 py-4 font-bold text-right">Actions</th>
                     <th class="px-6 py-4 font-bold text-center">Status</th>
                 </tr>
 
@@ -82,6 +96,7 @@
                     <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="Filter..." onkeyup="filterTable(4)"></th>
                     <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="Filter..." onkeyup="filterTable(5)"></th>
                     <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="Size..." onkeyup="filterTable(6)"></th>
+                    <th class="px-4 py-2"></th>
                     <th class="px-4 py-2"></th>
                     <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="Status..." onkeyup="filterTable(8)"></th>
                 </tr>
@@ -145,6 +160,50 @@
                         {% else %}
                           <span class="text-slate-600">-</span>
                         {% endif %}
+                    </td>
+                    
+                    <!-- ACTIONS -->
+                    <td class="px-6 py-4 text-center">
+                      {% if file.status == 'pending' %}
+                        <!-- Enqueue -->
+                        <form method="post" action="/queue/{{ file.id }}/enqueue">
+                          <button
+                            type="submit"
+                            class="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded"
+                            title="Queue file for processing"
+                          >
+                            ▶️
+                          </button>
+                        </form>
+                    
+                      {% elif file.status == 'queued' %}
+                        <!-- Dequeue -->
+                        <form method="post" action="/queue/{{ file.id }}/dequeue">
+                          <button
+                            type="submit"
+                            class="bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded"
+                            title="Remove from queue"
+                          >
+                            ⏹
+                          </button>
+                        </form>
+                    
+                      {% elif file.status == 'completed' %}
+                        <!-- Re-scan -->
+                        <form method="post" action="/queue/{{ file.id }}/rescan">
+                          <button
+                            type="submit"
+                            class="bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs px-2 py-1 rounded"
+                            title="Re-scan file"
+                          >
+                            🔄
+                          </button>
+                        </form>
+                    
+                      {% else %}
+                        <!-- processing or unknown: no action -->
+                        <span class="text-slate-600 text-xs">—</span>
+                      {% endif %}
                     </td>
 
                     <!-- File processing status badge -->

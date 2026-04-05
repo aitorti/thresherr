@@ -165,9 +165,9 @@ async def get_queue(request: Request, db: Session = Depends(get_db)):
     )
 
 @app.get("/scan")
-async def manual_scan(db: Session = Depends(get_db)):
+async def manual_scan(request: Request, db: Session = Depends(get_db)):
     new_count = scan_libraries(db)
-    return RedirectResponse(url="/queue", status_code=303)
+    return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303,)
 
 # --- DELETE PROFILES & LIBRARIES ---
 
@@ -190,23 +190,25 @@ async def delete_library(library_id: int, db: Session = Depends(get_db)):
 # --- WORKING WITH JOB QUEUE ---
 
 @app.post("/queue/{media_id}/enqueue")
-async def enqueue_media(media_id: int, db: Session = Depends(get_db)):
+async def enqueue_media(media_id: int, request: Request, db: Session = Depends(get_db)):
     media = db.query(models.MediaFile).filter(models.MediaFile.id == media_id).first()
     if media and media.status == "pending":
         media.status = "queued"
         db.commit()
-    return RedirectResponse(url="/queue", status_code=303)
+
+    return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303,)
+
 
 @app.post("/queue/{media_id}/dequeue")
-async def dequeue_media(media_id: int, db: Session = Depends(get_db)):
+async def dequeue_media(media_id: int, request: Request, db: Session = Depends(get_db)):
     media = db.query(models.MediaFile).filter(models.MediaFile.id == media_id).first()
     if media and media.status == "queued":
         media.status = "pending"
         db.commit()
-    return RedirectResponse(url="/queue", status_code=303)
+    return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303,)
 
 @app.post("/queue/{media_id}/rescan")
-async def rescan_media(media_id: int, db: Session = Depends(get_db)):
+async def rescan_media(media_id: int, request: Request, db: Session = Depends(get_db)):
     media = (db.query(models.MediaFile).filter(models.MediaFile.id == media_id).first())
     if media and media.status == "completed":
         media.status = "pending"
@@ -217,5 +219,4 @@ async def rescan_media(media_id: int, db: Session = Depends(get_db)):
         media.last_error = None
         db.commit()
 
-    return RedirectResponse(url="/queue", status_code=303)
-
+    return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303,)
