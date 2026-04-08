@@ -337,3 +337,34 @@ async def rescan_library(
         url=request.headers.get("referer", "/"),
         status_code=303,
     )
+
+# --- DASHBOARD POLLING API ---
+
+@app.get("/api/media/status")
+async def get_media_status(db: Session = Depends(get_db)):
+    """
+    Lightweight endpoint used by the dashboard polling logic.
+    Returns the current status of all media files.
+    """
+    results = (
+        db.query(models.MediaFile.id, models.MediaFile.status)
+        .all()
+    )
+
+    return [
+        {
+            "id": media_id,
+            "status": status,
+        }
+        for media_id, status in results
+    ]
+
+# --- DASHBOARD STATS POLLING API ---
+
+@app.get("/api/dashboard/stats")
+async def get_dashboard_stats(db: Session = Depends(get_db)):
+    """
+    Lightweight endpoint used by the dashboard polling logic.
+    Returns global storage statistics as JSON.
+    """
+    return compute_global_stats(db)
