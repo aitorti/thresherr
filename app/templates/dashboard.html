@@ -105,7 +105,8 @@
             <!-- Table body populated dynamically via Jinja -->
             <tbody class="divide-y divide-slate-700/50">
                 {% for file in media_files %}
-                <tr class="hover:bg-slate-700/20 transition-colors text-sm">
+                
+                <tr class="hover:bg-slate-700/20 transition-colors text-sm" data-media-id="{{ file.id }}">
                     <td class="px-6 py-4 text-slate-500 font-mono italic">
                         {{ file.library.name }}
                     </td>
@@ -114,17 +115,17 @@
                         {{ file.file_name }}
                     </td>
 
-                    <td class="px-6 py-4">
+                    <td class="px-6 py-4" data-field="video_codec">
                         <span class="bg-slate-900 text-amber-500/90 px-2.5 py-1 rounded-md border border-slate-700 font-mono text-xs font-bold">
                             {{ file.video_codec|upper if file.video_codec else '???' }}
                         </span>
                     </td>
 
-                    <td class="px-6 py-4 text-slate-400 font-mono">
+                    <td class="px-6 py-4 text-slate-400 font-mono" data-field="resolution">
                         {{ file.resolution if file.resolution else '---' }}
                     </td>
 
-                    <td class="px-6 py-4">
+                    <td class="px-6 py-4" data-field="audio">
                         <div class="text-blue-400 font-medium uppercase text-xs">
                             {{ file.audio_codec if file.audio_codec else 'None' }}
                         </div>
@@ -133,7 +134,7 @@
                         </div>
                     </td>
 
-                    <td class="px-6 py-4">
+                    <td class="px-6 py-4"data-field="subtitles">
                         <div class="text-green-400 font-medium uppercase text-xs">
                             {{ file.subtitle_codec if file.subtitle_codec else 'None' }}
                         </div>
@@ -152,7 +153,7 @@
                     </td>
 
                     <!-- Processed file size (only if completed) -->
-                    <td class="px-6 py-4 text-right text-slate-300 font-mono">
+                    <td class="px-6 py-4 text-right text-slate-300 font-mono" data-field="size_final">
                         {% if file.status == 'completed' and file.size_final is not none %}
                           <span class="text-green-400">
                             {{ (file.size_final / 1048576) | round(0) | int }} MB
@@ -163,7 +164,8 @@
                     </td>
                     
                     <!-- ACTIONS -->
-                    <td class="px-6 py-4 text-center">
+                    
+                    <td class="px-6 py-4 text-center" data-role="actions">
                       {% if file.status == 'pending' %}
                         <!-- Enqueue -->
                         <form method="post" action="/queue/{{ file.id }}/enqueue">
@@ -207,7 +209,7 @@
                     </td>
 
                     <!-- File processing status badge -->
-                    <td class="px-6 py-4 text-center">
+                    <td class="px-6 py-4 text-center" data-role="status" data-current-status="{{ file.status }}">
                         {% if file.status == 'completed' %}
                             <span class="px-3 py-1 rounded bg-green-900/40 text-green-400 text-xs font-bold uppercase border border-green-800/50">
                                 Completed
@@ -273,4 +275,181 @@
         }
     }
 </script>
+
+<script>
+  /**
+   * Dashboard polling logic
+   * Periodically updates media file statuses without reloading the page
+   */
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const POLL_INTERVAL_MS = 5000; // 5 seconds
+
+    function updateStatusBadge(cell, status) {
+      const baseClasses = "px-3 py-1 rounded text-xs font-bold uppercase border";
+
+      const statusMap = {
+        completed: `${baseClasses} bg-green-900/40 text-green-400 border-green-800/50`,
+        processing: `${baseClasses} bg-blue-900/40 text-blue-400 border-blue-800 animate-pulse`,
+        failed: `${baseClasses} bg-red-900/40 text-red-400 border-red-800/50`,
+        queued: `${baseClasses} bg-slate-700/60 text-slate-400 border-slate-600/50`,
+        pending: `${baseClasses} bg-slate-700/60 text-slate-400 border-slate-600/50`,
+      };
+
+      cell.innerHTML = `<span class="${statusMap[status] || statusMap.pending}">
+        ${status}
+      </span>`;
+    }
+
+    function updateActions(cell, status, mediaId) {
+      if (status === "pending") {
+        cell.innerHTML = `
+          <form method="post" action="/queue/${mediaId}/enqueue">
+            <button class="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded" title="Queue file">
+              ▶️
+            </button>
+          </form>`;
+      } else if (status === "queued") {
+        cell.innerHTML = `
+          <form method="post" action="/queue/${mediaId}/dequeue">
+            <button class="bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded" title="Remove from queue">
+              ⏹
+            </button>
+          </form>`;
+      } else if (status === "completed") {
+        cell.innerHTML = `
+          <form method="post" action="/queue/${mediaId}/rescan">
+            <button class="bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs px-2 py-1 rounded" title="Re-scan file">
+              🔄
+            </button>
+          </form>`;
+      } else {
+        cell.innerHTML = `<span class="text-slate-600 text-xs">—</span>`;
+      }
+    }
+
+    async function pollStatuses() {
+      try {
+        const response = await fetch("/api/media/status");
+        const data = await response.json();
+
+        data.forEach(({ id, status }) => {
+          const row = document.querySelector(`tr[data-media-id="${id}"]`);
+          if (!row) return;
+
+          const actionCell = row.querySelector("[data-role='actions']");
+          const statusCell = row.querySelector("[data-role='status']");
+
+        const previousStatus = statusCell.dataset.currentStatus;
+        
+        if (!previousStatus || previousStatus !== status) {
+          statusCell.dataset.currentStatus = status;
+          updateStatusBadge(statusCell, status);
+          updateActions(actionCell, status, id);
+        
+          // Only refresh metadata when processing is completed
+          if (previousStatus !== "completed" && status === "completed") {
+            refreshMediaRow(id);
+          }
+        }
+
+        });
+      } catch (err) {
+        console.error("Polling error:", err);
+      }
+    }
+    
+    async function updateGlobalStats() {
+      try {
+        const response = await fetch("/api/dashboard/stats");
+        if (!response.ok) return;
+
+        const stats = await response.json();
+
+        document.getElementById("stats-total-gb").textContent =
+          `${stats.total_gb} GB`;
+
+        document.getElementById("stats-processed-orig").textContent =
+          `${stats.processed_orig_gb} GB`;
+
+        document.getElementById("stats-processed-final").textContent =
+          `${stats.processed_final_gb} GB`;
+
+        document.getElementById("stats-savings-gb").textContent =
+          `${stats.savings_gb} GB`;
+
+        document.getElementById("stats-savings-pct").textContent =
+          `(${stats.savings_pct}%)`;
+      } catch (err) {
+        console.error("Stats polling error:", err);
+      }
+    }
+    
+    async function refreshMediaRow(mediaId) {
+      try {
+        const response = await fetch(`/api/media/${mediaId}/row`);
+        if (!response.ok) return;
+
+        const data = await response.json();
+        if (!data || !data.id) return;
+
+        const row = document.querySelector(`tr[data-media-id="${mediaId}"]`);
+        if (!row) return;
+
+        // Video codec
+        const videoCell = row.querySelector('[data-field="video_codec"]');
+        if (videoCell) {
+          videoCell.innerHTML = `
+            <span class="bg-slate-900 text-amber-500/90 px-2.5 py-1 rounded-md border border-slate-700 font-mono text-xs font-bold">
+              ${data.video_codec ? data.video_codec.toUpperCase() : "???"}
+            </span>`;
+        }
+
+        // Resolution
+        const resCell = row.querySelector('[data-field="resolution"]');
+        if (resCell) {
+          resCell.textContent = data.resolution || "---";
+        }
+
+        // Audio
+        const audioCell = row.querySelector('[data-field="audio"]');
+        if (audioCell) {
+          audioCell.innerHTML = `
+            <div class="text-blue-400 font-medium uppercase text-xs">
+              ${data.audio_codec || "None"}
+            </div>
+            <div class="text-[10px] text-slate-400 italic mt-0.5">
+              ${data.audio_languages || "-"}
+            </div>`;
+        }
+
+        // Subtitles
+        const subCell = row.querySelector('[data-field="subtitles"]');
+        if (subCell) {
+          subCell.innerHTML = `
+            <div class="text-green-400 font-medium uppercase text-xs">
+              ${data.subtitle_codec || "None"}
+            </div>
+            <div class="text-[10px] text-slate-400 italic mt-0.5">
+              ${data.subtitle_languages || "-"}
+            </div>`;
+        }
+
+        // Processed size
+        const sizeCell = row.querySelector('[data-field="size_final"]');
+        if (sizeCell) {
+          sizeCell.innerHTML = data.size_final_mb
+            ? `<span class="text-green-400">${data.size_final_mb} MB</span>`
+            : `<span class="text-slate-600">-</span>`;
+        }
+      } catch (err) {
+        console.error("Error refreshing media row:", err);
+      }
+    }
+
+    
+    setInterval(() => {pollStatuses(); updateGlobalStats(); }, POLL_INTERVAL_MS);});
+    
+</script>
+
 {% endblock %}

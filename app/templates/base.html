@@ -77,24 +77,24 @@
           <div class="space-y-2">
             <div class="bg-slate-800/70 border border-slate-700 rounded-lg p-3">
               <div class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Total Monitored</div>
-              <div class="text-sm font-extrabold text-slate-100 mt-1">{{ total_gb }} GB</div>
+              <div id="stats-total-gb" class="text-sm font-extrabold text-slate-100 mt-1">{{ total_gb }} GB</div>
             </div>
 
             <div class="bg-slate-800/70 border border-slate-700 rounded-lg p-3">
               <div class="text-[10px] text-amber-400 font-bold uppercase tracking-widest">Before Processing</div>
-              <div class="text-sm font-extrabold text-slate-100 mt-1">{{ processed_orig_gb }} GB</div>
+              <div id="stats-processed-orig" class="text-sm font-extrabold text-slate-100 mt-1">{{ processed_orig_gb }} GB</div>
             </div>
 
             <div class="bg-slate-800/70 border border-slate-700 rounded-lg p-3">
               <div class="text-[10px] text-green-400 font-bold uppercase tracking-widest">After Processing</div>
-              <div class="text-sm font-extrabold text-slate-100 mt-1">{{ processed_final_gb }} GB</div>
+              <div id="stats-processed-final" class="text-sm font-extrabold text-slate-100 mt-1">{{ processed_final_gb }} GB</div>
             </div>
 
             <div class="bg-blue-900/20 border border-blue-500/40 rounded-lg p-3">
               <div class="text-[10px] text-blue-300 font-bold uppercase tracking-widest">Total Savings</div>
               <div class="flex items-baseline gap-2 mt-1">
-                <div class="text-sm font-extrabold text-blue-100">{{ savings_gb }} GB</div>
-                <div class="text-[11px] text-blue-400">({{ savings_pct }}%)</div>
+                <div id="stats-savings-gb" class="text-sm font-extrabold text-blue-100">{{ savings_gb }} GB</div>
+                <div id="stats-savings-pct" class="text-[11px] text-blue-400">({{ savings_pct }}%)</div>
               </div>
             </div>
           </div>
