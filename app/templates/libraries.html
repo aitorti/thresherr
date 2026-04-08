@@ -126,6 +126,42 @@
                             Profile: {{ lib.profile.name }}
                         </span>
                         
+                        <!-- Library actions -->
+                        <div class="flex items-center gap-2">
+                          <!-- Enqueue library -->
+                          <button
+                            class="library-action bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded"
+                            data-library-id="{{ lib.id }}"
+                            data-library-name="{{ lib.name }}"
+                            data-action="enqueue"
+                            title="Queue all pending files in this library"
+                          >
+                            ▶️
+                          </button>
+                        
+                          <!-- Dequeue library -->
+                          <button
+                            class="library-action bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded"
+                            data-library-id="{{ lib.id }}"
+                            data-library-name="{{ lib.name }}"
+                            data-action="dequeue"
+                            title="Remove all queued files from this library"
+                          >
+                            ⏹
+                          </button>
+                        
+                          <!-- Rescan library -->
+                          <button
+                            class="library-action bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs px-2 py-1 rounded"
+                            data-library-id="{{ lib.id }}"
+                            data-library-name="{{ lib.name }}"
+                            data-action="rescan"
+                            title="Re-scan all completed files in this library"
+                          >
+                            🔄
+                          </button>
+                        </div>
+                        
                         <!-- Delete library form -->
                         <form
                             action="/libraries/{{ lib.id }}/delete"
@@ -162,4 +198,155 @@
         </div>
     </section>
 </div>
+
+<!-- Library action confirmation modal -->
+<div id="library-action-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/60">
+  <div class="bg-slate-900 border border-slate-700 rounded-xl p-6 max-w-md w-full shadow-2xl">
+    <h3 class="text-lg font-bold text-slate-100 mb-4">
+      Confirm action
+    </h3>
+
+    <p id="library-action-message" class="text-sm text-slate-400 mb-6">
+      <!-- This text will be injected dynamically -->
+    </p>
+
+    <div class="flex justify-end gap-3">
+      <button
+        id="library-action-cancel"
+        class="px-4 py-2 text-sm rounded bg-slate-700 hover:bg-slate-600 text-slate-200"
+      >
+        No
+      </button>
+
+      <button
+        id="library-action-confirm"
+        class="px-4 py-2 text-sm rounded bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold"
+      >
+        Yes
+      </button>
+    </div>
+  </div>
+</div>
+
+
+<script>
+  /**
+   * Library bulk actions handler
+   * - Fetches preview count
+   * - Shows confirmation modal
+   * - Executes action only if confirmed
+   */
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const modal = document.getElementById("library-action-modal");
+    const messageEl = document.getElementById("library-action-message");
+    const confirmBtn = document.getElementById("library-action-confirm");
+    const cancelBtn = document.getElementById("library-action-cancel");
+
+    let pendingAction = null;
+
+    // Utility: open modal
+    function openModal() {
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+    }
+
+    // Utility: close modal
+    function closeModal() {
+      modal.classList.add("hidden");
+      modal.classList.remove("flex");
+      pendingAction = null;
+    }
+
+    // Attach click handler to all library action buttons
+    document.querySelectorAll(".library-action").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const libraryId = button.dataset.libraryId;
+        const libraryName = button.dataset.libraryName;
+        const action = button.dataset.action;
+
+        try {
+          // 1. Fetch preview (affected files count)
+          const previewResponse = await fetch(
+            `/libraries/${libraryId}/${action}/preview`
+          );
+          const data = await previewResponse.json();
+          const count = data.affected_files || 0;
+
+          // 2. Build message depending on action
+          let actionText = "";
+          if (action === "enqueue") {
+            actionText = `queue ${count} files`;
+          } else if (action === "dequeue") {
+            actionText = `remove ${count} files from the queue`;
+          } else if (action === "rescan") {
+            actionText = `re-scan ${count} files`;
+          }
+
+          // 3. Case: no files affected
+          if (count === 0) {
+            messageEl.textContent =
+              `There are no files to process for this action in library "${libraryName}".`;
+
+            // Hide "Yes" button, change "No" to "Close"
+            confirmBtn.classList.add("hidden");
+            cancelBtn.textContent = "Close";
+
+            openModal();
+            return;
+          }
+
+          // 4. Normal confirmation flow
+          messageEl.innerHTML =
+            `This action will <strong>${actionText}</strong> ` +
+            `from library <strong>"${libraryName}"</strong>.<br><br>` +
+            `Do you want to continue?`;
+
+          confirmBtn.classList.remove("hidden");
+          cancelBtn.textContent = "No";
+
+          // Store pending action
+          pendingAction = {
+            libraryId,
+            action,
+          };
+
+          openModal();
+        } catch (err) {
+          console.error("Preview request failed:", err);
+        }
+      });
+    });
+
+    // Confirm action
+    confirmBtn.addEventListener("click", async () => {
+      if (!pendingAction) return;
+
+      const { libraryId, action } = pendingAction;
+
+      try {
+        await fetch(`/libraries/${libraryId}/${action}`, {
+          method: "POST",
+        });
+
+        // Backend redirects, but fetch does not follow location
+        // We manually reload the current page
+        window.location.reload();
+      } catch (err) {
+        console.error("Action request failed:", err);
+      }
+    });
+
+    // Cancel / Close modal
+    cancelBtn.addEventListener("click", closeModal);
+
+    // Close modal if user clicks outside content
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) {
+        closeModal();
+      }
+    });
+  });
+</script>
+
 {% endblock %}
