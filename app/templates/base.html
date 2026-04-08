@@ -8,7 +8,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <!-- Browser tab title -->
-    <title>Thresherr 🌾 - Media Converters</title>
+    <title>Thresherr 🌾 - Media Converter</title>
 
     <!-- Tailwind CSS loaded from CDN (utility-first CSS framework) -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -17,54 +17,98 @@
     <script src="https://unpkg.com/htmx.org@1.9.6"></script>
 </head>
 
+
 <body class="bg-slate-950 text-slate-100 min-h-screen font-sans">
-    <!-- 
-        MAIN HEADER
-        Contains the application branding and top navigation
-    -->
-    <header class="bg-slate-900 border-b border-slate-700 shadow-md">
-        <div class="container mx-auto px-6 py-4 flex items-center justify-between">
-            
-            <!-- Application logo and name -->
-            <div class="flex items-center space-x-2">
-                <span class="text-3xl">🌾</span>
-                <span class="text-3xl font-bold text-amber-400">Thresherr</span>
+  {# ------------------------------------------------------------ #}
+  {# Layout: fixed left sidebar + main content on the right        #}
+  {# ------------------------------------------------------------ #}
+
+  {% set path = request.url.path %}
+
+  <div class="flex min-h-screen">
+    <!-- LEFT SIDEBAR (fixed) -->
+    <aside class="w-64 shrink-0 bg-slate-900 border-r border-slate-700">
+      <div class="h-full flex flex-col">
+        <!-- Brand -->
+        <div class="px-5 py-4 border-b border-slate-700 flex items-center gap-2">
+          <span class="text-2xl">🌾</span>
+          <span class="text-xl font-bold text-amber-400">Thresherr</span>
+        </div>
+
+        <!-- Navigation -->
+        <nav class="px-3 py-4 text-sm font-semibold">
+          {# Active link styling: highlight current section via request.url.path #}
+
+          <a href="/"
+             class="block px-3 py-2 rounded-md mb-1 transition-colors
+                    {% if path == '/' %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
+            Monitored Media Files
+          </a>
+
+          <a href="/profiles"
+             class="block px-3 py-2 rounded-md mb-1 transition-colors
+                    {% if path.startswith('/profiles') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
+            Profiles
+          </a>
+
+          <a href="/libraries"
+             class="block px-3 py-2 rounded-md mb-1 transition-colors
+                    {% if path.startswith('/libraries') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
+            Libraries
+          </a>
+
+          <a href="/queue"
+             class="block px-3 py-2 rounded-md mb-1 transition-colors
+                    {% if path.startswith('/queue') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
+            Queue
+          </a>
+        </nav>
+
+        <!-- Spacer -->
+        <div class="flex-1"></div>
+
+        <!-- Global Statistics summary (dynamic) -->
+        <section class="px-4 pb-4">
+          <div class="text-xs font-bold uppercase tracking-widest text-slate-400 mb-2">
+            Global Statistics
+          </div>
+
+          {# These values are injected by the backend for ALL pages #}
+          <div class="space-y-2">
+            <div class="bg-slate-800/70 border border-slate-700 rounded-lg p-3">
+              <div class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Total Monitored</div>
+              <div class="text-sm font-extrabold text-slate-100 mt-1">{{ total_gb }} GB</div>
             </div>
 
-            <!-- Primary navigation menu -->
-            <nav class="flex items-center space-x-8 text-sm font-medium">
-                <!-- Dashboard link -->
-                <a href="/" class="text-slate-200 hover:text-amber-400 transition-colors">
-                    Dashboard
-                </a>
+            <div class="bg-slate-800/70 border border-slate-700 rounded-lg p-3">
+              <div class="text-[10px] text-amber-400 font-bold uppercase tracking-widest">Before Processing</div>
+              <div class="text-sm font-extrabold text-slate-100 mt-1">{{ processed_orig_gb }} GB</div>
+            </div>
 
-                <!-- Profiles section -->
-                <a href="/profiles" class="text-slate-200 hover:text-amber-400 transition-colors">
-                    Profiles
-                </a>
+            <div class="bg-slate-800/70 border border-slate-700 rounded-lg p-3">
+              <div class="text-[10px] text-green-400 font-bold uppercase tracking-widest">After Processing</div>
+              <div class="text-sm font-extrabold text-slate-100 mt-1">{{ processed_final_gb }} GB</div>
+            </div>
 
-                <!-- Libraries section -->
-                <a href="/libraries" class="text-slate-200 hover:text-amber-400 transition-colors">
-                    Libraries
-                </a>
+            <div class="bg-blue-900/20 border border-blue-500/40 rounded-lg p-3">
+              <div class="text-[10px] text-blue-300 font-bold uppercase tracking-widest">Total Savings</div>
+              <div class="flex items-baseline gap-2 mt-1">
+                <div class="text-sm font-extrabold text-blue-100">{{ savings_gb }} GB</div>
+                <div class="text-[11px] text-blue-400">({{ savings_pct }}%)</div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </aside>
 
-                <!-- Processing queue -->
-                <a href="/queue" class="hover:text-amber-400 transition-colors">
-                    Queue
-                </a>
-            </nav>
-        </div>
-    </header>
-
-    <!-- 
-        MAIN CONTENT AREA
-        This block is filled by child templates using Jinja
-    -->
-    <main class="container mx-auto px-6 py-10">
-        {% block content %}
-        <!-- Page-specific content will be injected here -->
-        {% endblock %}
+    <!-- MAIN CONTENT -->
+    <main class="flex-1 min-w-0 px-6 py-6">
+      {% block content %}
+      <!-- Page-specific content will be injected here -->
+      {% endblock %}
     </main>
-
+  </div>
 </body>
+
 </html>

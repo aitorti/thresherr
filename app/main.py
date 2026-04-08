@@ -22,43 +22,68 @@ def get_db():
     finally:
         db.close()
 
+# --- LOADING GLOBAL STATISTICS ---
+
+def compute_global_stats(db: Session) -> dict:
+    """
+    Compute global storage statistics used by the UI.
+    Centralized to keep all templates dynamic (e.g., sidebar cards).
+    """
+    total_orig = db.query(func.sum(models.MediaFile.size_original)).scalar() or 0
+    total_done_orig = (
+        db.query(func.sum(models.MediaFile.size_original))
+        .filter(models.MediaFile.status == "completed")
+        .scalar()
+        or 0
+    )
+    total_done_final = (
+        db.query(func.sum(models.MediaFile.size_final))
+        .filter(models.MediaFile.status == "completed")
+        .scalar()
+        or 0
+    )
+
+    savings = total_done_orig - total_done_final
+    savings_pct = (savings / total_done_orig * 100) if total_done_orig > 0 else 0
+
+    return {
+        "total_gb": round(total_orig / (1024**3), 2),
+        "processed_orig_gb": round(total_done_orig / (1024**3), 2),
+        "processed_final_gb": round(total_done_final / (1024**3), 2),
+        "savings_gb": round(savings / (1024**3), 2),
+        "savings_pct": round(savings_pct, 1),
+    }
+
+
 # 4. Routes
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request, db: Session = Depends(get_db)):
-    # Statistics calculations
-    total_orig = db.query(func.sum(models.MediaFile.size_original)).scalar() or 0
-    total_done_orig = db.query(func.sum(models.MediaFile.size_original)).filter(models.MediaFile.status == "completed").scalar() or 0
-    total_done_final = db.query(func.sum(models.MediaFile.size_final)).filter(models.MediaFile.status == "completed").scalar() or 0
-    
-    savings = total_done_orig - total_done_final
-    savings_pct = (savings / total_done_orig * 100) if total_done_orig > 0 else 0
+    # Global statistics (shared with sidebar)
+    stats = compute_global_stats(db)
 
     # THIS LINE IS CRITICAL:
     media_files = db.query(models.MediaFile).order_by(models.MediaFile.id.desc()).all()
 
     return templates.TemplateResponse(
-        request=request, 
-        name="dashboard.html", 
+        request=request,
+        name="dashboard.html",
         context={
-            "total_gb": round(total_orig / (1024**3), 2),
-            "processed_orig_gb": round(total_done_orig / (1024**3), 2),
-            "processed_final_gb": round(total_done_final / (1024**3), 2),
-            "savings_gb": round(savings / (1024**3), 2),
-            "savings_pct": round(savings_pct, 1),
-            "media_files": media_files
-        }
+            **stats,
+            "media_files": media_files,
+        },
     )
 
 # --- WORKGIN WITH PROFILES ---
 
 @app.get("/profiles", response_class=HTMLResponse)
 async def get_profiles(request: Request, db: Session = Depends(get_db)):
+    stats = compute_global_stats(db)
     profiles = db.query(models.Profile).all()
     return templates.TemplateResponse(
         request=request,
-        name="profiles.html", 
-        context={"profiles": profiles}
+        name="profiles.html",
+        context={**stats, "profiles": profiles},
     )
 
 @app.post("/profiles")
@@ -91,12 +116,13 @@ async def create_profile(
 
 @app.get("/libraries", response_class=HTMLResponse)
 async def get_libraries(request: Request, db: Session = Depends(get_db)):
+    stats = compute_global_stats(db)
     libraries = db.query(models.Library).all()
     profiles = db.query(models.Profile).all()
     return templates.TemplateResponse(
         request=request,
-        name="libraries.html", 
-        context={"libraries": libraries, "profiles": profiles}
+        name="libraries.html",
+        context={**stats, "libraries": libraries, "profiles": profiles},
     )
 
 @app.post("/libraries")
@@ -117,28 +143,31 @@ async def add_library(
     db.commit()
     return RedirectResponse(url="/libraries", status_code=303)
 
+# --- WORKING WITH QUEUED FILES ---
+
 @app.get("/queue", response_class=HTMLResponse)
 async def get_queue(request: Request, db: Session = Depends(get_db)):
+    stats = compute_global_stats(db)
     pending = db.query(models.MediaFile).filter(models.MediaFile.status == "pending").all()
     queued = db.query(models.MediaFile).filter(models.MediaFile.status == "queued").all()
     processing = db.query(models.MediaFile).filter(models.MediaFile.status == "processing").all()
-    completed = db.query(models.MediaFile).filter(models.MediaFile.status == "completed").order_by(models.MediaFile.id.desc()).limit(10).all()
-    
+    completed = (
+        db.query(models.MediaFile)
+        .filter(models.MediaFile.status == "completed")
+        .order_by(models.MediaFile.id.desc())
+        .limit(10)
+        .all()
+    )
     return templates.TemplateResponse(
         request=request,
         name="queue.html",
-        context={
-            "pending": pending,
-            "queued": queued,
-            "processing": processing,
-            "completed": completed
-        }
+        context={**stats, "pending": pending, "queued": queued, "processing": processing, "completed": completed},
     )
 
 @app.get("/scan")
-async def manual_scan(db: Session = Depends(get_db)):
+async def manual_scan(request: Request, db: Session = Depends(get_db)):
     new_count = scan_libraries(db)
-    return RedirectResponse(url="/queue", status_code=303)
+    return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303,)
 
 # --- DELETE PROFILES & LIBRARIES ---
 
@@ -161,23 +190,25 @@ async def delete_library(library_id: int, db: Session = Depends(get_db)):
 # --- WORKING WITH JOB QUEUE ---
 
 @app.post("/queue/{media_id}/enqueue")
-async def enqueue_media(media_id: int, db: Session = Depends(get_db)):
+async def enqueue_media(media_id: int, request: Request, db: Session = Depends(get_db)):
     media = db.query(models.MediaFile).filter(models.MediaFile.id == media_id).first()
     if media and media.status == "pending":
         media.status = "queued"
         db.commit()
-    return RedirectResponse(url="/queue", status_code=303)
+
+    return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303,)
+
 
 @app.post("/queue/{media_id}/dequeue")
-async def dequeue_media(media_id: int, db: Session = Depends(get_db)):
+async def dequeue_media(media_id: int, request: Request, db: Session = Depends(get_db)):
     media = db.query(models.MediaFile).filter(models.MediaFile.id == media_id).first()
     if media and media.status == "queued":
         media.status = "pending"
         db.commit()
-    return RedirectResponse(url="/queue", status_code=303)
+    return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303,)
 
 @app.post("/queue/{media_id}/rescan")
-async def rescan_media(media_id: int, db: Session = Depends(get_db)):
+async def rescan_media(media_id: int, request: Request, db: Session = Depends(get_db)):
     media = (db.query(models.MediaFile).filter(models.MediaFile.id == media_id).first())
     if media and media.status == "completed":
         media.status = "pending"
@@ -188,5 +219,4 @@ async def rescan_media(media_id: int, db: Session = Depends(get_db)):
         media.last_error = None
         db.commit()
 
-    return RedirectResponse(url="/queue", status_code=303)
-
+    return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303,)
