@@ -220,3 +220,120 @@ async def rescan_media(media_id: int, request: Request, db: Session = Depends(ge
         db.commit()
 
     return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303,)
+
+# --- WORKING WITH BATCH WORKS BY LIBRARIE ---
+
+# --- COUNTING FILES ---
+@app.get("/libraries/{library_id}/enqueue/preview")
+async def preview_enqueue_library(library_id: int, db: Session = Depends(get_db)):
+    count = (
+        db.query(func.count(models.MediaFile.id))
+        .filter(
+            models.MediaFile.library_id == library_id,
+            models.MediaFile.status == "pending",
+        )
+        .scalar()
+    )
+
+    return {"affected_files": count}
+
+@app.get("/libraries/{library_id}/dequeue/preview")
+async def preview_dequeue_library(library_id: int, db: Session = Depends(get_db)):
+    count = (
+        db.query(func.count(models.MediaFile.id))
+        .filter(
+            models.MediaFile.library_id == library_id,
+            models.MediaFile.status == "queued",
+        )
+        .scalar()
+    )
+
+    return {"affected_files": count}
+
+@app.get("/libraries/{library_id}/rescan/preview")
+async def preview_rescan_library(library_id: int, db: Session = Depends(get_db)):
+    count = (
+        db.query(func.count(models.MediaFile.id))
+        .filter(
+            models.MediaFile.library_id == library_id,
+            models.MediaFile.status == "completed",
+        )
+        .scalar()
+    )
+
+    return {"affected_files": count}
+
+# --- BATCH UPDATES ---
+
+@app.post("/libraries/{library_id}/enqueue")
+async def enqueue_library(
+    library_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    (
+        db.query(models.MediaFile)
+        .filter(
+            models.MediaFile.library_id == library_id,
+            models.MediaFile.status == "pending",
+        )
+        .update({models.MediaFile.status: "queued"}, synchronize_session=False)
+    )
+    db.commit()
+
+    return RedirectResponse(
+        url=request.headers.get("referer", "/"),
+        status_code=303,
+    )
+
+@app.post("/libraries/{library_id}/dequeue")
+async def dequeue_library(
+    library_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    (
+        db.query(models.MediaFile)
+        .filter(
+            models.MediaFile.library_id == library_id,
+            models.MediaFile.status == "queued",
+        )
+        .update({models.MediaFile.status: "pending"}, synchronize_session=False)
+    )
+    db.commit()
+
+    return RedirectResponse(
+        url=request.headers.get("referer", "/"),
+        status_code=303,
+    )
+
+@app.post("/libraries/{library_id}/rescan")
+async def rescan_library(
+    library_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    (
+        db.query(models.MediaFile)
+        .filter(
+            models.MediaFile.library_id == library_id,
+            models.MediaFile.status == "completed",
+        )
+        .update(
+            {
+                models.MediaFile.status: "pending",
+                models.MediaFile.started_at: None,
+                models.MediaFile.finished_at: None,
+                models.MediaFile.job_plan: None,
+                models.MediaFile.verification_result: None,
+                models.MediaFile.last_error: None,
+            },
+            synchronize_session=False,
+        )
+    )
+    db.commit()
+
+    return RedirectResponse(
+        url=request.headers.get("referer", "/"),
+        status_code=303,
+    )
