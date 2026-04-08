@@ -359,6 +359,44 @@ async def get_media_status(db: Session = Depends(get_db)):
         for media_id, status in results
     ]
 
+# --- DASHBOARD ROW DATA POLLING API ---
+
+@app.get("/api/media/{media_id}/row")
+async def get_media_row(media_id: int, db: Session = Depends(get_db)):
+    """
+    Returns the full set of dashboard-visible fields for a single MediaFile.
+    Used to refresh a table row when processing is completed.
+    """
+    media = (
+        db.query(models.MediaFile)
+        .filter(models.MediaFile.id == media_id)
+        .first()
+    )
+
+    if not media:
+        return {}
+
+    return {
+        "id": media.id,
+        "status": media.status,
+
+        "video_codec": media.video_codec,
+        "resolution": media.resolution,
+
+        "audio_codec": media.audio_codec,
+        "audio_languages": media.audio_languages,
+
+        "subtitle_codec": media.subtitle_codec,
+        "subtitle_languages": media.subtitle_languages,
+
+        # Size formatted exactly like the dashboard (MB, rounded)
+        "size_final_mb": (
+            round(media.size_final / 1048576)
+            if media.size_final is not None
+            else None
+        ),
+    }
+
 # --- DASHBOARD STATS POLLING API ---
 
 @app.get("/api/dashboard/stats")

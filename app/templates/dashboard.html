@@ -115,17 +115,17 @@
                         {{ file.file_name }}
                     </td>
 
-                    <td class="px-6 py-4">
+                    <td class="px-6 py-4" data-field="video_codec">
                         <span class="bg-slate-900 text-amber-500/90 px-2.5 py-1 rounded-md border border-slate-700 font-mono text-xs font-bold">
                             {{ file.video_codec|upper if file.video_codec else '???' }}
                         </span>
                     </td>
 
-                    <td class="px-6 py-4 text-slate-400 font-mono">
+                    <td class="px-6 py-4 text-slate-400 font-mono" data-field="resolution">
                         {{ file.resolution if file.resolution else '---' }}
                     </td>
 
-                    <td class="px-6 py-4">
+                    <td class="px-6 py-4" data-field="audio">
                         <div class="text-blue-400 font-medium uppercase text-xs">
                             {{ file.audio_codec if file.audio_codec else 'None' }}
                         </div>
@@ -134,7 +134,7 @@
                         </div>
                     </td>
 
-                    <td class="px-6 py-4">
+                    <td class="px-6 py-4"data-field="subtitles">
                         <div class="text-green-400 font-medium uppercase text-xs">
                             {{ file.subtitle_codec if file.subtitle_codec else 'None' }}
                         </div>
@@ -153,7 +153,7 @@
                     </td>
 
                     <!-- Processed file size (only if completed) -->
-                    <td class="px-6 py-4 text-right text-slate-300 font-mono">
+                    <td class="px-6 py-4 text-right text-slate-300 font-mono" data-field="size_final">
                         {% if file.status == 'completed' and file.size_final is not none %}
                           <span class="text-green-400">
                             {{ (file.size_final / 1048576) | round(0) | int }} MB
@@ -340,11 +340,19 @@
           const actionCell = row.querySelector("[data-role='actions']");
           const statusCell = row.querySelector("[data-role='status']");
 
-          if (!statusCell.dataset.currentStatus || statusCell.dataset.currentStatus !== status) {
-            statusCell.dataset.currentStatus = status;
-            updateStatusBadge(statusCell, status);
-            updateActions(actionCell, status, id);
+        const previousStatus = statusCell.dataset.currentStatus;
+        
+        if (!previousStatus || previousStatus !== status) {
+          statusCell.dataset.currentStatus = status;
+          updateStatusBadge(statusCell, status);
+          updateActions(actionCell, status, id);
+        
+          // Only refresh metadata when processing is completed
+          if (previousStatus !== "completed" && status === "completed") {
+            refreshMediaRow(id);
           }
+        }
+
         });
       } catch (err) {
         console.error("Polling error:", err);
@@ -376,6 +384,70 @@
         console.error("Stats polling error:", err);
       }
     }
+    
+    async function refreshMediaRow(mediaId) {
+      try {
+        const response = await fetch(`/api/media/${mediaId}/row`);
+        if (!response.ok) return;
+
+        const data = await response.json();
+        if (!data || !data.id) return;
+
+        const row = document.querySelector(`tr[data-media-id="${mediaId}"]`);
+        if (!row) return;
+
+        // Video codec
+        const videoCell = row.querySelector('[data-field="video_codec"]');
+        if (videoCell) {
+          videoCell.innerHTML = `
+            <span class="bg-slate-900 text-amber-500/90 px-2.5 py-1 rounded-md border border-slate-700 font-mono text-xs font-bold">
+              ${data.video_codec ? data.video_codec.toUpperCase() : "???"}
+            </span>`;
+        }
+
+        // Resolution
+        const resCell = row.querySelector('[data-field="resolution"]');
+        if (resCell) {
+          resCell.textContent = data.resolution || "---";
+        }
+
+        // Audio
+        const audioCell = row.querySelector('[data-field="audio"]');
+        if (audioCell) {
+          audioCell.innerHTML = `
+            <div class="text-blue-400 font-medium uppercase text-xs">
+              ${data.audio_codec || "None"}
+            </div>
+            <div class="text-[10px] text-slate-400 italic mt-0.5">
+              ${data.audio_languages || "-"}
+            </div>`;
+        }
+
+        // Subtitles
+        const subCell = row.querySelector('[data-field="subtitles"]');
+        if (subCell) {
+          subCell.innerHTML = `
+            <div class="text-green-400 font-medium uppercase text-xs">
+              ${data.subtitle_codec || "None"}
+            </div>
+            <div class="text-[10px] text-slate-400 italic mt-0.5">
+              ${data.subtitle_languages || "-"}
+            </div>`;
+        }
+
+        // Processed size
+        const sizeCell = row.querySelector('[data-field="size_final"]');
+        if (sizeCell) {
+          sizeCell.innerHTML = data.size_final_mb
+            ? `<span class="text-green-400">${data.size_final_mb} MB</span>`
+            : `<span class="text-slate-600">-</span>`;
+        }
+      } catch (err) {
+        console.error("Error refreshing media row:", err);
+      }
+    }
+
+    
     setInterval(() => {pollStatuses(); updateGlobalStats(); }, POLL_INTERVAL_MS);});
     
 </script>
