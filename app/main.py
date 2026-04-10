@@ -1,12 +1,15 @@
 from fastapi import FastAPI, Request, Form, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
-import os
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-import models
 from database import engine, SessionLocal
 from scanner import scan_libraries
+
+import models
+import subprocess
+import json
+import os
 
 # 1. Database setup
 models.Base.metadata.create_all(bind=engine)
@@ -470,4 +473,51 @@ async def browse_temp(path: str | None = Query(default=None)):
     Browse directories inside /temp
     """
     return list_directories("temp", path)
-    
+
+# -------------------------------------------------
+# FFPROBE RAW METADATA (UI / MANUAL INSPECTION)
+# -------------------------------------------------
+
+@app.get("/api/media/{media_id}/ffprobe")
+async def get_media_ffprobe(media_id: int, db: Session = Depends(get_db)):
+    """
+    Returns full ffprobe JSON output for a media file.
+    Used for manual stream inspection and overrides.
+    """
+
+    media = (
+        db.query(models.MediaFile)
+        .filter(models.MediaFile.id == media_id)
+        .first()
+    )
+
+    if not media:
+        raise HTTPException(status_code=404, detail="Media file not found")
+
+    if not os.path.exists(media.full_path):
+        raise HTTPException(status_code=404, detail="Media file not found on disk")
+
+    cmd = [
+        "ffprobe",
+        "-v", "quiet",
+        "-print_format", "json",
+        "-show_streams",
+        "-show_format",
+        media.full_path,
+    ]
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+
+        return json.loads(result.stdout)
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"ffprobe failed: {exc}",
+        )

@@ -164,50 +164,66 @@
                     </td>
                     
                     <!-- ACTIONS -->
-                    
                     <td class="px-6 py-4 text-center" data-role="actions">
-                      {% if file.status == 'pending' %}
-                        <!-- Enqueue -->
-                        <form method="post" action="/queue/{{ file.id }}/enqueue">
-                          <button
-                            type="submit"
-                            class="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded"
-                            title="Queue file for processing"
-                          >
-                            ▶️
-                          </button>
-                        </form>
+                      <div class="flex items-center justify-center gap-2">
+                        
+                        <div class="primary-actions">
+                          {% if file.status == 'pending' %}
+                            <form method="post" action="/queue/{{ file.id }}/enqueue">
+                              <button
+                                type="submit"
+                                class="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded"
+                                title="Queue file for processing"
+                              >
+                                ▶️
+                              </button>
+                            </form>
                     
-                      {% elif file.status == 'queued' %}
-                        <!-- Dequeue -->
-                        <form method="post" action="/queue/{{ file.id }}/dequeue">
-                          <button
-                            type="submit"
-                            class="bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded"
-                            title="Remove from queue"
-                          >
-                            ⏹
-                          </button>
-                        </form>
+                          {% elif file.status == 'queued' %}
+                            <form method="post" action="/queue/{{ file.id }}/dequeue">
+                              <button
+                                type="submit"
+                                class="bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded"
+                                title="Remove from queue"
+                              >
+                                ⏹
+                              </button>
+                            </form>
                     
-                      {% elif file.status == 'completed' %}
-                        <!-- Re-scan -->
-                        <form method="post" action="/queue/{{ file.id }}/rescan">
-                          <button
-                            type="submit"
-                            class="bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs px-2 py-1 rounded"
-                            title="Re-scan file"
-                          >
-                            🔄
-                          </button>
-                        </form>
+                          {% elif file.status == 'completed' %}
+                            <form method="post" action="/queue/{{ file.id }}/rescan">
+                              <button
+                                type="submit"
+                                class="bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs px-2 py-1 rounded"
+                                title="Re-scan file"
+                              >
+                                🔄
+                              </button>
+                            </form>
                     
-                      {% else %}
-                        <!-- processing or unknown: no action -->
-                        <span class="text-slate-600 text-xs">—</span>
-                      {% endif %}
+                          {% else %}
+                            <span class="text-slate-600 text-xs">—</span>
+                          {% endif %}
+                        </div>
+                    
+                        {% if
+                          (file.audio_languages and "und" in file.audio_languages)
+                          or
+                          (file.subtitle_languages and "und" in file.subtitle_languages)
+                        %}
+                          <button
+                            type="button"
+                            class="inspect-streams text-amber-400 hover:text-amber-300"
+                            title="Inspect streams metadata"
+                            data-media-id="{{ file.id }}"
+                          >
+                            🛠️
+                          </button>
+                        {% endif %}
+                    
+                      </div>
                     </td>
-
+                    
                     <!-- File processing status badge -->
                     <td class="px-6 py-4 text-center" data-role="status" data-current-status="{{ file.status }}">
                         {% if file.status == 'completed' %}
@@ -237,6 +253,34 @@
             </tbody>
         </table>
     </div>
+</div>
+
+<!-- Inspect Streams Modal -->
+<div
+  id="inspect-streams-modal"
+  class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70"
+>
+  <div class="bg-slate-900 border border-slate-700 rounded-xl p-6 w-full max-w-5xl shadow-2xl">
+    <div class="flex justify-between items-center mb-4">
+      <h3 class="text-lg font-bold text-slate-100">
+        Stream Inspection (ffprobe)
+      </h3>
+
+      <button
+        id="inspect-streams-close"
+        class="text-slate-400 hover:text-slate-200 text-xl"
+      >
+        ✖
+      </button>
+    </div>
+
+    <pre
+      id="inspect-streams-content"
+      class="bg-black text-slate-200 text-xs p-4 rounded overflow-auto max-h-[70vh]"
+    >
+Loading...
+    </pre>
+  </div>
 </div>
 
 <!-- Client-side table filtering logic -->
@@ -301,32 +345,51 @@
       </span>`;
     }
 
+
     function updateActions(cell, status, mediaId) {
+      const container = cell.querySelector(".primary-actions");
+      if (!container) return;
+    
       if (status === "pending") {
-        cell.innerHTML = `
+        container.innerHTML = `
           <form method="post" action="/queue/${mediaId}/enqueue">
-            <button class="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded" title="Queue file">
+            <button
+              class="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded"
+              title="Queue file"
+            >
               ▶️
             </button>
-          </form>`;
+          </form>
+        `;
       } else if (status === "queued") {
-        cell.innerHTML = `
+        container.innerHTML = `
           <form method="post" action="/queue/${mediaId}/dequeue">
-            <button class="bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded" title="Remove from queue">
+            <button
+              class="bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded"
+              title="Remove from queue"
+            >
               ⏹
             </button>
-          </form>`;
+          </form>
+        `;
       } else if (status === "completed") {
-        cell.innerHTML = `
+        container.innerHTML = `
           <form method="post" action="/queue/${mediaId}/rescan">
-            <button class="bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs px-2 py-1 rounded" title="Re-scan file">
+            <button
+              class="bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs px-2 py-1 rounded"
+              title="Re-scan file"
+            >
               🔄
             </button>
-          </form>`;
+          </form>
+        `;
       } else {
-        cell.innerHTML = `<span class="text-slate-600 text-xs">—</span>`;
+        container.innerHTML = `
+          <span class="text-slate-600 text-xs">—</span>
+        `;
       }
     }
+
 
     async function pollStatuses() {
       try {
@@ -450,6 +513,57 @@
     
     setInterval(() => {pollStatuses(); updateGlobalStats(); }, POLL_INTERVAL_MS);});
     
+    // -------------------------------------------------
+    // Inspect streams (ffprobe viewer)
+    // -------------------------------------------------
+    
+    (() => {
+      const modal = document.getElementById("inspect-streams-modal");
+      const contentEl = document.getElementById("inspect-streams-content");
+      const closeBtn = document.getElementById("inspect-streams-close");
+    
+      function openModal() {
+        modal.classList.remove("hidden");
+        modal.classList.add("flex");
+      }
+    
+      function closeModal() {
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+        contentEl.textContent = "";
+      }
+
+        document.addEventListener("click", async (e) => {
+          const btn = e.target.closest(".inspect-streams");
+          if (!btn) return;
+        
+          const mediaId = btn.dataset.mediaId;
+        
+          openModal();
+          contentEl.textContent = "Loading ffprobe output...";
+        
+          try {
+            const res = await fetch(`/api/media/${mediaId}/ffprobe`);
+            if (!res.ok) {
+              contentEl.textContent = "Failed to load ffprobe data.";
+              return;
+            }
+        
+            const data = await res.json();
+            contentEl.textContent = JSON.stringify(data, null, 2);
+          } catch (err) {
+            contentEl.textContent = "Failed to load ffprobe data.";
+            console.error(err);
+          }
+        });
+    
+      closeBtn.addEventListener("click", closeModal);
+    
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal) closeModal();
+      });
+    })();
+
 </script>
 
 {% endblock %}
