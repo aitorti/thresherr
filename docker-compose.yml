@@ -6,7 +6,7 @@ services:
       - "8505:8000"
     volumes:
       - ./app:/app
-      - /multimedia:/media
+      - /media:/media
       - /temp:/temp
     restart: unless-stopped
 
@@ -16,7 +16,7 @@ services:
     command: ["python", "worker.py"]
     volumes:
       - ./app:/app
-      - /multimedia:/media
+      - /media:/media
       - /temp:/temp
     depends_on:
       - app

@@ -2,6 +2,7 @@ import os
 import re
 import subprocess
 import json
+import unicodedata
 from sqlalchemy.orm import Session
 import models
 
@@ -34,45 +35,117 @@ def clean_stream_title(title: str) -> str:
 
     return clean.strip().lower()
 
+# -------------------------------------------------
+# Language inference helpers (shared)
+# -------------------------------------------------
+
+def _normalize_text(value: str) -> str:
+    """
+    Normalize text for robust keyword matching:
+    - Lowercase
+    - Remove accents (NFKD)
+    - Collapse whitespace
+    """
+    if not value:
+        return ""
+    value = value.strip().lower()
+    value = unicodedata.normalize("NFKD", value)
+    value = "".join(ch for ch in value if not unicodedata.combining(ch))
+    value = re.sub(r"\s+", " ", value)
+    return value
+
+
+def _is_unknown_language(lang: str) -> bool:
+    """
+    Returns True if a language tag is missing or effectively 'undetermined'.
+    """
+    if not lang:
+        return True
+    lang = lang.strip().lower()
+    return lang in {"und", "undetermined", "unknown", "undefined", "none", "null", "-"}
+
+
+def _map_to_iso639_2(lang: str) -> str:
+    """
+    Normalize common 2-letter codes to ISO-639-2 (3-letter) when possible.
+    Keeps unknown values unchanged.
+    """
+    if not lang:
+        return "und"
+    lang = lang.strip().lower()
+
+    # Common 2-letter → 3-letter mappings (extend as needed)
+    mapping = {
+        "en": "eng",
+        "es": "spa",
+        "esp": "spa",
+        "fr": "fra",
+        "it": "ita",
+        "de": "deu",
+        "pt": "por",
+        "ja": "jpn",
+        "zh": "chi",
+        "ru": "rus",
+        "nl": "nld",
+    }
+    return mapping.get(lang, lang)
+
+
+def infer_stream_language(tags: dict) -> str:
+    """
+    Infer a canonical language code for a stream using:
+    1) tags.language (primary)
+    2) tags.title (fallback if language is missing/und)
+
+    Special handling:
+    - Distinguish 'spa' vs 'latam' using LATAM keywords (title-based).
+    """
+    raw_lang = (tags.get("language") or "")
+    raw_title = (tags.get("title") or "")
+
+    lang = _map_to_iso639_2(_normalize_text(raw_lang))
+    title = _normalize_text(clean_stream_title(raw_title))
+
+    # Keywords that indicate Latin American Spanish variants
+    latam_keywords = {
+        "latam", "latino", "latin", "latin american", "latinoamericano",
+        "america", "americano", "mexico", "argentina", "colombia", "chile",
+        "peru", "venezuela", "ecuador", "uruguay", "paraguay", "bolivia",
+    }
+
+    # If language is known and Spanish-like, apply spa/latam refinement
+    if not _is_unknown_language(lang):
+        if lang in {"spa", "es", "esp"}:
+            return "latam" if any(k in title for k in latam_keywords) else "spa"
+        return lang
+
+    # Fallback: infer from title keywords
+    # Keep this small and opinionated; extend based on your library
+    title_map = {
+        "spa": ["castellano", "espanol", "español", "spanish"],
+        "eng": ["ingles", "inglés", "english", "eng", "vo", "original"],
+        "fra": ["frances", "français", "french", "vff", "vfq"],
+        "ita": ["italiano", "italian"],
+        "deu": ["aleman", "alemán", "german", "deutsch"],
+        "por": ["portugues", "portugués", "portuguese", "por"],
+    }
+
+    inferred = "und"
+    for iso, keywords in title_map.items():
+        if any(k in title for k in keywords):
+            inferred = iso
+            break
+
+    if inferred == "spa":
+        return "latam" if any(k in title for k in latam_keywords) else "spa"
+
+    return inferred
 
 def refine_spanish_language(tags: dict) -> str:
     """
-    Distinguish between:
-    - spa  -> Castellano
-    - latam -> Spanish Latin American
-
-    Logic:
-    - Read both 'language' and 'title' tags
-    - If any reference to lat/latin/latino/latam appears -> latam
-    - Otherwise -> spa
+    Backwards-compatible wrapper.
     """
-
-    lang = (tags.get("language") or "").lower()
-    title = clean_stream_title(tags.get("title", ""))
-
-    latam_keywords = [
-        "lat",
-        "latin",
-        "latino",
-        "latam",
-        "latinoamericano",
-        "américa",
-        "americano",
-    ]
-
-    # If language tag explicitly says spa / es
-    if lang in {"spa", "es", "esp"}:
-        if any(keyword in title for keyword in latam_keywords):
-            return "latam"
-        return "spa"
-
-    # If language tag itself hints latam
-    if any(keyword == lang for keyword in latam_keywords):
-        return "latam"
-
-    # Fallback: return original language
-    return lang if lang else "und"
-
+    return infer_stream_language(tags)
 
 def get_resolution_name(height: int | None) -> str:
     if not height:
@@ -88,7 +161,6 @@ def get_resolution_name(height: int | None) -> str:
     if height >= 480:
         return "480p"
     return f"{height}p"
-
 
 # -------------------------------------------------
 # Metadata extraction (SUMMARY ONLY)
@@ -137,12 +209,12 @@ def get_video_metadata(file_path: str) -> dict:
 
             elif stype == "audio":
                 audio_codecs.add(codec)
-                lang = refine_spanish_language(tags)
+                lang = infer_stream_language(tags)
                 audio_languages.add(lang)
 
             elif stype == "subtitle":
                 subtitle_codecs.add(codec)
-                lang = refine_spanish_language(tags)
+                lang = infer_stream_language(tags)
                 subtitle_languages.add(lang)
 
         return {
