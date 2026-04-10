@@ -2,13 +2,14 @@ import os
 import time
 import json
 import subprocess
-import re
+#import re
 import shutil
 from datetime import datetime
 
 from sqlalchemy.orm import Session
 
 from scanner import get_video_metadata
+from scanner import infer_stream_language
 
 from database import SessionLocal, engine
 import models
@@ -26,54 +27,54 @@ WORKER_SLEEP_SECONDS = 5
 # -------------------------------------------------
 # Stream ad cleaning
 # -------------------------------------------------
-
-def _clean_stream_title(title: str) -> str:
-    if not title:
-        return ""
-    spam_patterns = [
-        r"\[.*?\]",
-        r"\(.*?\)",
-        r"www\..*?\.[a-z]+",
-        r"@[\w_]+",
-        r"\bby\s+\w+\b",
-    ]
-    clean = title
-    for pattern in spam_patterns:
-        clean = re.sub(pattern, "", clean, flags=re.IGNORECASE)
-    return clean.strip().lower()
-
+#
+#def _clean_stream_title(title: str) -> str:
+#    if not title:
+#        return ""
+#    spam_patterns = [
+#        r"\[.*?\]",
+#        r"\(.*?\)",
+#        r"www\..*?\.[a-z]+",
+#        r"@[\w_]+",
+#        r"\bby\s+\w+\b",
+#    ]
+#    clean = title
+#    for pattern in spam_patterns:
+#        clean = re.sub(pattern, "", clean, flags=re.IGNORECASE)
+#    return clean.strip().lower()
+#
 # -------------------------------------------------
 # Distinguishing between Castilian Spanish and Latin American Spanish
 # -------------------------------------------------
-
-def _refine_spanish_language(tags: dict) -> str:
-    """
-    Igual que en scanner: distinguir 'spa' (castellano) de 'latam' (latino).
-    Usa tags.language y tags.title.
-    """
-    lang = (tags.get("language") or "").lower()
-    title = _clean_stream_title(tags.get("title", ""))
-
-    latam_keywords = [
-        "lat",
-        "latin",
-        "latino",
-        "latam",
-        "latinoamericano",
-        "américa",
-        "americano",
-    ]
-
-    if lang in {"spa", "es", "esp"}:
-        if any(k in title for k in latam_keywords):
-            return "latam"
-        return "spa"
-
-    if any(k == lang for k in latam_keywords):
-        return "latam"
-
-    return lang if lang else "und"
-
+#
+#def _refine_spanish_language(tags: dict) -> str:
+#    """
+#    Igual que en scanner: distinguir 'spa' (castellano) de 'latam' (latino).
+#    Usa tags.language y tags.title.
+#    """
+#    lang = (tags.get("language") or "").lower()
+#    title = _clean_stream_title(tags.get("title", ""))
+#
+#    latam_keywords = [
+#        "lat",
+#        "latin",
+#        "latino",
+#        "latam",
+#        "latinoamericano",
+#        "américa",
+#        "americano",
+#    ]
+#
+#    if lang in {"spa", "es", "esp"}:
+#        if any(k in title for k in latam_keywords):
+#            return "latam"
+#        return "spa"
+#
+#    if any(k == lang for k in latam_keywords):
+#        return "latam"
+#
+#    return lang if lang else "und"
+#
 # -------------------------------------------------
 # Subtitle codec normalization
 # -------------------------------------------------
@@ -175,7 +176,7 @@ def inspect_file(media: models.MediaFile) -> dict:
         idx = s.get("index")
 
         tags = s.get("tags", {}) or {}
-        lang = _refine_spanish_language(tags)
+        lang = infer_stream_language(tags)
 
         disp = s.get("disposition", {}) or {}
         is_default = bool(disp.get("default", 0))
@@ -230,7 +231,7 @@ def _safe_float(v):
     try:
         return float(v) if v is not None else None
     except Exception:
-        return Non
+        return None
 
 # -------------------------------------------------
 # Decide correct audio streams
