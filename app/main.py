@@ -1,5 +1,6 @@
-from fastapi import FastAPI, Request, Form, Depends
+from fastapi import FastAPI, Request, Form, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
+import os
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -406,3 +407,67 @@ async def get_dashboard_stats(db: Session = Depends(get_db)):
     Returns global storage statistics as JSON.
     """
     return compute_global_stats(db)
+    
+# ---------------------------------------------------------
+# FILE SYSTEM BROWSING (DOCKER CONTAINER ONLY)
+# ---------------------------------------------------------
+
+ALLOWED_BASE_PATHS = {
+    "media": "/media",
+    "temp": "/temp",
+}
+
+
+def list_directories(base_key: str, path: str | None = None):
+    """
+    Safely list directories inside allowed base paths.
+    This function never allows escaping the allowed base directory.
+    """
+
+    base_path = ALLOWED_BASE_PATHS[base_key]
+    current_path = path or base_path
+
+    real_base_path = os.path.realpath(base_path)
+    real_current_path = os.path.realpath(current_path)
+
+    # Security check: never allow escaping the base directory
+    if not real_current_path.startswith(real_base_path):
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if not os.path.isdir(real_current_path):
+        raise HTTPException(status_code=404, detail="Directory not found")
+
+    directories = []
+
+    try:
+        for entry in os.listdir(real_current_path):
+            full_path = os.path.join(real_current_path, entry)
+            if os.path.isdir(full_path):
+                directories.append({
+                    "name": entry,
+                    "path": full_path,
+                })
+    except Exception:
+        raise HTTPException(status_code=500, detail="Unable to read directory")
+
+    return {
+        "current_path": real_current_path,
+        "directories": directories,
+    }
+
+
+@app.get("/api/browse/media")
+async def browse_media(path: str | None = Query(default=None)):
+    """
+    Browse directories inside /media
+    """
+    return list_directories("media", path)
+
+
+@app.get("/api/browse/temp")
+async def browse_temp(path: str | None = Query(default=None)):
+    """
+    Browse directories inside /temp
+    """
+    return list_directories("temp", path)
+    

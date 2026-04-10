@@ -40,15 +40,28 @@
             <!-- Path where media files are stored -->
             <div>
                 <label class="block font-semibold mb-1 text-blue-300">
-                    Media Path (DietPi)
+                    Media Path
                 </label>
-                <input
-                    type="text"
-                    name="media_path"
-                    placeholder="/media/movies"
-                    required
-                    class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-200 focus:border-blue-500 outline-none"
-                >
+                <div class="flex gap-2">
+                    <input
+                        type="text"
+                        id="media-path-input"
+                        name="media_path"
+                        placeholder="/media"
+                        required
+                        readonly
+                        class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-200 focus:border-blue-500 outline-none cursor-pointer"
+                    >
+                
+                    <button
+                        type="button"
+                        id="media-path-browse"
+                        class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded"
+                        title="Browse media folders"
+                    >
+                        Browse
+                    </button>
+                </div>
             </div>
 
             <!-- Temporary working directory for processing -->
@@ -56,13 +69,26 @@
                 <label class="block font-semibold mb-1 text-orange-300">
                     Temp Path
                 </label>
-                <input
-                    type="text"
-                    name="temp_path"
-                    placeholder="/temp"
-                    required
-                    class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-200 focus:border-orange-500 outline-none"
-                >
+                <div class="flex gap-2">
+                    <input
+                        type="text"
+                        id="temp-path-input"
+                        name="temp_path"
+                        placeholder="/temp"
+                        required
+                        readonly
+                        class="flex-1 bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-200 focus:border-orange-500 outline-none cursor-pointer"
+                    >
+                
+                    <button
+                        type="button"
+                        id="temp-path-browse"
+                        class="px-3 py-2 bg-orange-600 hover:bg-orange-700 text-white text-sm rounded"
+                        title="Browse temp folders"
+                    >
+                        Browse
+                    </button>
+                </div>
             </div>
 
             <!-- Conversion profile selection -->
@@ -228,6 +254,61 @@
   </div>
 </div>
 
+<!-- Folder Browser Modal -->
+<div
+  id="folder-browser-modal"
+  class="fixed inset-0 z-50 hidden items-center justify-center bg-black/60"
+>
+  <div class="bg-slate-900 border border-slate-700 rounded-xl p-6 max-w-lg w-full shadow-2xl">
+    <h3
+      id="folder-browser-title"
+      class="text-lg font-bold text-slate-100 mb-4"
+    >
+      Select Folder
+    </h3>
+
+    <!-- Current path -->
+    <p
+      id="folder-browser-path"
+      class="text-xs text-slate-400 mb-3 break-all"
+    ></p>
+
+    <!-- Folder list -->
+    <div
+      id="folder-browser-list"
+      class="border border-slate-700 rounded bg-slate-800 max-h-64 overflow-y-auto"
+    >
+      <!-- Folders injected by JS -->
+    </div>
+
+    <!-- Actions -->
+    <div class="flex justify-between items-center mt-4">
+      <button
+        id="folder-browser-up"
+        class="px-3 py-2 text-sm rounded bg-slate-700 hover:bg-slate-600 text-slate-200"
+      >
+        ⬅ Back
+      </button>
+
+      <div class="flex gap-3">
+        <button
+          id="folder-browser-cancel"
+          class="px-4 py-2 text-sm rounded bg-slate-700 hover:bg-slate-600 text-slate-200"
+        >
+          Cancel
+        </button>
+
+        <button
+          id="folder-browser-select"
+          class="px-4 py-2 text-sm rounded bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold"
+          disabled
+        >
+          Select
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script>
   /**
@@ -347,6 +428,109 @@
       }
     });
   });
+  
+    //
+    // Folder browser logic (Media Path & Temp Path)
+    //
+    
+    (() => {
+      const modal = document.getElementById("folder-browser-modal");
+      const titleEl = document.getElementById("folder-browser-title");
+      const pathEl = document.getElementById("folder-browser-path");
+      const listEl = document.getElementById("folder-browser-list");
+      const backBtn = document.getElementById("folder-browser-up");
+      const cancelBtn = document.getElementById("folder-browser-cancel");
+      const selectBtn = document.getElementById("folder-browser-select");
+    
+      const mediaInput = document.getElementById("media-path-input");
+      const tempInput = document.getElementById("temp-path-input");
+    
+      let currentBase = null;   // "media" | "temp"
+      let currentPath = null;
+      let selectedPath = null;
+    
+      function openModal(base) {
+        currentBase = base;
+        selectedPath = null;
+        selectBtn.disabled = true;
+    
+        titleEl.textContent =
+          base === "media" ? "Select Media Folder" : "Select Temp Folder";
+    
+        loadPath(null);
+        modal.classList.remove("hidden");
+        modal.classList.add("flex");
+      }
+    
+      function closeModal() {
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+      }
+    
+      async function loadPath(path) {
+        const params = path ? `?path=${encodeURIComponent(path)}` : "";
+        const response = await fetch(`/api/browse/${currentBase}${params}`);
+        const data = await response.json();
+    
+        currentPath = data.current_path;
+        pathEl.textContent = currentPath;
+        selectedPath = currentPath;
+        selectBtn.disabled = false;
+    
+        listEl.innerHTML = "";
+    
+        data.directories.forEach((dir) => {
+          const item = document.createElement("div");
+          item.textContent = dir.name;
+          item.className =
+            "px-3 py-2 cursor-pointer hover:bg-slate-700 text-slate-200";
+    
+          item.addEventListener("click", () => {
+            loadPath(dir.path);
+          });
+    
+          listEl.appendChild(item);
+        });
+    
+        backBtn.disabled =
+          currentPath === (currentBase === "media" ? "/media" : "/temp");
+      }
+    
+      // Attach browse buttons
+      document
+        .getElementById("media-path-browse")
+        .addEventListener("click", () => openModal("media"));
+    
+      document
+        .getElementById("temp-path-browse")
+        .addEventListener("click", () => openModal("temp"));
+    
+      // Back button
+      backBtn.addEventListener("click", () => {
+        if (!currentPath) return;
+        const parent = currentPath.split("/").slice(0, -1).join("/") || "/";
+        loadPath(parent);
+      });
+    
+      // Select button
+      selectBtn.addEventListener("click", () => {
+        if (currentBase === "media") {
+          mediaInput.value = selectedPath;
+        } else {
+          tempInput.value = selectedPath;
+        }
+        closeModal();
+      });
+    
+      // Cancel
+      cancelBtn.addEventListener("click", closeModal);
+    
+      // Click outside modal closes it
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal) closeModal();
+      });
+    })();
+
 </script>
 
 {% endblock %}
