@@ -100,6 +100,10 @@ def infer_stream_language(tags: dict) -> str:
     Special handling:
     - Distinguish 'spa' vs 'latam' using LATAM keywords (title-based).
     """
+    
+    # Normalize tag keys to lowercase (ffprobe may return LANGUAGE, TITLE, etc.)
+    tags = {k.lower(): v for k, v in tags.items()}
+
     raw_lang = (tags.get("language") or "")
     raw_title = (tags.get("title") or "")
 
@@ -194,14 +198,14 @@ def get_video_metadata(file_path: str) -> dict:
         video_codec = None
         resolution = None
         audio_codecs = set()
-        audio_languages = set()
+        audio_languages = []
         subtitle_codecs = set()
-        subtitle_languages = set()
+        subtitle_languages = []
 
         for stream in data.get("streams", []):
             stype = stream.get("codec_type")
             codec = stream.get("codec_name", "unknown")
-            tags = stream.get("tags", {})
+            tags = stream.get("tags") or {}
 
             if stype == "video" and not video_codec:
                 video_codec = codec
@@ -210,20 +214,22 @@ def get_video_metadata(file_path: str) -> dict:
             elif stype == "audio":
                 audio_codecs.add(codec)
                 lang = infer_stream_language(tags)
-                audio_languages.add(lang)
+                if lang not in audio_languages:
+                    audio_languages.append(lang)
 
             elif stype == "subtitle":
                 subtitle_codecs.add(codec)
                 lang = infer_stream_language(tags)
-                subtitle_languages.add(lang)
+                if lang not in subtitle_languages:
+                    subtitle_languages.append(lang)
 
         return {
             "video_codec": video_codec,
             "resolution": resolution,
             "audio_codec": ", ".join(sorted(audio_codecs)) if audio_codecs else None,
-            "audio_languages": ", ".join(sorted(audio_languages)) if audio_languages else None,
+            "audio_languages": ", ".join(audio_languages) if audio_languages else None,
             "subtitle_codec": ", ".join(sorted(subtitle_codecs)) if subtitle_codecs else None,
-            "subtitle_languages": ", ".join(sorted(subtitle_languages)) if subtitle_languages else None,
+            "subtitle_languages": ", ".join(subtitle_languages) if subtitle_languages else None,
         }
 
     except Exception as exc:

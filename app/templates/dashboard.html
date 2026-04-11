@@ -211,14 +211,15 @@
                           or
                           (file.subtitle_languages and "und" in file.subtitle_languages)
                         %}
-                          <button
-                            type="button"
-                            class="inspect-streams text-amber-400 hover:text-amber-300"
-                            title="Inspect streams metadata"
-                            data-media-id="{{ file.id }}"
-                          >
-                            🛠️
-                          </button>
+                            <button
+                              type="button"
+                              class="inspect-streams text-amber-400 hover:text-amber-300"
+                              title="Inspect streams metadata"
+                              data-media-id="{{ file.id }}"
+                              data-file-name="{{ file.file_name }}"
+                            >
+                              🛠️
+                            </button>
                         {% endif %}
                     
                       </div>
@@ -256,16 +257,19 @@
 </div>
 
 <!-- Inspect Streams Modal -->
-<div
-  id="inspect-streams-modal"
-  class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70"
->
-  <div class="bg-slate-900 border border-slate-700 rounded-xl p-6 w-full max-w-5xl shadow-2xl">
+<div id="inspect-streams-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70">
+  <div class="bg-slate-900 border border-slate-700 rounded-xl p-4 w-full max-w-6xl shadow-2xl">
+    <!-- Header -->
     <div class="flex justify-between items-center mb-4">
-      <h3 class="text-lg font-bold text-slate-100">
-        Stream Inspection (ffprobe)
-      </h3>
-
+        <h3 class="text-lg font-bold text-slate-100">
+          Stream Inspection (ffprobe)
+          <span
+            id="inspect-streams-filename"
+            class="ml-2 text-slate-400 font-normal text-sm truncate"
+          >
+            <!-- filename injected by JS -->
+          </span>
+        </h3>
       <button
         id="inspect-streams-close"
         class="text-slate-400 hover:text-slate-200 text-xl"
@@ -274,12 +278,35 @@
       </button>
     </div>
 
-    <pre
+    <!-- Two panel layout -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 h-[70vh]">
+    
+      <!-- LEFT: Raw ffprobe -->
+      <div class="flex flex-col min-h-0">
+        <h4 class="text-slate-300 font-semibold mb-2">
+          🔍 Raw ffprobe output
+        </h4>
+        <pre
+          id="inspect-streams-json"
+          class="flex-1 bg-black text-slate-200 text-xs p-3 rounded
+                 overflow-y-auto overflow-x-auto
+                 border border-slate-700"
+        >
+    Loading...
+        </pre>
+  </div>
+
+  <!-- RIGHT: Parsed streams -->
+  <div class="flex flex-col min-h-0">
+    <h4 class="text-slate-300 font-semibold mb-2">
+      🧩 Parsed stream view
+    </h4>
+    <div
       id="inspect-streams-content"
-      class="bg-black text-slate-200 text-xs p-4 rounded overflow-auto max-h-[70vh]"
+      class="flex-1 space-y-6 overflow-auto"
     >
-Loading...
-    </pre>
+      <!-- Rendered by JS -->
+    </div>
   </div>
 </div>
 
@@ -512,7 +539,7 @@ Loading...
 
     
     setInterval(() => {pollStatuses(); updateGlobalStats(); }, POLL_INTERVAL_MS);});
-    
+
     // -------------------------------------------------
     // Inspect streams (ffprobe viewer)
     // -------------------------------------------------
@@ -530,9 +557,146 @@ Loading...
       function closeModal() {
         modal.classList.add("hidden");
         modal.classList.remove("flex");
-        contentEl.textContent = "";
+        contentEl.innerHTML = "";
       }
+      
+        function normalizeTagKeys(tags) {
+          const t = tags || {};
+          const normalized = {};
+          Object.keys(t).forEach((k) => {
+            normalized[String(k).toLowerCase()] = t[k];
+          });
+          return normalized;
+        }
+        
+        function mapToIso639_2(lang) {
+          if (!lang) return "und";
+          const v = String(lang).trim().toLowerCase();
+        
+          const mapping = {
+            en: "eng",
+            es: "spa",
+            esp: "spa",
+            fr: "fra",
+            it: "ita",
+            de: "deu",
+            pt: "por",
+            ja: "jpn",
+            zh: "chi",
+            ru: "rus",
+            nl: "nld",
+          };
+        
+          return mapping[v] || v;
+        }
+        
+        function getStreamLanguage(stream) {
+          const tags = normalizeTagKeys(stream.tags);
+          const raw = tags.language || "";
+          const lang = mapToIso639_2(raw);
+        
+          return lang && lang !== "undefined" && lang !== "null" ? lang : "und";
+        }
 
+      function renderStreams(ffprobe) {
+        const container = contentEl;
+        container.innerHTML = "";
+    
+        const streams = ffprobe.streams || [];
+    
+        const video = streams.filter(s => s.codec_type === "video");
+        const audio = streams.filter(s => s.codec_type === "audio");
+        const subs  = streams.filter(s => s.codec_type === "subtitle");
+    
+        function section(title, html) {
+          const div = document.createElement("div");
+          div.className = "space-y-2";
+          div.innerHTML = `
+            <h4 class="text-slate-200 font-bold">${title}</h4>
+            <div class="bg-slate-900 border border-slate-700 rounded p-3">
+              ${html || '<span class="text-slate-500 text-sm">None</span>'}
+            </div>
+          `;
+          return div;
+        }
+    
+        // Video
+        if (video.length) {
+          const v = video[0];
+          container.appendChild(
+            section(
+              "🎬 Video",
+              `<div class="text-sm text-slate-300">
+                Stream ${v.index} · ${v.codec_name} · ${v.width}x${v.height}
+              </div>`
+            )
+          );
+        }
+    
+        // Audio
+        if (audio.length) {
+          const rows = audio.map((a) => {
+            const lang = getStreamLanguage(a);
+        
+            return `
+              <tr>
+                <td>${a.index}</td>
+                <td>${a.codec_name}</td>
+                <td>${a.channels || "-"}</td>
+                <td class="${lang === "und" ? "text-amber-400 font-bold" : ""}">
+                  ${lang}
+                </td>
+              </tr>
+            `;
+          }).join("");
+        
+          container.appendChild(
+            section(
+              "🔊 Audio Streams",
+              `<table class="w-full text-sm">
+                <thead class="text-slate-400 border-b border-slate-700">
+                  <tr>
+                    <th>Index</th><th>Codec</th><th>Channels</th><th>Language</th>
+                  </tr>
+                </thead>
+                <tbody class="text-slate-300">${rows}</tbody>
+              </table>`
+            )
+          );
+        }
+
+        // Subtitles
+        if (subs.length) {
+          const rows = subs.map((s) => {
+            const lang = getStreamLanguage(s);
+        
+            return `
+              <tr>
+                <td>${s.index}</td>
+                <td>${s.codec_name}</td>
+                <td class="${lang === "und" ? "text-amber-400 font-bold" : ""}">
+                  ${lang}
+                </td>
+              </tr>
+            `;
+          }).join("");
+        
+          container.appendChild(
+            section(
+              "💬 Subtitle Streams",
+              `<table class="w-full text-sm">
+                <thead class="text-slate-400 border-b border-slate-700">
+                  <tr>
+                    <th>Index</th><th>Codec</th><th>Language</th>
+                  </tr>
+                </thead>
+                <tbody class="text-slate-300">${rows}</tbody>
+              </table>`
+            )
+          );
+        }
+      }
+    
         document.addEventListener("click", async (e) => {
           const btn = e.target.closest(".inspect-streams");
           if (!btn) return;
@@ -540,23 +704,48 @@ Loading...
           const mediaId = btn.dataset.mediaId;
         
           openModal();
-          contentEl.textContent = "Loading ffprobe output...";
+          
+          // Set filename in modal header
+          const filename = btn.dataset.fileName || "Unknown file";
+          document.getElementById("inspect-streams-filename").textContent =
+            `— ${filename}`;
+
+          // Init both panels
+          document.getElementById("inspect-streams-json").textContent =
+            "Loading ffprobe JSON...";
+          contentEl.innerHTML = "Loading parsed streams...";
         
           try {
             const res = await fetch(`/api/media/${mediaId}/ffprobe`);
             if (!res.ok) {
-              contentEl.textContent = "Failed to load ffprobe data.";
+              document.getElementById("inspect-streams-json").textContent =
+                "Failed to load ffprobe data.";
+              contentEl.innerHTML = "Failed to load stream data.";
               return;
             }
         
             const data = await res.json();
-            contentEl.textContent = JSON.stringify(data, null, 2);
+        
+            // LEFT: raw ffprobe
+            document.getElementById("inspect-streams-json").textContent =
+              JSON.stringify(data, null, 2);
+        
+            // RIGHT: parsed UI
+            try {
+              renderStreams(data);
+            } catch (renderErr) {
+              console.error("Render error:", renderErr);
+              contentEl.innerHTML = "Failed to render stream view.";
+            }
+
           } catch (err) {
-            contentEl.textContent = "Failed to load ffprobe data.";
+            document.getElementById("inspect-streams-json").textContent =
+              "Failed to load ffprobe data.";
+            contentEl.innerHTML = "Failed to load stream data.";
             console.error(err);
           }
         });
-    
+
       closeBtn.addEventListener("click", closeModal);
     
       modal.addEventListener("click", (e) => {
