@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Form, Depends, HTTPException, Query
+from fastapi import FastAPI, Request, Form, Depends, HTTPException, Query, Body
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -521,3 +521,67 @@ async def get_media_ffprobe(media_id: int, db: Session = Depends(get_db)):
             status_code=500,
             detail=f"ffprobe failed: {exc}",
         )
+
+# -------------------------------------------------
+# STREAM LANGUAGE OVERRIDES (UI / MANUAL EDITING)
+# -------------------------------------------------
+
+@app.get("/api/media/{media_id}/stream-overrides")
+async def get_stream_overrides(media_id: int, db: Session = Depends(get_db)):
+    """
+    Returns saved per-stream language overrides for a media file.
+    """
+    media = (
+        db.query(models.MediaFile)
+        .filter(models.MediaFile.id == media_id)
+        .first()
+    )
+
+    if not media:
+        raise HTTPException(status_code=404, detail="Media file not found")
+
+    if not media.stream_overrides:
+        return {}
+
+    try:
+        return json.loads(media.stream_overrides)
+    except Exception:
+        # If data is corrupted, do not crash the UI
+        return {}
+
+
+@app.post("/api/media/{media_id}/stream-overrides")
+async def save_stream_overrides(
+    media_id: int,
+    payload: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Saves per-stream language overrides as JSON string in the database.
+    Expected payload format:
+    {
+      "audio": { "1": "spa", "2": "eng" },
+      "subtitle": { "5": "spa" }
+    }
+    """
+    media = (
+        db.query(models.MediaFile)
+        .filter(models.MediaFile.id == media_id)
+        .first()
+    )
+
+    if not media:
+        raise HTTPException(status_code=404, detail="Media file not found")
+
+    # Basic validation (keep it permissive)
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Invalid payload")
+
+    for key in payload.keys():
+        if key not in {"audio", "subtitle"}:
+            raise HTTPException(status_code=400, detail="Invalid payload keys")
+
+    media.stream_overrides = json.dumps(payload)
+    db.commit()
+
+    return {"ok": True}

@@ -261,21 +261,29 @@
   <div class="bg-slate-900 border border-slate-700 rounded-xl p-4 w-full max-w-6xl shadow-2xl">
     <!-- Header -->
     <div class="flex justify-between items-center mb-4">
-        <h3 class="text-lg font-bold text-slate-100">
-          Stream Inspection (ffprobe)
-          <span
-            id="inspect-streams-filename"
-            class="ml-2 text-slate-400 font-normal text-sm truncate"
-          >
-            <!-- filename injected by JS -->
-          </span>
-        </h3>
-      <button
-        id="inspect-streams-close"
-        class="text-slate-400 hover:text-slate-200 text-xl"
-      >
-        ✖
-      </button>
+      <h3 class="text-lg font-bold text-slate-100">
+        Stream Inspection (ffprobe)
+        <span
+          id="inspect-streams-filename"
+          class="ml-2 text-slate-400 font-normal text-sm truncate"
+        ></span>
+      </h3>
+    
+      <div class="flex items-center gap-3">
+        <button
+          id="save-stream-overrides"
+          class="hidden bg-amber-600 hover:bg-amber-700 text-black text-xs font-bold px-3 py-1 rounded"
+        >
+          💾 Save overrides
+        </button>
+    
+        <button
+          id="inspect-streams-close"
+          class="text-slate-400 hover:text-slate-200 text-xl"
+        >
+          ✖
+        </button>
+      </div>
     </div>
 
     <!-- Two panel layout -->
@@ -545,21 +553,46 @@
     // -------------------------------------------------
     
     (() => {
-      const modal = document.getElementById("inspect-streams-modal");
-      const contentEl = document.getElementById("inspect-streams-content");
-      const closeBtn = document.getElementById("inspect-streams-close");
-    
-      function openModal() {
-        modal.classList.remove("hidden");
-        modal.classList.add("flex");
-      }
-    
-      function closeModal() {
-        modal.classList.add("hidden");
-        modal.classList.remove("flex");
-        contentEl.innerHTML = "";
-      }
+        const modal = document.getElementById("inspect-streams-modal");
+        const contentEl = document.getElementById("inspect-streams-content");
+        const closeBtn = document.getElementById("inspect-streams-close");
       
+        const streamOverrides = {
+          audio: {},
+          subtitle: {}
+        };
+        
+        let hasUnsavedChanges = false;
+        let currentMediaId = null;
+
+        function openModal() {
+        
+            hasUnsavedChanges = false;
+            streamOverrides.audio = {};
+            streamOverrides.subtitle = {};
+    
+            modal.classList.remove("hidden");
+            modal.classList.add("flex");
+
+            hasUnsavedChanges = false;
+        }
+
+        function closeModal() {
+          if (hasUnsavedChanges) {
+            const confirmClose = confirm(
+              "You have unsaved language changes. Close anyway?"
+            );
+            if (!confirmClose) return;
+          }
+        
+          modal.classList.add("hidden");
+          modal.classList.remove("flex");
+          contentEl.innerHTML = "";
+        
+          hasUnsavedChanges = false;
+          currentMediaId = null;
+        }
+        
         function normalizeTagKeys(tags) {
           const t = tags || {};
           const normalized = {};
@@ -598,16 +631,29 @@
           return lang && lang !== "undefined" && lang !== "null" ? lang : "und";
         }
 
-      function renderStreams(ffprobe) {
+        function renderStreams(ffprobe) {
+        
+        const LANGUAGE_OPTIONS = [
+          "und",
+          "eng",
+          "spa",
+          "latam",
+          "fra",
+          "deu",
+          "ita",
+          "por",
+          "jpn",
+        ];
+        
         const container = contentEl;
         container.innerHTML = "";
-    
+        
         const streams = ffprobe.streams || [];
-    
+        
         const video = streams.filter(s => s.codec_type === "video");
         const audio = streams.filter(s => s.codec_type === "audio");
         const subs  = streams.filter(s => s.codec_type === "subtitle");
-    
+        
         function section(title, html) {
           const div = document.createElement("div");
           div.className = "space-y-2";
@@ -619,7 +665,7 @@
           `;
           return div;
         }
-    
+        
         // Video
         if (video.length) {
           const v = video[0];
@@ -632,24 +678,41 @@
             )
           );
         }
-    
+        
         // Audio
         if (audio.length) {
-          const rows = audio.map((a) => {
-            const lang = getStreamLanguage(a);
-        
-            return `
-              <tr>
-                <td>${a.index}</td>
-                <td>${a.codec_name}</td>
-                <td>${a.channels || "-"}</td>
-                <td class="${lang === "und" ? "text-amber-400 font-bold" : ""}">
-                  ${lang}
-                </td>
-              </tr>
-            `;
-          }).join("");
-        
+            const rows = audio.map((a) => {
+              const hasOverride = streamOverrides.audio[a.index] !== undefined;
+            
+              const lang =
+                streamOverrides.audio[a.index] ??
+                getStreamLanguage(a);
+            
+              return `
+                <tr>
+                  <td>${a.index}</td>
+                  <td>${a.codec_name}</td>
+                  <td>${a.channels || "-"}</td>
+                  <td>
+                    <select
+                      class="
+                        bg-slate-800 border rounded px-1 py-0.5 text-sm text-slate-200
+                        ${hasOverride ? "border-amber-500" : "border-slate-600"}
+                      "
+                      data-stream-index="${a.index}"
+                      data-stream-type="audio"
+                    >
+                      ${LANGUAGE_OPTIONS.map(opt => `
+                        <option value="${opt}" ${opt === lang ? "selected" : ""}>
+                          ${opt}
+                        </option>
+                      `).join("")}
+                    </select>
+                  </td>
+                </tr>
+              `;
+            }).join("");
+
           container.appendChild(
             section(
               "🔊 Audio Streams",
@@ -664,23 +727,40 @@
             )
           );
         }
-
+        
         // Subtitles
         if (subs.length) {
-          const rows = subs.map((s) => {
-            const lang = getStreamLanguage(s);
-        
-            return `
-              <tr>
-                <td>${s.index}</td>
-                <td>${s.codec_name}</td>
-                <td class="${lang === "und" ? "text-amber-400 font-bold" : ""}">
-                  ${lang}
-                </td>
-              </tr>
-            `;
-          }).join("");
-        
+            const rows = subs.map((s) => {
+              const hasOverride = streamOverrides.subtitle[s.index] !== undefined;
+            
+              const lang =
+                streamOverrides.subtitle[s.index] ??
+                getStreamLanguage(s);
+            
+              return `
+                <tr>
+                  <td>${s.index}</td>
+                  <td>${s.codec_name}</td>
+                  <td>
+                    <select
+                      class="
+                        bg-slate-800 border rounded px-1 py-0.5 text-sm text-slate-200
+                        ${hasOverride ? "border-amber-500" : "border-slate-600"}
+                      "
+                      data-stream-index="${s.index}"
+                      data-stream-type="subtitle"
+                    >
+                      ${LANGUAGE_OPTIONS.map(opt => `
+                        <option value="${opt}" ${opt === lang ? "selected" : ""}>
+                          ${opt}
+                        </option>
+                      `).join("")}
+                    </select>
+                  </td>
+                </tr>
+              `;
+            }).join("");
+
           container.appendChild(
             section(
               "💬 Subtitle Streams",
@@ -695,13 +775,14 @@
             )
           );
         }
-      }
+        }
     
         document.addEventListener("click", async (e) => {
           const btn = e.target.closest(".inspect-streams");
           if (!btn) return;
         
           const mediaId = btn.dataset.mediaId;
+          currentMediaId = mediaId;
         
           openModal();
           
@@ -729,7 +810,34 @@
             // LEFT: raw ffprobe
             document.getElementById("inspect-streams-json").textContent =
               JSON.stringify(data, null, 2);
-        
+            
+            // Load previously saved overrides
+            try {
+              const ovrRes = await fetch(`/api/media/${mediaId}/stream-overrides`);
+              if (ovrRes.ok) {
+                const savedOverrides = await ovrRes.json();
+            
+                if (savedOverrides.audio) {
+                  streamOverrides.audio = savedOverrides.audio;
+                }
+                if (savedOverrides.subtitle) {
+                  streamOverrides.subtitle = savedOverrides.subtitle;
+                }
+                if (
+                  Object.keys(streamOverrides.audio).length ||
+                  Object.keys(streamOverrides.subtitle).length
+                ) {
+                  document
+                    .getElementById("save-stream-overrides")
+                    .classList.add("hidden");
+            
+                  hasUnsavedChanges = false;
+                }
+              }
+            } catch (err) {
+              console.warn("Failed to load saved overrides", err);
+            }
+            
             // RIGHT: parsed UI
             try {
               renderStreams(data);
@@ -743,6 +851,54 @@
               "Failed to load ffprobe data.";
             contentEl.innerHTML = "Failed to load stream data.";
             console.error(err);
+          }
+        });
+        
+        document.addEventListener("change", (e) => {
+          const select = e.target;
+          if (!select.matches("select[data-stream-index]")) return;
+        
+          const streamIndex = select.dataset.streamIndex;
+          const streamType = select.dataset.streamType;
+          const lang = select.value;
+        
+          streamOverrides[streamType][streamIndex] = lang;
+        
+          select.classList.add("border-amber-500");
+          hasUnsavedChanges = true;
+        
+          document
+            .getElementById("save-stream-overrides")
+            .classList.remove("hidden");
+        
+          console.log("Stream override updated:", streamOverrides);
+        });
+        
+        document.getElementById("save-stream-overrides").addEventListener("click", async () => {
+          if (!currentMediaId) {
+            alert("Cannot determine media ID.");
+            return;
+          }
+        
+          try {
+            const res = await fetch(`/api/media/${currentMediaId}/stream-overrides`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(streamOverrides)
+            });
+        
+            if (!res.ok) {
+              alert("Failed to save overrides.");
+              return;
+            }
+        
+            hasUnsavedChanges = false;
+            document.getElementById("save-stream-overrides").classList.add("hidden");
+            alert("Stream language overrides saved ✅");
+        
+          } catch (err) {
+            console.error(err);
+            alert("Unexpected error saving overrides.");
           }
         });
 

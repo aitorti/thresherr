@@ -105,6 +105,8 @@ class MediaFile(Base):
     audio_languages = Column(String, nullable=True)
     subtitle_codec = Column(String, nullable=True)
     subtitle_languages = Column(String, nullable=True)
+    # JSON string containing per-stream manual overrides (UI only)
+    stream_overrides = Column(Text, nullable=True)
 
     # --------------------
     # Space tracking
