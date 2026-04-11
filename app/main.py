@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from database import engine, SessionLocal
 from scanner import scan_libraries
+from typing import Optional, Dict
 
 import models
 import subprocess
@@ -549,12 +550,11 @@ async def get_stream_overrides(media_id: int, db: Session = Depends(get_db)):
         # If data is corrupted, do not crash the UI
         return {}
 
-
 @app.post("/api/media/{media_id}/stream-overrides")
-async def save_stream_overrides(
+def save_stream_overrides(
     media_id: int,
-    payload: dict = Body(...),
-    db: Session = Depends(get_db)
+    payload: Optional[Dict] = Body(None),
+    db: Session = Depends(get_db),
 ):
     """
     Saves per-stream language overrides as JSON string in the database.
@@ -564,24 +564,15 @@ async def save_stream_overrides(
       "subtitle": { "5": "spa" }
     }
     """
-    media = (
-        db.query(models.MediaFile)
-        .filter(models.MediaFile.id == media_id)
-        .first()
-    )
-
+    media = db.query(models.MediaFile).filter(models.MediaFile.id == media_id).first()
     if not media:
-        raise HTTPException(status_code=404, detail="Media file not found")
+        raise HTTPException(status_code=404, detail="Media not found")
 
-    # Basic validation (keep it permissive)
-    if not isinstance(payload, dict):
-        raise HTTPException(status_code=400, detail="Invalid payload")
+    # Clear = NULL
+    if payload is None:
+        media.stream_overrides = None
+    else:
+        media.stream_overrides = json.dumps(payload)
 
-    for key in payload.keys():
-        if key not in {"audio", "subtitle"}:
-            raise HTTPException(status_code=400, detail="Invalid payload keys")
-
-    media.stream_overrides = json.dumps(payload)
     db.commit()
-
     return {"ok": True}

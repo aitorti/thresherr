@@ -931,34 +931,33 @@
           }
         });
         
-        document.getElementById("clear-stream-overrides").addEventListener("click", () => {
+        document.getElementById("clear-stream-overrides").addEventListener("click", async () => {
           if (!currentMediaId) return;
         
-          // 1. Clear overrides in memory
+          // 1. Update DB → NULL
+          await fetch(`/api/media/${currentMediaId}/stream-overrides`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(null)
+          });
+        
+          // 2. Clear overrides in memory 
           streamOverrides.audio = {};
           streamOverrides.subtitle = {};
-        
-          // 2. State: now there are unsaved changes
-          hasUnsavedChanges = true;
+          hasUnsavedChanges = false;
         
           // 3. Re-render streams using raw ffprobe data
           try {
             const jsonText = document.getElementById("inspect-streams-json").textContent;
             const ffprobeData = JSON.parse(jsonText);
-        
             renderStreams(ffprobeData);
           } catch (err) {
-            console.error("Failed to re-render streams after clearing overrides", err);
+            console.error("Failed to re-render after clearing overrides", err);
           }
         
           // 4. UI feedback
-          document
-            .getElementById("save-stream-overrides")
-            .classList.remove("hidden");
-        
-          document
-            .getElementById("clear-stream-overrides")
-            .classList.add("hidden");
+          document.getElementById("save-stream-overrides").classList.add("hidden");
+          document.getElementById("clear-stream-overrides").classList.add("hidden");
         });
 
       closeBtn.addEventListener("click", closeModal);
