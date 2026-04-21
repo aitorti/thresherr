@@ -69,6 +69,10 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
 
     # THIS LINE IS CRITICAL:
     media_files = db.query(models.MediaFile).order_by(models.MediaFile.id.desc()).all()
+    
+    for mf in media_files:
+        mf.has_stream_overrides = mf.stream_overrides is not None
+
 
     return templates.TemplateResponse(
         request=request,
@@ -197,12 +201,18 @@ async def delete_library(library_id: int, db: Session = Depends(get_db)):
 @app.post("/queue/{media_id}/enqueue")
 async def enqueue_media(media_id: int, request: Request, db: Session = Depends(get_db)):
     media = db.query(models.MediaFile).filter(models.MediaFile.id == media_id).first()
-    if media and media.status == "pending":
-        media.status = "queued"
-        db.commit()
+    if not media or media.status != "pending":
+        return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303)
 
-    return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303,)
+    # SAFETY: block enqueue if there is any 'und'
+    if has_und_language(media):
+        # Do NOT enqueue, remain pending
+        return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303)
 
+    media.status = "queued"
+    db.commit()
+
+    return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303)
 
 @app.post("/queue/{media_id}/dequeue")
 async def dequeue_media(media_id: int, request: Request, db: Session = Depends(get_db)):
@@ -276,14 +286,22 @@ async def enqueue_library(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    (
+    media_files = (
         db.query(models.MediaFile)
         .filter(
             models.MediaFile.library_id == library_id,
             models.MediaFile.status == "pending",
         )
-        .update({models.MediaFile.status: "queued"}, synchronize_session=False)
+        .all()
     )
+
+    for media in media_files:
+        #SAFETY: skip files with 'und'
+        if has_und_language(media):
+            continue
+
+        media.status = "queued"
+
     db.commit()
 
     return RedirectResponse(
@@ -576,3 +594,43 @@ def save_stream_overrides(
 
     db.commit()
     return {"ok": True}
+
+def has_und_language(media: models.MediaFile) -> bool:
+    """
+    Returns True if there is any 'und' language in audio or subtitles,
+    taking stream_overrides into account.
+    """
+
+    # 1. If overrides exist, they have priority
+    if media.stream_overrides:
+        try:
+            overrides = json.loads(media.stream_overrides)
+
+            for lang in overrides.get("audio", {}).values():
+                if lang == "und":
+                    return True
+
+            for lang in overrides.get("subtitle", {}).values():
+                if lang == "und":
+                    return True
+
+            # Overrides exist and none is 'und'
+            return False
+
+        except Exception:
+            # If overrides are broken, be conservative
+            return True
+
+    # 2. No overrides → fall back to summary fields
+    def contains_und(value: str | None) -> bool:
+        if not value:
+            return False
+        return any(lang.strip() == "und" for lang in value.split(","))
+
+    if contains_und(media.audio_languages):
+        return True
+
+    if contains_und(media.subtitle_languages):
+        return True
+
+    return False

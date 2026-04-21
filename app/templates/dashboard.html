@@ -124,8 +124,8 @@
                     <td class="px-6 py-4 text-slate-400 font-mono" data-field="resolution">
                         {{ file.resolution if file.resolution else '---' }}
                     </td>
-
-                    <td class="px-6 py-4" data-field="audio">
+                    
+                    <td class="px-6 py-4 border rounded {% if file.has_stream_overrides %}border-amber-500{% else %}border-transparent{% endif %}" data-field="audio">
                         <div class="text-blue-400 font-medium uppercase text-xs">
                             {{ file.audio_codec if file.audio_codec else 'None' }}
                         </div>
@@ -134,7 +134,7 @@
                         </div>
                     </td>
 
-                    <td class="px-6 py-4" data-field="subtitles">
+                    <td class="px-6 py-4 border rounded {% if file.has_stream_overrides %}border-amber-500{% else %}border-transparent{% endif %}" data-field="subtitles">
                         <div class="text-green-400 font-medium uppercase text-xs">
                             {{ file.subtitle_codec if file.subtitle_codec else 'None' }}
                         </div>
