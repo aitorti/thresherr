@@ -224,7 +224,7 @@ def _safe_float(v):
 # Decide correct audio streams
 # -------------------------------------------------
 
-def decide_audio_streams(inspection: dict, profile: models.Profile):
+def decide_audio_streams(inspection: dict, profile: models.Profile) -> list:
 
     """
     Rules for 'und' (unknown language) with "allowed languages" (not required):
@@ -491,27 +491,24 @@ def decide_subtitle_streams(inspection: dict, profile: models.Profile) -> list:
     """
     Decide what to do with each subtitle stream.
 
-    Rules:
-    - Subtitle is REMOVED if:
-        * language is not allowed, OR
-        * codec is not allowed
-    - No subtitle transcoding is attempted.
-    - It is acceptable to end up with zero subtitles.
-    - From remaining subtitles:
-        * If a FORCED subtitle exists in default language -> set it as default
-        * Otherwise -> no default subtitle is set
+    CONSERVATIVE mode:
+    - Codec NOT allowed by profile -> REMOVE (always).
+    - Known language (!= 'und') but NOT allowed -> REMOVE.
+    - Language == 'und' AND codec is allowed -> KEEP (copy).
+    - No subtitle transcoding.
+    - It is acceptable to end up with ZERO subtitles.
     """
 
-    subtitle_streams = inspection.get("subtitle_streams", [])
+    subtitle_streams = inspection.get("subtitle_streams", []) or []
 
+    # Allowed languages are a whitelist (NOT required)
     allowed_languages = [
         l.strip()
         for l in (profile.subtitle_languages or "").split(",")
         if l.strip()
     ]
 
-    # Target codec defines the allowed subtitle codecs
-    # Example: profile.subtitle_codec == "subrip"
+    # Allowed codecs: only the target subtitle codec (if defined)
     allowed_codecs = {profile.subtitle_codec} if profile.subtitle_codec else set()
 
     default_language = profile.subtitle_def_language
@@ -519,23 +516,16 @@ def decide_subtitle_streams(inspection: dict, profile: models.Profile) -> list:
     actions = {}
     kept_indices = []
 
-    # First pass: decide keep/remove
+    # ---------------------------
+    # First pass: keep / remove
+    # ---------------------------
     for s in subtitle_streams:
         idx = s["index"]
-        lang = s.get("language")
+        lang = s.get("language") or "und"
         codec = s.get("codec")
 
-        # Remove if language not allowed
-        if lang not in allowed_languages:
-            actions[idx] = {
-                "action": "remove",
-                "target_codec": None,
-                "reason": "language_not_allowed",
-            }
-            continue
-
-        # Remove if codec not allowed
-        if codec not in allowed_codecs:
+        # 1) Codec not allowed -> REMOVE (always)
+        if allowed_codecs and codec not in allowed_codecs:
             actions[idx] = {
                 "action": "remove",
                 "target_codec": None,
@@ -543,15 +533,30 @@ def decide_subtitle_streams(inspection: dict, profile: models.Profile) -> list:
             }
             continue
 
-        # Otherwise keep (copy)
+        # 2) Known language but not allowed -> REMOVE
+        if lang != "und" and allowed_languages and lang not in allowed_languages:
+            actions[idx] = {
+                "action": "remove",
+                "target_codec": None,
+                "reason": "language_not_allowed",
+            }
+            continue
+
+        # 3) Allowed codec + (allowed language OR 'und') -> KEEP
         actions[idx] = {
             "action": "copy",
             "target_codec": None,
-            "reason": "subtitle_allowed",
+            "reason": (
+                "subtitle_allowed"
+                if lang != "und"
+                else "unknown_language_preserved"
+            ),
         }
         kept_indices.append(idx)
 
+    # ---------------------------
     # Second pass: assign default subtitle (ONLY ONE)
+    # ---------------------------
     default_assigned = False
 
     for s in subtitle_streams:
@@ -564,12 +569,23 @@ def decide_subtitle_streams(inspection: dict, profile: models.Profile) -> list:
         ):
             actions[idx]["set_default"] = True
             default_assigned = True
+            break
 
+    # Note:
+    # - We do NOT enforce having a default subtitle
+    # - We do NOT force-keep subtitles if none remain
+
+    # ---------------------------
     # Build final result list
+    # ---------------------------
     result = []
     for s in subtitle_streams:
         idx = s["index"]
-        a = actions[idx]
+        a = actions.get(idx)
+
+        # Safety fallback (should not happen)
+        if not a:
+            a = {"action": "remove", "target_codec": None, "reason": "unclassified"}
 
         result.append({
             "index": idx,
@@ -667,7 +683,17 @@ def execute_job_plan(job_plan: dict, input_path: str, temp_dir: str) -> str:
     name, _ext = os.path.splitext(base)
     output_path = os.path.join(temp_dir, f"{name}.thresherr.tmp.mkv")
 
-    cmd = ["ffmpeg", "-y", "-i", input_path]
+    # Detect input container by extension (for legacy repair flags)
+    ext = os.path.splitext(input_path)[1].lower()
+
+    cmd = ["ffmpeg", "-y"]
+
+    # AVI files often lack proper PTS/DTS -> generate them
+    if ext == ".avi":
+        cmd += ["-fflags", "+genpts"]
+
+    # Input file
+    cmd += ["-i", input_path]
 
     # --- VIDEO: always copy ---
     cmd += ["-map", "0:v", "-c:v", "copy"]
