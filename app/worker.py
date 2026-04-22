@@ -2,18 +2,14 @@ import os
 import time
 import json
 import subprocess
-#import re
 import shutil
-from datetime import datetime
-
-from sqlalchemy.orm import Session
-
-from scanner import get_video_metadata
-from scanner import infer_stream_language
-
-from database import SessionLocal, engine
 import models
 
+from datetime import datetime
+from sqlalchemy.orm import Session
+from scanner import get_video_metadata
+from scanner import infer_stream_language
+from database import SessionLocal, engine
 
 # Ensure DB schema exists
 models.Base.metadata.create_all(bind=engine)
@@ -24,57 +20,6 @@ models.Base.metadata.create_all(bind=engine)
 
 WORKER_SLEEP_SECONDS = 5
 
-# -------------------------------------------------
-# Stream ad cleaning
-# -------------------------------------------------
-#
-#def _clean_stream_title(title: str) -> str:
-#    if not title:
-#        return ""
-#    spam_patterns = [
-#        r"\[.*?\]",
-#        r"\(.*?\)",
-#        r"www\..*?\.[a-z]+",
-#        r"@[\w_]+",
-#        r"\bby\s+\w+\b",
-#    ]
-#    clean = title
-#    for pattern in spam_patterns:
-#        clean = re.sub(pattern, "", clean, flags=re.IGNORECASE)
-#    return clean.strip().lower()
-#
-# -------------------------------------------------
-# Distinguishing between Castilian Spanish and Latin American Spanish
-# -------------------------------------------------
-#
-#def _refine_spanish_language(tags: dict) -> str:
-#    """
-#    Igual que en scanner: distinguir 'spa' (castellano) de 'latam' (latino).
-#    Usa tags.language y tags.title.
-#    """
-#    lang = (tags.get("language") or "").lower()
-#    title = _clean_stream_title(tags.get("title", ""))
-#
-#    latam_keywords = [
-#        "lat",
-#        "latin",
-#        "latino",
-#        "latam",
-#        "latinoamericano",
-#        "américa",
-#        "americano",
-#    ]
-#
-#    if lang in {"spa", "es", "esp"}:
-#        if any(k in title for k in latam_keywords):
-#            return "latam"
-#        return "spa"
-#
-#    if any(k == lang for k in latam_keywords):
-#        return "latam"
-#
-#    return lang if lang else "und"
-#
 # -------------------------------------------------
 # Subtitle codec normalization
 # -------------------------------------------------
@@ -97,7 +42,6 @@ def _normalize_subtitle_codec(codec_name: str | None) -> str | None:
 # Job claiming
 # -------------------------------------------------
 
-
 def claim_next_job(db: Session) -> models.MediaFile | None:
     """
     Atomically claim the next queued MediaFile.
@@ -119,11 +63,47 @@ def claim_next_job(db: Session) -> models.MediaFile | None:
     db.commit()
 
     return job
+    
+# -------------------------------------------------
+# Overrides from user
+# -------------------------------------------------
+
+def _load_stream_overrides(media: models.MediaFile) -> dict:
+    """
+    Load per-stream overrides from DB (JSON string) or return {}.
+    Expected structure:
+    {
+      "audio": { "1": "spa", "2": "eng" },
+      "subtitle": { "5": "spa" }
+    }
+    """
+    raw = getattr(media, "stream_overrides", None)
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw) or {}
+    except Exception:
+        return {}
+
+
+def _apply_language_overrides(streams: list[dict], overrides_map: dict) -> None:
+    """
+    Apply overrides in-place based on absolute ffprobe stream index.
+    Keys may come as strings or ints, normalize to string lookup.
+    """
+    if not overrides_map:
+        return
+
+    normalized = {str(k): v for k, v in overrides_map.items()}
+
+    for s in streams:
+        idx = str(s.get("index"))
+        if idx in normalized and normalized[idx]:
+            s["language"] = normalized[idx]
 
 # -------------------------------------------------
 # Inspection
 # -------------------------------------------------
-
 
 def inspect_file(media: models.MediaFile) -> dict:
     """
@@ -211,6 +191,13 @@ def inspect_file(media: models.MediaFile) -> dict:
                 "forced": is_forced,
             })
 
+    # -------------------------------------------------
+    # Apply user stream overrides (language) if present
+    # -------------------------------------------------
+    overrides = _load_stream_overrides(media)
+    _apply_language_overrides(audio_streams, overrides.get("audio", {}))
+    _apply_language_overrides(subtitle_streams, overrides.get("subtitle", {}))
+
     return {
         "container": container,
         "duration": _safe_float(fmt.get("duration")),
@@ -237,89 +224,74 @@ def _safe_float(v):
 # Decide correct audio streams
 # -------------------------------------------------
 
+def decide_audio_streams(inspection: dict, profile: models.Profile):
 
-def decide_audio_streams(inspection: dict, profile: models.Profile) -> list:
     """
-    Decide what to do with each audio stream based on inspection + profile.
-
-    Refined rules:
-    - All streams are evaluated.
-    - Non-allowed languages are removed.
-    - For each allowed language:
-        * If any stream already uses the target codec -> keep only those, remove the rest.
-        * Otherwise -> transcode ONE best candidate, remove the rest.
-    - Only ONE stream must be marked as default (prefer profile.audio_def_language).
+    Rules for 'und' (unknown language) with "allowed languages" (not required):
+    1) Known languages (!= 'und') but NOT allowed -> remove (regardless of codec).
+    2) If the file already contains (or can reach) a valid set of audio streams using only
+       known+allowed languages (copy or transcode) -> 'und' streams are removable.
+    3) If the file contains only a partial set of allowed languages and there are 'und' streams
+       with allowed codec or transcodable codec -> DO NOT remove 'und' (they may hide an allowed language).
+    4) Never allow the final result to have 0 audio streams.
     """
 
     def codec_rank_for_target(target: str, codec: str | None) -> int:
-        """
-        Lower rank = better candidate to transcode INTO target codec.
-
-        Key idea:
-        - For EAC3, prefer AC3 over DTS (Dolby->Dolby usually degrades less than DTS->Dolby).
-        - Keep this mapping small and opinionated; extend later if needed.
-        """
         if not codec:
             return 999
-
         target = (target or "").lower()
         codec = codec.lower()
 
         preference = {
-            # Best sources to reach EAC3:
             "eac3": ["eac3", "ac3", "aac", "dts", "flac", "mp3"],
-            # Best sources to reach AC3:
             "ac3":  ["ac3", "eac3", "aac", "dts", "flac", "mp3"],
-            # Best sources to reach AAC:
             "aac":  ["aac", "ac3", "eac3", "dts", "flac", "mp3"],
-            # Default fallback (if target unknown):
             "*":    ["ac3", "eac3", "aac", "dts", "flac", "mp3"],
         }
-
         pref_list = preference.get(target, preference["*"])
         try:
             return pref_list.index(codec)
         except ValueError:
-            return 100  # unknown codecs go last
+            return 100
 
     def stream_quality_key(stream: dict) -> tuple:
-        """
-        Sorting key to choose best transcode candidate.
-        Priority:
-        1) codec preference rank (lower is better)
-        2) channels (higher is better)
-        3) bitrate (higher is better, if present)
-        4) index (lower is deterministic fallback)
-        """
         rank = codec_rank_for_target(profile.audio_codec, stream.get("codec"))
         channels = stream.get("channels") or 0
         bitrate = stream.get("bitrate") or 0
         idx = stream.get("index") or 10**9
         return (rank, -channels, -bitrate, idx)
 
-    audio_streams = inspection.get("audio_streams", [])
+    audio_streams = inspection.get("audio_streams", []) or []
 
+    # Allowed languages are a whitelist (NOT required)
     allowed_languages = [
         l.strip()
         for l in (profile.audio_languages or "").split(",")
         if l.strip()
     ]
-    target_codec = profile.audio_codec
+
+    target_codec = (profile.audio_codec or "").lower() if profile.audio_codec else None
     default_language = profile.audio_def_language
 
     # Group streams by language
-    streams_by_language = {}
+    streams_by_language: dict[str, list[dict]] = {}
     for s in audio_streams:
-        streams_by_language.setdefault(s.get("language"), []).append(s)
+        lang = (s.get("language") or "und")
+        streams_by_language.setdefault(lang, []).append(s)
 
-    actions = {}
-    kept_indices = []
+    actions: dict[int, dict] = {}
+    kept_indices: list[int] = []
 
-    # Decide actions per language group
+    # ---------------------------
+    # 1) Handle known languages (not 'und')
+    # ---------------------------
     for lang, streams in streams_by_language.items():
+        if lang == "und":
+            continue  # handled later by 'und' logic
 
-        # Language not allowed -> remove all
-        if lang not in allowed_languages:
+        # If a whitelist is defined, remove known languages not allowed.
+        # If whitelist is empty, treat all known languages as allowed.
+        if allowed_languages and lang not in allowed_languages:
             for s in streams:
                 actions[s["index"]] = {
                     "action": "remove",
@@ -328,10 +300,14 @@ def decide_audio_streams(inspection: dict, profile: models.Profile) -> list:
                 }
             continue
 
-        # If any stream already has target codec -> keep only those
-        matching = [s for s in streams if s.get("codec") == target_codec]
+        # Known + allowed language group:
+        # Keep only target codec streams if present; otherwise transcode best candidate.
+        if target_codec:
+            matching = [s for s in streams if (s.get("codec") or "").lower() == target_codec]
+        else:
+            matching = streams[:]  # no target codec defined -> keep as copy
 
-        if matching:
+        if matching and target_codec:
             for s in streams:
                 if s in matching:
                     actions[s["index"]] = {
@@ -347,43 +323,151 @@ def decide_audio_streams(inspection: dict, profile: models.Profile) -> list:
                         "reason": "redundant_language_stream",
                     }
         else:
-            # No stream with target codec -> transcode ONE best candidate
-            best = sorted(streams, key=stream_quality_key)[0]
+            # No matching target codec (or no target defined) -> choose best candidate
+            if target_codec:
+                best = sorted(streams, key=stream_quality_key)[0]
+                for s in streams:
+                    if s is best:
+                        actions[s["index"]] = {
+                            "action": "transcode",
+                            "target_codec": target_codec,
+                            "reason": "codec_normalization_best_candidate",
+                        }
+                        kept_indices.append(s["index"])
+                    else:
+                        actions[s["index"]] = {
+                            "action": "remove",
+                            "target_codec": None,
+                            "reason": "redundant_language_stream",
+                        }
+            else:
+                # No target codec -> keep first, remove rest (deterministic)
+                best = sorted(streams, key=stream_quality_key)[0]
+                for s in streams:
+                    if s is best:
+                        actions[s["index"]] = {
+                            "action": "copy",
+                            "target_codec": None,
+                            "reason": "no_target_codec_keep_one",
+                        }
+                        kept_indices.append(s["index"])
+                    else:
+                        actions[s["index"]] = {
+                            "action": "remove",
+                            "target_codec": None,
+                            "reason": "redundant_language_stream",
+                        }
 
-            for s in streams:
-                if s is best:
+    # ---------------------------
+    # 2) Decide what to do with 'und' (unknown language)
+    # ---------------------------
+    und_streams = streams_by_language.get("und", []) or []
+
+    # Known languages present in the file (after overrides)
+    known_langs_present = {lang for lang in streams_by_language.keys() if lang != "und"}
+
+    # If there is a whitelist, determine whether we "miss" some allowed language among known streams.
+    # Missing allowed languages means 'und' may hide an allowed language -> keep 'und'
+    missing_allowed_languages = set()
+    if allowed_languages:
+        missing_allowed_languages = set(allowed_languages) - known_langs_present
+
+    # Determine if we already have at least one kept audio stream from known+allowed languages
+    has_valid_audio_without_und = len(kept_indices) > 0
+
+    # Determine if any und stream has codec that is allowed or transcodable
+    # (minimal definition: codec == target OR codec exists -> we can transcode later if needed)
+    def und_is_codec_ok(s: dict) -> bool:
+        c = (s.get("codec") or "").lower()
+        if not c:
+            return False
+        if target_codec and c == target_codec:
+            return True
+        # treat any known codec as transcodable in phase 1
+        return True
+
+    und_codec_ok_exists = any(und_is_codec_ok(s) for s in und_streams)
+
+    # - If we have a valid plan without und -> und removable UNLESS rule 4 applies (missing allowed langs + und might hide them)
+    # - If we do NOT have valid audio without und -> und must be kept (never 0 audio)
+    if und_streams:
+        if not has_valid_audio_without_und:
+            # Rule 4 (audio safety): we would end up with 0 audio, so keep und
+            for s in und_streams:
+                actions[s["index"]] = {
+                    "action": "copy",
+                    "target_codec": None,
+                    "reason": "unknown_language_preserved_no_other_audio",
+                }
+                kept_indices.append(s["index"])
+
+        else:
+            # We have at least one valid audio without und.
+            # Now check whether und might hide missing allowed language.
+            if missing_allowed_languages and und_codec_ok_exists:
+                # Rule 4: do NOT remove und; it may hide allowed languages not detected
+                for s in und_streams:
                     actions[s["index"]] = {
-                        "action": "transcode",
-                        "target_codec": target_codec,
-                        "reason": "codec_normalization_best_candidate",
+                        "action": "copy",
+                        "target_codec": None,
+                        "reason": "unknown_language_preserved_possible_allowed_language",
                     }
                     kept_indices.append(s["index"])
-                else:
+            else:
+                # Rule 2/3: safe to remove und
+                for s in und_streams:
                     actions[s["index"]] = {
                         "action": "remove",
                         "target_codec": None,
-                        "reason": "redundant_language_stream",
+                        "reason": "unknown_language_redundant",
                     }
 
-    # Assign default (only one)
+    # ---------------------------
+    # 3) Final safety: never end with 0 audio streams
+    # ---------------------------
+    if not kept_indices:
+        # Keep one best available stream (prefer und if it exists, otherwise first stream)
+        candidate_pool = und_streams if und_streams else audio_streams
+        if candidate_pool:
+            best = sorted(candidate_pool, key=stream_quality_key)[0]
+            idx = best["index"]
+            actions[idx] = {
+                "action": "copy",
+                "target_codec": None,
+                "reason": "safety_keep_one_audio",
+            }
+            kept_indices.append(idx)
+
+    # ---------------------------
+    # 4) Assign default (only one)
+    # ---------------------------
     default_assigned = False
 
-    # First: pick kept stream with preferred default language
-    for s in audio_streams:
-        idx = s["index"]
-        if idx in kept_indices and s.get("language") == default_language and not default_assigned:
-            actions[idx]["set_default"] = True
-            default_assigned = True
+    # Prefer kept stream in preferred default language (if defined and exists)
+    if default_language:
+        for s in audio_streams:
+            idx = s["index"]
+            if idx in kept_indices and s.get("language") == default_language and not default_assigned:
+                actions[idx]["set_default"] = True
+                default_assigned = True
+                break
 
     # Fallback: first kept stream
     if not default_assigned and kept_indices:
         actions[kept_indices[0]]["set_default"] = True
 
-    # Build final list (one entry per original stream)
+    # ---------------------------
+    # 5) Build final result list (one entry per original stream)
+    # ---------------------------
     result = []
     for s in audio_streams:
         idx = s["index"]
-        a = actions[idx]
+        a = actions.get(idx)
+
+        # If some stream was never assigned (should not happen), default to remove
+        if not a:
+            a = {"action": "remove", "target_codec": None, "reason": "unclassified"}
+
         result.append({
             "index": idx,
             "codec": s.get("codec"),
@@ -560,7 +644,6 @@ def build_job_plan(
 
     return plan
 
-
 # -------------------------------------------------
 # Execution
 # -------------------------------------------------
@@ -644,7 +727,6 @@ def execute_job_plan(job_plan: dict, input_path: str, temp_dir: str) -> str:
         raise RuntimeError(f"ffmpeg failed: {result.stderr.strip()}")
 
     return output_path
-
 
 # -------------------------------------------------
 # Verification
@@ -795,7 +877,6 @@ def safe_replace_cross_fs(original_path: str, temp_path: str) -> None:
 
         # Re-raise so the worker marks the job as failed
         raise
-
 
 # -------------------------------------------------
 # Main worker loop
