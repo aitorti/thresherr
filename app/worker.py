@@ -5,7 +5,7 @@ import subprocess
 import shutil
 import models
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from scanner import get_video_metadata
 from scanner import infer_stream_language
@@ -19,6 +19,10 @@ models.Base.metadata.create_all(bind=engine)
 # -------------------------------------------------
 
 WORKER_SLEEP_SECONDS = 5
+
+# Jobs stuck in 'processing' for longer than this are considered stale
+# (crashed/killed worker) and are automatically re-queued.
+STALE_PROCESSING_TIMEOUT_MINUTES = 60
 
 # -------------------------------------------------
 # Subtitle codec normalization
@@ -63,6 +67,62 @@ def claim_next_job(db: Session) -> models.MediaFile | None:
     db.commit()
 
     return job
+
+
+def requeue_stale_processing(db: Session) -> int:
+    """
+    Re-queue jobs stuck in 'processing' (crashed/killed worker, OOM, ...).
+
+    Only jobs with started_at older than STALE_PROCESSING_TIMEOUT_MINUTES are
+    touched, so a legitimately slow job is never re-queued while the worker is
+    still working on it (a single worker never claims a second job while one
+    is in progress).
+
+    Also cleans up the orphan temp file from the previous attempt, if any.
+    """
+
+    cutoff = datetime.utcnow() - timedelta(minutes=STALE_PROCESSING_TIMEOUT_MINUTES)
+
+    stale_jobs = (
+        db.query(models.MediaFile)
+        .filter(
+            models.MediaFile.status == "processing",
+            models.MediaFile.started_at.isnot(None),
+            models.MediaFile.started_at < cutoff,
+        )
+        .all()
+    )
+
+    for job in stale_jobs:
+        # Clean orphan temp file from the previous attempt (if any)
+        try:
+            name = os.path.splitext(os.path.basename(job.full_path))[0]
+            temp_output = os.path.join(
+                job.library.temp_path, f"{name}.thresherr.tmp.mkv"
+            )
+            if os.path.exists(temp_output):
+                os.remove(temp_output)
+                print(f"[worker] removed orphan temp file: {temp_output}", flush=True)
+        except Exception as exc:
+            print(f"[worker] could not remove orphan temp file: {exc}", flush=True)
+
+        # Reset work fields so the retry starts clean
+        job.status = "queued"
+        job.started_at = None
+        job.job_plan = None
+        job.verification_result = None
+        job.last_error = None
+        job.warnings = None
+        print(
+            f"[worker] re-queued stale job id={job.id} ({job.file_name})",
+            flush=True,
+        )
+
+    if stale_jobs:
+        db.commit()
+
+    return len(stale_jobs)
+
     
 # -------------------------------------------------
 # Overrides from user
@@ -913,7 +973,11 @@ def run_worker():
 
     while True:
         db = SessionLocal()
+        job = None
         try:
+            # Recover jobs stuck in 'processing' (crashed/killed worker)
+            requeue_stale_processing(db)
+
             job = claim_next_job(db)
 
             if not job:
@@ -976,6 +1040,24 @@ def run_worker():
 
         except Exception as exc:
             db.rollback()
+            # If a job was already claimed, mark it as failed instead of
+            # leaving it stuck in 'processing' forever.
+            if job is not None:
+                try:
+                    job.status = "failed"
+                    job.last_error = f"worker exception: {exc}"
+                    job.finished_at = datetime.utcnow()
+                    db.commit()
+                    print(
+                        f"[worker] marked job id={job.id} as failed: {exc}",
+                        flush=True,
+                    )
+                except Exception as inner:
+                    db.rollback()
+                    print(
+                        f"[worker] could not mark job id={job.id} as failed: {inner}",
+                        flush=True,
+                    )
             print(f"[worker] ERROR: {exc}", flush=True)
 
         finally:
