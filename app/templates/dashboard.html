@@ -190,12 +190,12 @@
                               </button>
                             </form>
                     
-                          {% elif file.status == 'completed' %}
+                          {% elif file.status == 'completed' or file.status == 'failed' %}
                             <form method="post" action="/queue/{{ file.id }}/rescan">
                               <button
                                 type="submit"
                                 class="bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs px-2 py-1 rounded"
-                                title="Re-scan file"
+                                title="{% if file.status == 'failed' %}Retry failed file{% else %}Re-scan file{% endif %}"
                               >
                                 🔄
                               </button>
@@ -236,7 +236,10 @@
                                 Processing
                             </span>
                         {% elif file.status == 'failed' %}
-                            <span class="px-3 py-1 rounded bg-red-900/40 text-red-400 text-xs font-bold uppercase border border-red-800/50">
+                            <span
+                                class="px-3 py-1 rounded bg-red-900/40 text-red-400 text-xs font-bold uppercase border border-red-800/50"
+                                title="{% if file.last_error %}{{ file.last_error }}{% else %}Failed{% endif %}"
+                            >
                                 Failed
                             </span>
                         {% elif file.status == 'queued' %}
@@ -421,12 +424,12 @@
             </button>
           </form>
         `;
-      } else if (status === "completed") {
+      } else if (status === "completed" || status === "failed") {
         container.innerHTML = `
           <form method="post" action="/queue/${mediaId}/rescan">
             <button
               class="bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs px-2 py-1 rounded"
-              title="Re-scan file"
+              title="${status === "failed" ? "Retry failed file" : "Re-scan file"}"
             >
               🔄
             </button>

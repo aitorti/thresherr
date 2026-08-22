@@ -225,13 +225,17 @@ async def dequeue_media(media_id: int, request: Request, db: Session = Depends(g
 @app.post("/queue/{media_id}/rescan")
 async def rescan_media(media_id: int, request: Request, db: Session = Depends(get_db)):
     media = (db.query(models.MediaFile).filter(models.MediaFile.id == media_id).first())
-    if media and media.status == "completed":
+    if media and media.status in ("completed", "failed"):
+        # Allow re-processing of completed files AND retry of failed files.
+        # Failed files go back to 'pending' so the user can review (e.g.
+        # last_error) before enqueueing again.
         media.status = "pending"
         media.started_at = None
         media.finished_at = None
         media.job_plan = None
         media.verification_result = None
         media.last_error = None
+        media.warnings = None
         db.commit()
 
     return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303,)
@@ -271,7 +275,7 @@ async def preview_rescan_library(library_id: int, db: Session = Depends(get_db))
         db.query(func.count(models.MediaFile.id))
         .filter(
             models.MediaFile.library_id == library_id,
-            models.MediaFile.status == "completed",
+            models.MediaFile.status.in_(("completed", "failed")),
         )
         .scalar()
     )
@@ -340,7 +344,7 @@ async def rescan_library(
         db.query(models.MediaFile)
         .filter(
             models.MediaFile.library_id == library_id,
-            models.MediaFile.status == "completed",
+            models.MediaFile.status.in_(("completed", "failed")),
         )
         .update(
             {
@@ -350,6 +354,7 @@ async def rescan_library(
                 models.MediaFile.job_plan: None,
                 models.MediaFile.verification_result: None,
                 models.MediaFile.last_error: None,
+                models.MediaFile.warnings: None,
             },
             synchronize_session=False,
         )
