@@ -5,7 +5,7 @@ import subprocess
 import shutil
 import models
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from scanner import get_video_metadata
 from scanner import infer_stream_language
@@ -23,6 +23,14 @@ WORKER_SLEEP_SECONDS = 5
 # Jobs stuck in 'processing' for longer than this are considered stale
 # (crashed/killed worker) and are automatically re-queued.
 STALE_PROCESSING_TIMEOUT_MINUTES = 60
+
+
+def _utcnow() -> datetime:
+    """
+    Current UTC time as a naive datetime (SQLite-compatible).
+    Replacement for deprecated datetime.utcnow().
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 # -------------------------------------------------
 # Temp output path & cleanup helpers
@@ -94,7 +102,7 @@ def claim_next_job(db: Session) -> models.MediaFile | None:
         return None
 
     job.status = "processing"
-    job.started_at = datetime.utcnow()
+    job.started_at = _utcnow()
     db.commit()
 
     return job
@@ -112,7 +120,7 @@ def requeue_stale_processing(db: Session) -> int:
     Also cleans up the orphan temp file from the previous attempt, if any.
     """
 
-    cutoff = datetime.utcnow() - timedelta(minutes=STALE_PROCESSING_TIMEOUT_MINUTES)
+    cutoff = _utcnow() - timedelta(minutes=STALE_PROCESSING_TIMEOUT_MINUTES)
 
     stale_jobs = (
         db.query(models.MediaFile)
@@ -1084,7 +1092,7 @@ def run_worker():
                 # Do not leave the non-compliant temp output behind
                 remove_temp_output(job)
 
-            job.finished_at = datetime.utcnow()
+            job.finished_at = _utcnow()
             db.commit()
 
             print(f"[worker] finished media_file id={job.id} status={job.status}", flush=True)
@@ -1097,7 +1105,7 @@ def run_worker():
                 try:
                     job.status = "failed"
                     job.last_error = f"worker exception: {exc}"
-                    job.finished_at = datetime.utcnow()
+                    job.finished_at = _utcnow()
                     db.commit()
                     remove_temp_output(job)
                     print(
