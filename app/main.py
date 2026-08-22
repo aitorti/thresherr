@@ -4,13 +4,14 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from database import engine, SessionLocal
-from scanner import scan_libraries
+from scanner import scan_libraries, get_video_metadata
 from typing import Optional, Dict
 
 import models
 import subprocess
 import json
 import os
+from urllib.parse import quote
 
 # 1. Database setup
 models.Base.metadata.create_all(bind=engine)
@@ -204,10 +205,15 @@ async def enqueue_media(media_id: int, request: Request, db: Session = Depends(g
     if not media or media.status != "pending":
         return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303)
 
-    # SAFETY: block enqueue if there is any 'und'
-    if has_und_language(media):
-        # Do NOT enqueue, remain pending
-        return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303)
+    # SAFETY: block enqueue if there is any 'und' (human must decide).
+    # Fresh ffprobe so the decision never relies on stale scan summary.
+    if has_und_language(media, fresh=True):
+        referer = request.headers.get("referer", "/")
+        sep = "&" if "?" in referer else "?"
+        return RedirectResponse(
+            url=f"{referer}{sep}error=und_blocked",
+            status_code=303,
+        )
 
     media.status = "queued"
     db.commit()
@@ -299,17 +305,30 @@ async def enqueue_library(
         .all()
     )
 
+    enqueued = 0
+    blocked = 0
     for media in media_files:
-        #SAFETY: skip files with 'und'
-        if has_und_language(media):
+        # SAFETY: skip files with 'und' (human must decide).
+        # Fresh probe only when the stored summary is missing (failed scan).
+        needs_fresh = (
+            media.audio_languages is None and media.subtitle_languages is None
+        )
+        if has_und_language(media, fresh=needs_fresh):
+            blocked += 1
             continue
 
         media.status = "queued"
+        enqueued += 1
 
     db.commit()
 
+    referer = request.headers.get("referer", "/")
+    sep = "&" if "?" in referer else "?"
+    batch_msg = quote(
+        f"Enqueued: {enqueued} | Blocked by unknown language (und): {blocked}"
+    )
     return RedirectResponse(
-        url=request.headers.get("referer", "/"),
+        url=f"{referer}{sep}batch={batch_msg}",
         status_code=303,
     )
 
@@ -600,10 +619,24 @@ def save_stream_overrides(
     db.commit()
     return {"ok": True}
 
-def has_und_language(media: models.MediaFile) -> bool:
+def _contains_und(value: str | None) -> bool:
+    """
+    Returns True if a comma-separated language summary contains 'und'.
+    """
+    if not value:
+        return False
+    return any(lang.strip() == "und" for lang in value.split(","))
+
+
+def has_und_language(media: models.MediaFile, fresh: bool = False) -> bool:
     """
     Returns True if there is any 'und' language in audio or subtitles,
     taking stream_overrides into account.
+
+    fresh=True performs a real ffprobe call instead of relying on the
+    summary fields stored at scan time (which may be stale or missing).
+    If ffprobe fails entirely we are conservative: the file is considered
+    'undetermined' and a human must decide.
     """
 
     # 1. If overrides exist, they have priority
@@ -626,16 +659,23 @@ def has_und_language(media: models.MediaFile) -> bool:
             # If overrides are broken, be conservative
             return True
 
-    # 2. No overrides → fall back to summary fields
-    def contains_und(value: str | None) -> bool:
-        if not value:
-            return False
-        return any(lang.strip() == "und" for lang in value.split(","))
+    # 2. Source of truth: fresh ffprobe (individual enqueue) or stored summary (batch)
+    if fresh:
+        meta = get_video_metadata(media.full_path)
 
-    if contains_und(media.audio_languages):
-        return True
+        # ffprobe failed entirely (no video info either) -> cannot determine
+        # -> human must decide
+        if (
+            meta.get("video_codec") is None
+            and meta.get("audio_languages") is None
+            and meta.get("subtitle_languages") is None
+        ):
+            return True
 
-    if contains_und(media.subtitle_languages):
-        return True
+        return _contains_und(meta.get("audio_languages")) or _contains_und(
+            meta.get("subtitle_languages")
+        )
 
-    return False
+    return _contains_und(media.audio_languages) or _contains_und(
+        media.subtitle_languages
+    )

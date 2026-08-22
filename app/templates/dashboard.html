@@ -106,7 +106,7 @@
             <tbody class="divide-y divide-slate-700/50">
                 {% for file in media_files %}
                 
-                <tr class="hover:bg-slate-700/20 transition-colors text-sm" data-media-id="{{ file.id }}">
+                <tr class="hover:bg-slate-700/20 transition-colors text-sm" data-media-id="{{ file.id }}" data-und-blocked="{% if (file.audio_languages and "und" in file.audio_languages) or (file.subtitle_languages and "und" in file.subtitle_languages) %}{% if not file.stream_overrides %}true{% else %}false{% endif %}{% else %}false{% endif %}">
                     <td class="px-6 py-4 text-slate-500 font-mono italic">
                         {{ file.library.name }}
                     </td>
@@ -169,15 +169,36 @@
                         
                         <div class="primary-actions">
                           {% if file.status == 'pending' %}
-                            <form method="post" action="/queue/{{ file.id }}/enqueue">
-                              <button
-                                type="submit"
-                                class="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded"
-                                title="Queue file for processing"
-                              >
-                                ▶️
-                              </button>
-                            </form>
+                            {% if (file.audio_languages and "und" in file.audio_languages) or (file.subtitle_languages and "und" in file.subtitle_languages) %}
+                              {% if not file.stream_overrides %}
+                                <span
+                                  class="text-slate-600 text-xs cursor-not-allowed"
+                                  title="Blocked: streams with unknown language (und). Use 🛠️ to assign languages and unblock."
+                                >
+                                  ⛔
+                                </span>
+                              {% else %}
+                                <form method="post" action="/queue/{{ file.id }}/enqueue">
+                                  <button
+                                    type="submit"
+                                    class="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded"
+                                    title="Queue file for processing"
+                                  >
+                                    ▶️
+                                  </button>
+                                </form>
+                              {% endif %}
+                            {% else %}
+                              <form method="post" action="/queue/{{ file.id }}/enqueue">
+                                <button
+                                  type="submit"
+                                  class="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded"
+                                  title="Queue file for processing"
+                                >
+                                  ▶️
+                                </button>
+                              </form>
+                            {% endif %}
                     
                           {% elif file.status == 'queued' %}
                             <form method="post" action="/queue/{{ file.id }}/dequeue">
@@ -227,6 +248,16 @@
                     
                     <!-- File processing status badge -->
                     <td class="px-6 py-4 text-center" data-role="status" data-current-status="{{ file.status }}">
+                        {% if (file.audio_languages and "und" in file.audio_languages) or (file.subtitle_languages and "und" in file.subtitle_languages) %}
+                          {% if not file.stream_overrides %}
+                            <span
+                                class="px-2 py-1 rounded bg-amber-900/40 text-amber-400 text-[10px] font-bold uppercase border border-amber-800/50 align-middle"
+                                title="Streams with unknown language (und) — requires manual review with 🛠️"
+                            >
+                                ⚠️ und
+                            </span>
+                          {% endif %}
+                        {% endif %}
                         {% if file.status == 'completed' %}
                             <span class="px-3 py-1 rounded bg-green-900/40 text-green-400 text-xs font-bold uppercase border border-green-800/50">
                                 Completed
@@ -403,16 +434,29 @@
       if (!container) return;
     
       if (status === "pending") {
-        container.innerHTML = `
-          <form method="post" action="/queue/${mediaId}/enqueue">
-            <button
-              class="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded"
-              title="Queue file"
+        const tr = cell.closest("tr");
+        const blocked = tr && tr.dataset.undBlocked === "true";
+        if (blocked) {
+          container.innerHTML = `
+            <span
+              class="text-slate-600 text-xs cursor-not-allowed"
+              title="Blocked: streams with unknown language (und). Use 🛠️ to assign languages and unblock."
             >
-              ▶️
-            </button>
-          </form>
-        `;
+              ⛔
+            </span>
+          `;
+        } else {
+          container.innerHTML = `
+            <form method="post" action="/queue/${mediaId}/enqueue">
+              <button
+                class="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded"
+                title="Queue file"
+              >
+                ▶️
+              </button>
+            </form>
+          `;
+        }
       } else if (status === "queued") {
         container.innerHTML = `
           <form method="post" action="/queue/${mediaId}/dequeue">
@@ -925,8 +969,8 @@
             }
         
             hasUnsavedChanges = false;
-            document.getElementById("save-stream-overrides").classList.add("hidden");
-//            alert("Stream language overrides saved ✅");
+            // Reload so the row reflects the new blocked/unblocked state
+            location.reload();
         
           } catch (err) {
             console.error(err);
@@ -961,6 +1005,9 @@
           // 4. UI feedback
           document.getElementById("save-stream-overrides").classList.add("hidden");
           document.getElementById("clear-stream-overrides").classList.add("hidden");
+
+          // Reload so the row reflects the new blocked/unblocked state
+          location.reload();
         });
 
       closeBtn.addEventListener("click", closeModal);

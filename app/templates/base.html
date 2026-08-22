@@ -109,6 +109,37 @@
       {% endblock %}
     </main>
   </div>
+
+  <!-- Flash banner (messages from redirects, e.g. und_blocked / batch results) -->
+  <div id="flash-banner" class="hidden fixed top-4 right-4 z-50 max-w-md rounded-lg shadow-lg px-4 py-3 text-sm font-semibold border"></div>
+
+  <script>
+    function showBanner(text, type) {
+      const banner = document.getElementById("flash-banner");
+      if (!banner) return;
+      const styles = {
+        error: "bg-red-900/90 text-red-100 border-red-700",
+        info: "bg-blue-900/90 text-blue-100 border-blue-700",
+        success: "bg-green-900/90 text-green-100 border-green-700",
+      };
+      banner.className = `hidden fixed top-4 right-4 z-50 max-w-md rounded-lg shadow-lg px-4 py-3 text-sm font-semibold border ${styles[type] || styles.info}`;
+      banner.textContent = text;
+      banner.classList.remove("hidden");
+      setTimeout(() => banner.classList.add("hidden"), 8000);
+    }
+
+    // Read flash messages from the current URL (?error=... &batch=...)
+    (function readFlash() {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("error") === "und_blocked") {
+        showBanner("⚠️ Blocked: streams with unknown language (und). Use 🛠️ to assign languages and unblock.", "error");
+      }
+      const batch = params.get("batch");
+      if (batch) {
+        showBanner(decodeURIComponent(batch), "info");
+      }
+    })();
+  </script>
 </body>
 
 </html>
