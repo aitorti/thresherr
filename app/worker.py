@@ -710,6 +710,7 @@ def build_job_plan(
         "input": {
             "path": media.full_path,
             "container": inspection.get("container"),
+            "duration": inspection.get("duration"),
         },
         "video": {
             "action": "copy",
@@ -851,6 +852,7 @@ def verify_result(temp_output_path: str, job_plan: dict) -> str:
         "-v", "error",
         "-print_format", "json",
         "-show_streams",
+        "-show_format",
         temp_output_path,
     ]
 
@@ -864,6 +866,33 @@ def verify_result(temp_output_path: str, job_plan: dict) -> str:
         return f"failed: invalid ffprobe json: {exc}"
 
     streams = probe.get("streams", [])
+
+    # -------- VIDEO (critical safety check) --------
+    # Never accept an output without a video stream: replacing the original
+    # with a video-less file would be catastrophic.
+    out_video = [s for s in streams if s.get("codec_type") == "video"]
+    if not out_video:
+        return "failed: output has no video stream"
+
+    # -------- DURATION (truncated/corrupt output check) --------
+    # Compare against the input duration captured during inspection.
+    # Tolerance: 90% (containers may round slightly, a real truncation is far below).
+    fmt = probe.get("format", {}) or {}
+    output_duration = _safe_float(fmt.get("duration"))
+    expected_duration = _safe_float(job_plan.get("input", {}).get("duration"))
+
+    if expected_duration and output_duration is None:
+        return "failed: output duration could not be determined"
+
+    if (
+        expected_duration
+        and output_duration is not None
+        and output_duration < expected_duration * 0.9
+    ):
+        return (
+            f"failed: output duration too short "
+            f"({output_duration:.1f}s vs expected ~{expected_duration:.1f}s)"
+        )
 
     out_audio = []
     out_subs = []
