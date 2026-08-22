@@ -2,8 +2,12 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, declarative_base
 import os
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "thresherr.db")
+# Database location is configurable via THRESHERR_DB_PATH.
+# Default: /data/thresherr.db (dedicated data volume, separated from code).
+DB_PATH = os.environ.get("THRESHERR_DB_PATH", "/data/thresherr.db")
+
+# Ensure the parent directory exists (e.g. local dev without the volume)
+os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
 SQLALCHEMY_DATABASE_URL = f"sqlite:///{DB_PATH}"
 

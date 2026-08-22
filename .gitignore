@@ -210,3 +210,6 @@ __marimo__/
 # Database
 thresherr.db
 app/thresherr.db
+
+# Runtime data volume (SQLite database lives here)
+data/
