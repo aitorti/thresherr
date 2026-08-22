@@ -25,6 +25,37 @@ WORKER_SLEEP_SECONDS = 5
 STALE_PROCESSING_TIMEOUT_MINUTES = 60
 
 # -------------------------------------------------
+# Temp output path & cleanup helpers
+# -------------------------------------------------
+
+def temp_output_path(full_path: str, temp_dir: str) -> str:
+    """
+    Path of the temporary output file for a media file.
+    Single source of truth for the .thresherr.tmp.mkv naming convention.
+    """
+    name = os.path.splitext(os.path.basename(full_path))[0]
+    return os.path.join(temp_dir, f"{name}.thresherr.tmp.mkv")
+
+
+def remove_temp_output(job: models.MediaFile) -> None:
+    """
+    Best-effort removal of the temporary output file for a job.
+    Used when a job fails (ffmpeg error, non-compliant output, ...) so that
+    orphan .thresherr.tmp.mkv files are never left behind.
+    """
+    try:
+        temp_output = temp_output_path(job.full_path, job.library.temp_path)
+        if os.path.exists(temp_output):
+            os.remove(temp_output)
+            print(
+                f"[worker] removed temp output: {temp_output}",
+                flush=True,
+            )
+    except Exception as exc:
+        print(f"[worker] could not remove temp output: {exc}", flush=True)
+
+
+# -------------------------------------------------
 # Subtitle codec normalization
 # -------------------------------------------------
 
@@ -95,16 +126,7 @@ def requeue_stale_processing(db: Session) -> int:
 
     for job in stale_jobs:
         # Clean orphan temp file from the previous attempt (if any)
-        try:
-            name = os.path.splitext(os.path.basename(job.full_path))[0]
-            temp_output = os.path.join(
-                job.library.temp_path, f"{name}.thresherr.tmp.mkv"
-            )
-            if os.path.exists(temp_output):
-                os.remove(temp_output)
-                print(f"[worker] removed orphan temp file: {temp_output}", flush=True)
-        except Exception as exc:
-            print(f"[worker] could not remove orphan temp file: {exc}", flush=True)
+        remove_temp_output(job)
 
         # Reset work fields so the retry starts clean
         job.status = "queued"
@@ -739,9 +761,7 @@ def execute_job_plan(job_plan: dict, input_path: str, temp_dir: str) -> str:
     os.makedirs(temp_dir, exist_ok=True)
 
     # Always output MKV for safety/compatibility (EAC3 + subtitles are widely supported in MKV)
-    base = os.path.basename(input_path)
-    name, _ext = os.path.splitext(base)
-    output_path = os.path.join(temp_dir, f"{name}.thresherr.tmp.mkv")
+    output_path = temp_output_path(input_path, temp_dir)
 
     # Detect input container by extension (for legacy repair flags)
     ext = os.path.splitext(input_path)[1].lower()
@@ -1032,6 +1052,8 @@ def run_worker():
             else:
                 job.status = "failed"
                 job.last_error = verification
+                # Do not leave the non-compliant temp output behind
+                remove_temp_output(job)
 
             job.finished_at = datetime.utcnow()
             db.commit()
@@ -1048,6 +1070,7 @@ def run_worker():
                     job.last_error = f"worker exception: {exc}"
                     job.finished_at = datetime.utcnow()
                     db.commit()
+                    remove_temp_output(job)
                     print(
                         f"[worker] marked job id={job.id} as failed: {exc}",
                         flush=True,
