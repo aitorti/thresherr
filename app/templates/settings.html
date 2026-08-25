@@ -2,17 +2,14 @@
 
 {% block content %}
 <div class="max-w-3xl">
-  <div class="text-xs text-slate-500 font-semibold mb-1">Settings</div>
-  <h1 class="text-2xl font-extrabold text-slate-100 mb-4">General</h1>
+  <div class="text-xs text-slate-500 font-semibold mb-1">{{ t('nav.settings') }}</div>
+  <h1 class="text-2xl font-extrabold text-slate-100 mb-4">{{ t('settings.general') }}</h1>
 
   <form method="post" action="/settings"
-        class="rounded-lg border border-slate-700 bg-slate-900 p-5 space-y-4">
+        class="rounded-lg border border-slate-700 bg-slate-900 p-5 space-y-6">
     <div>
-      <label for="log_level" class="block text-sm font-bold text-slate-200 mb-1">Log level</label>
-      <p class="text-xs text-slate-500 mb-2">
-        Changes are applied immediately — no restart needed. Debug and Trace files are
-        always written regardless of this setting.
-      </p>
+      <label for="log_level" class="block text-sm font-bold text-slate-200 mb-1">{{ t('settings.log_level') }}</label>
+      <p class="text-xs text-slate-500 mb-2">{{ t('settings.log_level_hint') }}</p>
       <select id="log_level" name="log_level"
               class="px-3 py-2 rounded-md bg-slate-800 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-amber-500">
         <option value="info" {% if log_level == 'info' %}selected{% endif %}>Info</option>
@@ -21,15 +18,26 @@
       </select>
     </div>
 
+    <div class="border-t border-slate-800 pt-5">
+      <label for="ui_language" class="block text-sm font-bold text-slate-200 mb-1">{{ t('settings.ui_language') }}</label>
+      <p class="text-xs text-slate-500 mb-2">{{ t('settings.ui_language_hint') }}</p>
+      <select id="ui_language" name="ui_language"
+              class="px-3 py-2 rounded-md bg-slate-800 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-amber-500">
+        {% for code, native_name in languages.items() %}
+          <option value="{{ code }}" {% if lang == code %}selected{% endif %}>{{ native_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
     <button type="submit"
             class="px-4 py-2 rounded-md bg-amber-600 text-sm text-slate-950 font-bold hover:bg-amber-500 transition-colors">
-      Save
+      {{ t('settings.save') }}
     </button>
   </form>
 
   <p class="text-xs text-slate-500 mt-3">
-    Log files are stored in <span class="font-mono text-slate-400">{{ log_dir }}</span> —
-    view them under <a href="/system/logfiles" class="text-amber-400 hover:underline font-semibold">System → Log Files</a>.
+    {{ t('settings.log_files_hint', dir=log_dir) }}
+    <a href="/system/logfiles" class="text-amber-400 hover:underline font-semibold">{{ t('logfiles.link') }}</a>.
   </p>
 </div>
 {% endblock %}

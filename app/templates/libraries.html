@@ -14,7 +14,7 @@
     <section class="lg:col-span-1 bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-2xl">
         <!-- Section title -->
         <h2 class="text-xl font-bold mb-6 text-amber-400 flex items-center">
-            <span class="mr-2">📚</span> New Library
+            <span class="mr-2">📚</span> {{ t('lib.new') }}
         </h2>
 
         <!-- 
@@ -26,12 +26,12 @@
             <!-- Library display name -->
             <div>
                 <label class="block font-semibold mb-1 text-slate-300">
-                    Library Name
+                    {{ t('lib.name') }}
                 </label>
                 <input
                     type="text"
                     name="name"
-                    placeholder="e.g. Movies 1080p"
+                    placeholder="{{ t('lib.name_ph') }}"
                     required
                     class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-slate-200 focus:border-amber-500 outline-none"
                 >
@@ -40,7 +40,7 @@
             <!-- Path where media files are stored -->
             <div>
                 <label class="block font-semibold mb-1 text-blue-300">
-                    Media Path
+                    {{ t('lib.media_path') }}
                 </label>
                 <div class="flex gap-2">
                     <input
@@ -57,9 +57,9 @@
                         type="button"
                         id="media-path-browse"
                         class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded"
-                        title="Browse media folders"
+                        title="{{ t('lib.browse_media_title') }}"
                     >
-                        Browse
+                        {{ t('lib.browse') }}
                     </button>
                 </div>
             </div>
@@ -67,7 +67,7 @@
             <!-- Temporary working directory for processing -->
             <div>
                 <label class="block font-semibold mb-1 text-orange-300">
-                    Temp Path
+                    {{ t('lib.temp_path') }}
                 </label>
                 <div class="flex gap-2">
                     <input
@@ -84,9 +84,9 @@
                         type="button"
                         id="temp-path-browse"
                         class="px-3 py-2 bg-orange-600 hover:bg-orange-700 text-white text-sm rounded"
-                        title="Browse temp folders"
+                        title="{{ t('lib.browse_temp_title') }}"
                     >
-                        Browse
+                        {{ t('lib.browse') }}
                     </button>
                 </div>
             </div>
@@ -94,7 +94,7 @@
             <!-- Conversion profile selection -->
             <div>
                 <label class="block font-semibold mb-1 text-green-300">
-                    Conversion Profile
+                    {{ t('lib.profile') }}
                 </label>
                 <select
                     name="profile_id"
@@ -115,7 +115,7 @@
                 type="submit"
                 class="w-full bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold py-3 rounded-lg mt-4 transition-all transform active:scale-95"
             >
-                ➕ Add Library
+                ➕ {{ t('lib.add') }}
             </button>
         </form>
     </section>
@@ -126,7 +126,7 @@
     <section class="lg:col-span-2 bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-2xl">
         <!-- Section title -->
         <h2 class="text-xl font-bold mb-6 text-slate-300">
-            Monitored Libraries
+            {{ t('lib.monitored') }}
         </h2>
 
         <!-- Container for library cards -->
@@ -149,7 +149,7 @@
                     <div class="flex items-center gap-4">
                         <!-- Assigned conversion profile -->
                         <span class="text-xs bg-slate-800 px-2 py-1 rounded border border-slate-600 text-slate-300">
-                            Profile: {{ lib.profile.name }}
+                            {{ t('lib.profile_badge', name=lib.profile.name) }}
                         </span>
                         
                         <!-- Library actions -->
@@ -160,7 +160,7 @@
                             data-library-id="{{ lib.id }}"
                             data-library-name="{{ lib.name }}"
                             data-action="enqueue"
-                            title="Queue all pending files in this library"
+                            title="{{ t('lib.enqueue_title') }}"
                           >
                             ▶️
                           </button>
@@ -171,7 +171,7 @@
                             data-library-id="{{ lib.id }}"
                             data-library-name="{{ lib.name }}"
                             data-action="dequeue"
-                            title="Remove all queued files from this library"
+                            title="{{ t('lib.dequeue_title') }}"
                           >
                             ⏹
                           </button>
@@ -182,7 +182,7 @@
                             data-library-id="{{ lib.id }}"
                             data-library-name="{{ lib.name }}"
                             data-action="rescan"
-                            title="Re-scan all completed files in this library"
+                            title="{{ t('lib.rescan_title') }}"
                           >
                             🔄
                           </button>
@@ -192,12 +192,12 @@
                         <form
                             action="/libraries/{{ lib.id }}/delete"
                             method="POST"
-                            onsubmit="return confirm('Are you sure you want to delete this library?');"
+                            onsubmit="return confirm('{{ t('lib.delete_confirm')|escapejs }}');"
                         >
                             <button
                                 type="submit"
                                 class="text-red-500 hover:text-red-400 transition-colors p-1"
-                                title="Delete Library"
+                                title="{{ t('lib.delete_title') }}"
                             >
                                 <!-- Trash icon (SVG) -->
                                 <svg xmlns="http://www.w3.org/2000/svg"
@@ -218,7 +218,7 @@
             {% else %}
                 <!-- Empty state when no libraries exist -->
                 <p class="text-slate-500 italic text-center py-10">
-                    No libraries added yet.
+                    {{ t('lib.empty') }}
                 </p>
             {% endfor %}
         </div>
@@ -229,7 +229,7 @@
 <div id="library-action-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/60">
   <div class="bg-slate-900 border border-slate-700 rounded-xl p-6 max-w-md w-full shadow-2xl">
     <h3 class="text-lg font-bold text-slate-100 mb-4">
-      Confirm action
+      {{ t('lib.modal.confirm') }}
     </h3>
 
     <p id="library-action-message" class="text-sm text-slate-400 mb-6">
@@ -241,14 +241,14 @@
         id="library-action-cancel"
         class="px-4 py-2 text-sm rounded bg-slate-700 hover:bg-slate-600 text-slate-200"
       >
-        No
+        {{ t('lib.modal.no') }}
       </button>
 
       <button
         id="library-action-confirm"
         class="px-4 py-2 text-sm rounded bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold"
       >
-        Yes
+        {{ t('lib.modal.yes') }}
       </button>
     </div>
   </div>
@@ -264,7 +264,7 @@
       id="folder-browser-title"
       class="text-lg font-bold text-slate-100 mb-4"
     >
-      Select Folder
+      {{ t('lib.browse.title') }}
     </h3>
 
     <!-- Current path -->
@@ -287,7 +287,7 @@
         id="folder-browser-up"
         class="px-3 py-2 text-sm rounded bg-slate-700 hover:bg-slate-600 text-slate-200"
       >
-        ⬅ Back
+        ⬅ {{ t('logview.back') }}
       </button>
 
       <div class="flex gap-3">
@@ -295,7 +295,7 @@
           id="folder-browser-cancel"
           class="px-4 py-2 text-sm rounded bg-slate-700 hover:bg-slate-600 text-slate-200"
         >
-          Cancel
+          {{ t('lib.browse.cancel') }}
         </button>
 
         <button
@@ -303,7 +303,7 @@
           class="px-4 py-2 text-sm rounded bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold"
           disabled
         >
-          Select
+          {{ t('lib.browse.select') }}
         </button>
       </div>
     </div>
@@ -323,6 +323,21 @@
     const messageEl = document.getElementById("library-action-message");
     const confirmBtn = document.getElementById("library-action-confirm");
     const cancelBtn = document.getElementById("library-action-cancel");
+
+    // Localized strings (injected server-side)
+    const I18N = {
+      no: {{ t('lib.modal.no')|tojson }},
+      close: {{ t('lib.modal.close')|tojson }},
+      noFiles: {{ t('lib.modal.no_files')|tojson }},
+      will: {{ t('lib.modal.will')|tojson }},
+      actionEnqueue: {{ t('lib.modal.action_enqueue')|tojson }},
+      actionDequeue: {{ t('lib.modal.action_dequeue')|tojson }},
+      actionRescan: {{ t('lib.modal.action_rescan')|tojson }},
+    };
+
+    function fmt(s, vars) {
+      return s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? vars[k] : m));
+    }
 
     let pendingAction = null;
 
@@ -357,21 +372,21 @@
           // 2. Build message depending on action
           let actionText = "";
           if (action === "enqueue") {
-            actionText = `queue ${count} files`;
+            actionText = fmt(I18N.actionEnqueue, { count });
           } else if (action === "dequeue") {
-            actionText = `remove ${count} files from the queue`;
+            actionText = fmt(I18N.actionDequeue, { count });
           } else if (action === "rescan") {
-            actionText = `re-scan ${count} files`;
+            actionText = fmt(I18N.actionRescan, { count });
           }
 
           // 3. Case: no files affected
           if (count === 0) {
             messageEl.textContent =
-              `There are no files to process for this action in library "${libraryName}".`;
+              fmt(I18N.noFiles, { name: libraryName });
 
             // Hide "Yes" button, change "No" to "Close"
             confirmBtn.classList.add("hidden");
-            cancelBtn.textContent = "Close";
+            cancelBtn.textContent = I18N.close;
 
             openModal();
             return;
@@ -379,12 +394,10 @@
 
           // 4. Normal confirmation flow
           messageEl.innerHTML =
-            `This action will <strong>${actionText}</strong> ` +
-            `from library <strong>"${libraryName}"</strong>.<br><br>` +
-            `Do you want to continue?`;
+            fmt(I18N.will, { action: actionText, name: libraryName });
 
           confirmBtn.classList.remove("hidden");
-          cancelBtn.textContent = "No";
+          cancelBtn.textContent = I18N.no;
 
           // Store pending action
           pendingAction = {
@@ -444,6 +457,12 @@
     
       const mediaInput = document.getElementById("media-path-input");
       const tempInput = document.getElementById("temp-path-input");
+
+      // Localized strings (injected server-side)
+      const I18N = {
+        selectMedia: {{ t('lib.browse.select_media')|tojson }},
+        selectTemp: {{ t('lib.browse.select_temp')|tojson }},
+      };
     
       let currentBase = null;   // "media" | "temp"
       let currentPath = null;
@@ -455,7 +474,7 @@
         selectBtn.disabled = true;
     
         titleEl.textContent =
-          base === "media" ? "Select Media Folder" : "Select Temp Folder";
+          base === "media" ? I18N.selectMedia : I18N.selectTemp;
     
         loadPath(null);
         modal.classList.remove("hidden");

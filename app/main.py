@@ -14,6 +14,7 @@ from logging_setup import (
     get_log_level,
     set_log_level,
 )
+import i18n
 
 import models
 import subprocess
@@ -60,6 +61,36 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+# -------------------------------------------------
+# UI language + template rendering helper
+# -------------------------------------------------
+
+def _ui_language(db: Session) -> str:
+    """UI language from settings; English when unset/invalid."""
+    row = (
+        db.query(models.Setting)
+        .filter(models.Setting.key == "ui_language")
+        .first()
+    )
+    if row and i18n.is_valid_language(row.value):
+        return row.value
+    return i18n.DEFAULT_LANGUAGE
+
+
+def render(request: Request, name: str, db: Session, **context) -> HTMLResponse:
+    """
+    Render a template with the *arr-style i18n helpers injected:
+    - t(key, **kwargs): translate for the current UI language
+    - lang: current language code
+    - languages: available languages (code -> native name)
+    """
+    lang = _ui_language(db)
+    context["t"] = i18n.translator(lang)
+    context["lang"] = lang
+    context["languages"] = i18n.LANGUAGES
+    return templates.TemplateResponse(request=request, name=name, context=context)
 
 # --- LOADING GLOBAL STATISTICS ---
 
@@ -108,13 +139,12 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
         mf.has_stream_overrides = mf.stream_overrides is not None
 
 
-    return templates.TemplateResponse(
+    return render(
         request=request,
         name="dashboard.html",
-        context={
-            **stats,
-            "media_files": media_files,
-        },
+        db=db,
+        **stats,
+        media_files=media_files,
     )
 
 # --- WORKGIN WITH PROFILES ---
@@ -123,10 +153,12 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
 async def get_profiles(request: Request, db: Session = Depends(get_db)):
     stats = compute_global_stats(db)
     profiles = db.query(models.Profile).all()
-    return templates.TemplateResponse(
+    return render(
         request=request,
         name="profiles.html",
-        context={**stats, "profiles": profiles},
+        db=db,
+        **stats,
+        profiles=profiles,
     )
 
 @app.post("/profiles")
@@ -163,10 +195,13 @@ async def get_libraries(request: Request, db: Session = Depends(get_db)):
     stats = compute_global_stats(db)
     libraries = db.query(models.Library).all()
     profiles = db.query(models.Profile).all()
-    return templates.TemplateResponse(
+    return render(
         request=request,
         name="libraries.html",
-        context={**stats, "libraries": libraries, "profiles": profiles},
+        db=db,
+        **stats,
+        libraries=libraries,
+        profiles=profiles,
     )
 
 @app.post("/libraries")
@@ -203,10 +238,15 @@ async def get_queue(request: Request, db: Session = Depends(get_db)):
         .limit(10)
         .all()
     )
-    return templates.TemplateResponse(
+    return render(
         request=request,
         name="queue.html",
-        context={**stats, "pending": pending, "queued": queued, "processing": processing, "completed": completed},
+        db=db,
+        **stats,
+        pending=pending,
+        queued=queued,
+        processing=processing,
+        completed=completed,
     )
 
 @app.get("/scan")
@@ -789,18 +829,17 @@ async def system_logs(
     is_hx = request.headers.get("HX-Request") == "true"
     template_name = "_log_rows.html" if is_hx else "system_logs.html"
 
-    return templates.TemplateResponse(
+    return render(
         request=request,
         name=template_name,
-        context={
-            **stats,
-            "logs": logs,
-            "level": level,
-            "q": q,
-            "page": page,
-            "has_more": has_more,
-            "fmt_log_time": _format_log_time,
-        },
+        db=db,
+        **stats,
+        logs=logs,
+        level=level,
+        q=q,
+        page=page,
+        has_more=has_more,
+        fmt_log_time=_format_log_time,
     )
 
 
@@ -851,10 +890,13 @@ def _read_tail(path: str, max_bytes: int) -> str:
 @app.get("/system/logfiles", response_class=HTMLResponse)
 async def system_logfiles(request: Request, db: Session = Depends(get_db)):
     stats = compute_global_stats(db)
-    return templates.TemplateResponse(
+    return render(
         request=request,
         name="system_logfiles.html",
-        context={**stats, "files": _list_log_files(), "log_dir": LOG_DIR},
+        db=db,
+        **stats,
+        files=_list_log_files(),
+        log_dir=LOG_DIR,
     )
 
 
@@ -866,15 +908,14 @@ async def view_log_file(file_name: str, request: Request, db: Session = Depends(
         raise HTTPException(status_code=404, detail="Log file not found")
 
     stats = compute_global_stats(db)
-    return templates.TemplateResponse(
+    return render(
         request=request,
         name="system_logview.html",
-        context={
-            **stats,
-            "file_name": name,
-            "content": _read_tail(path, _VIEW_TAIL_BYTES),
-            "truncated": os.path.getsize(path) > _VIEW_TAIL_BYTES,
-        },
+        db=db,
+        **stats,
+        file_name=name,
+        content=_read_tail(path, _VIEW_TAIL_BYTES),
+        truncated=os.path.getsize(path) > _VIEW_TAIL_BYTES,
     )
 
 
@@ -905,22 +946,39 @@ async def delete_log_file(file_name: str):
 @app.get("/settings", response_class=HTMLResponse)
 async def get_settings(request: Request, db: Session = Depends(get_db)):
     stats = compute_global_stats(db)
-    return templates.TemplateResponse(
+    return render(
         request=request,
         name="settings.html",
-        context={
-            **stats,
-            "log_level": get_log_level(),
-            "log_dir": LOG_DIR,
-        },
+        db=db,
+        **stats,
+        log_level=get_log_level(),
+        log_dir=LOG_DIR,
     )
 
 
 @app.post("/settings")
-async def save_settings(log_level: str = Form(...)):
+async def save_settings(
+    log_level: str = Form(...),
+    ui_language: str = Form(None),
+    db: Session = Depends(get_db),
+):
     try:
         applied = set_log_level(log_level)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid log level")
     ui_logger.info("Log level changed to %s (runtime, no restart)", applied)
+
+    if ui_language and i18n.is_valid_language(ui_language):
+        setting = (
+            db.query(models.Setting)
+            .filter(models.Setting.key == "ui_language")
+            .first()
+        )
+        if setting:
+            setting.value = ui_language
+        else:
+            db.add(models.Setting(key="ui_language", value=ui_language))
+        db.commit()
+        ui_logger.info("UI language changed to %s (runtime, no restart)", ui_language)
+
     return RedirectResponse(url="/settings", status_code=303)

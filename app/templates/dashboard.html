@@ -49,7 +49,7 @@
     <!-- Table header -->
     <div class="p-5 border-b border-slate-700 bg-slate-900/30 flex justify-between items-center">
         <h2 class="font-bold text-slate-200 text-base uppercase tracking-wider flex items-center">
-            <span class="mr-3 text-xl">📁</span> Monitored Media Files
+            <span class="mr-3 text-xl">📁</span> {{ t('dash.title') }}
         </h2>
 
         <div class="flex items-center gap-3">
@@ -57,14 +57,14 @@
           <a
             href="/scan"
             class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1"
-            title="Scan libraries for new media files"
+            title="{{ t('dash.scan_title') }}"
           >
-            🔍 Scan for New Media
+            🔍 {{ t('dash.scan_btn') }}
           </a>
         
           <!-- Total files counter -->
           <span class="text-xs text-slate-400 bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-700 font-mono">
-            Total Files: {{ media_files|length }}
+            {{ t('dash.total_files') }}: {{ media_files|length }}
           </span>
         </div>
     </div>
@@ -75,30 +75,30 @@
             <!-- Column headers -->
             <thead class="bg-slate-900/80 text-slate-500 uppercase text-[11px] tracking-widest border-b border-slate-700">
                 <tr>
-                    <th class="px-6 py-4 font-bold">Library</th>
-                    <th class="px-6 py-4 font-bold">Title</th>
-                    <th class="px-6 py-4 font-bold">Video Codec</th>
-                    <th class="px-6 py-4 font-bold">Resolution</th>
-                    <th class="px-6 py-4 font-bold">Audio</th>
-                    <th class="px-6 py-4 font-bold">Subtitles</th>
-                    <th class="px-6 py-4 font-bold text-right">Original Size</th>
-                    <th class="px-6 py-4 font-bold text-right">Processed</th>
-                    <th class="px-6 py-4 font-bold text-right">Actions</th>
-                    <th class="px-6 py-4 font-bold text-center">Status</th>
+                    <th class="px-6 py-4 font-bold">{{ t('dash.col.library') }}</th>
+                    <th class="px-6 py-4 font-bold">{{ t('dash.col.title') }}</th>
+                    <th class="px-6 py-4 font-bold">{{ t('dash.col.video_codec') }}</th>
+                    <th class="px-6 py-4 font-bold">{{ t('dash.col.resolution') }}</th>
+                    <th class="px-6 py-4 font-bold">{{ t('dash.col.audio') }}</th>
+                    <th class="px-6 py-4 font-bold">{{ t('dash.col.subtitles') }}</th>
+                    <th class="px-6 py-4 font-bold text-right">{{ t('dash.col.orig_size') }}</th>
+                    <th class="px-6 py-4 font-bold text-right">{{ t('dash.col.processed') }}</th>
+                    <th class="px-6 py-4 font-bold text-right">{{ t('dash.col.actions') }}</th>
+                    <th class="px-6 py-4 font-bold text-center">{{ t('dash.col.status') }}</th>
                 </tr>
 
                 <!-- Filter row (one input per column) -->
                 <tr class="bg-slate-900/40 border-b border-slate-700/50">
-                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="Filter..." onkeyup="filterTable(0)"></th>
-                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="Filter..." onkeyup="filterTable(1)"></th>
-                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="Filter..." onkeyup="filterTable(2)"></th>
-                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="Filter..." onkeyup="filterTable(3)"></th>
-                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="Filter..." onkeyup="filterTable(4)"></th>
-                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="Filter..." onkeyup="filterTable(5)"></th>
-                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="Size..." onkeyup="filterTable(6)"></th>
+                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="{{ t('dash.filter') }}" onkeyup="filterTable(0)"></th>
+                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="{{ t('dash.filter') }}" onkeyup="filterTable(1)"></th>
+                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="{{ t('dash.filter') }}" onkeyup="filterTable(2)"></th>
+                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="{{ t('dash.filter') }}" onkeyup="filterTable(3)"></th>
+                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="{{ t('dash.filter') }}" onkeyup="filterTable(4)"></th>
+                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="{{ t('dash.filter') }}" onkeyup="filterTable(5)"></th>
+                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="{{ t('dash.filter_size') }}" onkeyup="filterTable(6)"></th>
                     <th class="px-4 py-2"></th>
                     <th class="px-4 py-2"></th>
-                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="Status..." onkeyup="filterTable(8)"></th>
+                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="{{ t('dash.filter_status') }}" onkeyup="filterTable(8)"></th>
                 </tr>
             </thead>
 
@@ -173,7 +173,7 @@
                               {% if not file.stream_overrides %}
                                 <span
                                   class="text-slate-600 text-xs cursor-not-allowed"
-                                  title="Blocked: streams with unknown language (und). Use 🛠️ to assign languages and unblock."
+                                  title="{{ t('dash.und_blocked_title') }}"
                                 >
                                   ⛔
                                 </span>
@@ -182,7 +182,7 @@
                                   <button
                                     type="submit"
                                     class="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded"
-                                    title="Queue file for processing"
+                                    title="{{ t('dash.queue_title') }}"
                                   >
                                     ▶️
                                   </button>
@@ -193,7 +193,7 @@
                                 <button
                                   type="submit"
                                   class="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded"
-                                  title="Queue file for processing"
+                                  title="{{ t('dash.queue_title') }}"
                                 >
                                   ▶️
                                 </button>
@@ -205,7 +205,7 @@
                               <button
                                 type="submit"
                                 class="bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded"
-                                title="Remove from queue"
+                                title="{{ t('dash.dequeue_title') }}"
                               >
                                 ⏹
                               </button>
@@ -216,7 +216,7 @@
                               <button
                                 type="submit"
                                 class="bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs px-2 py-1 rounded"
-                                title="{% if file.status == 'failed' %}Retry failed file{% else %}Re-scan file{% endif %}"
+                                title="{% if file.status == 'failed' %}{{ t('dash.retry_title') }}{% else %}{{ t('dash.rescan_title') }}{% endif %}"
                               >
                                 🔄
                               </button>
@@ -235,7 +235,7 @@
                             <button
                               type="button"
                               class="inspect-streams text-amber-400 hover:text-amber-300"
-                              title="Inspect streams metadata"
+                              title="{{ t('dash.inspect_title') }}"
                               data-media-id="{{ file.id }}"
                               data-file-name="{{ file.file_name }}"
                             >
@@ -252,7 +252,7 @@
                           {% if not file.stream_overrides %}
                             <span
                                 class="px-2 py-1 rounded bg-amber-900/40 text-amber-400 text-[10px] font-bold uppercase border border-amber-800/50 align-middle"
-                                title="Streams with unknown language (und) — requires manual review with 🛠️"
+                                title="{{ t('dash.und_badge_title') }}"
                             >
                                 ⚠️ und
                             </span>
@@ -260,26 +260,26 @@
                         {% endif %}
                         {% if file.status == 'completed' %}
                             <span class="px-3 py-1 rounded bg-green-900/40 text-green-400 text-xs font-bold uppercase border border-green-800/50">
-                                Completed
+                                {{ t('status.completed') }}
                             </span>
                         {% elif file.status == 'processing' %}
                             <span class="px-3 py-1 rounded bg-blue-900/40 text-blue-400 text-xs font-bold uppercase border border-blue-800 animate-pulse">
-                                Processing
+                                {{ t('status.processing') }}
                             </span>
                         {% elif file.status == 'failed' %}
                             <span
                                 class="px-3 py-1 rounded bg-red-900/40 text-red-400 text-xs font-bold uppercase border border-red-800/50"
-                                title="{% if file.last_error %}{{ file.last_error }}{% else %}Failed{% endif %}"
+                                title="{% if file.last_error %}{{ file.last_error }}{% else %}{{ t('status.failed') }}{% endif %}"
                             >
-                                Failed
+                                {{ t('status.failed') }}
                             </span>
                         {% elif file.status == 'queued' %}
                             <span class="px-3 py-1 rounded bg-red-900/40 text-red-400 text-xs font-bold uppercase border border-red-800/50">
-                                Queued
+                                {{ t('status.queued') }}
                             </span>
                         {% else %}
                             <span class="px-3 py-1 rounded bg-slate-700/60 text-slate-400 text-xs font-bold uppercase border border-slate-600/50">
-                                Pending
+                                {{ t('status.pending') }}
                             </span>
                         {% endif %}
                     </td>
@@ -296,7 +296,7 @@
         <!-- Header -->
           <div class="flex justify-between items-center mb-4">
             <h3 class="text-lg font-bold text-slate-100">
-              Stream Inspection (ffprobe)
+              {{ t('dash.modal.title') }}
               <span
                 id="inspect-streams-filename"
                 class="ml-2 text-slate-400 font-normal text-sm truncate"
@@ -317,19 +317,19 @@
         
           <!-- LEFT: Raw ffprobe -->
         <div class="flex flex-col min-h-0">
-          <h4 class="text-slate-300 font-semibold mb-2">🔍 Raw ffprobe output</h4>
+          <h4 class="text-slate-300 font-semibold mb-2">🔍 {{ t('dash.modal.raw') }}</h4>
           <pre
             id="inspect-streams-json"
             class="flex-1 bg-black text-slate-200 text-xs p-3 rounded
                    overflow-y-auto overflow-x-auto
                    border border-slate-700"
-          >Loading...</pre>
+          >{{ t('dash.modal.loading') }}</pre>
         </div>
     
           <!-- RIGHT: Parsed streams -->
         
             <div class="flex flex-col min-h-0">
-              <h4 class="text-slate-300 font-semibold mb-2">🧩 Parsed stream view</h4>
+              <h4 class="text-slate-300 font-semibold mb-2">🧩 {{ t('dash.modal.parsed') }}</h4>
               <div
                 id="inspect-streams-content"
                 class="flex-1 space-y-6 overflow-auto"
@@ -352,14 +352,14 @@
                 id="clear-stream-overrides"
                 class="hidden bg-orange-600 hover:bg-orange-700 text-black text-xs font-bold px-3 py-1 rounded"
               >
-                🧹 Clear overrides
+                🧹 {{ t('dash.modal.clear_overrides') }}
               </button>
         
               <button
                 id="save-stream-overrides"
                 class="hidden bg-amber-600 hover:bg-amber-700 text-black text-xs font-bold px-3 py-1 rounded"
               >
-                💾 Save overrides
+                💾 {{ t('dash.modal.save_overrides') }}
               </button>
             </div>
           </div>
@@ -412,6 +412,20 @@
   document.addEventListener("DOMContentLoaded", () => {
     const POLL_INTERVAL_MS = 5000; // 5 seconds
 
+    // Localized strings (injected server-side)
+    const I18N = {
+      completed: {{ t('status.completed')|tojson }},
+      processing: {{ t('status.processing')|tojson }},
+      failed: {{ t('status.failed')|tojson }},
+      queued: {{ t('status.queued')|tojson }},
+      pending: {{ t('status.pending')|tojson }},
+      blockedTitle: {{ t('dash.und_blocked_title')|tojson }},
+      queueTitle: {{ t('dash.queue_title')|tojson }},
+      dequeueTitle: {{ t('dash.dequeue_title')|tojson }},
+      retryTitle: {{ t('dash.retry_title')|tojson }},
+      rescanTitle: {{ t('dash.rescan_title')|tojson }},
+    };
+
     function updateStatusBadge(cell, status) {
       const baseClasses = "px-3 py-1 rounded text-xs font-bold uppercase border";
 
@@ -424,7 +438,7 @@
       };
 
       cell.innerHTML = `<span class="${statusMap[status] || statusMap.pending}">
-        ${status}
+        ${I18N[status] || status}
       </span>`;
     }
 
@@ -440,7 +454,7 @@
           container.innerHTML = `
             <span
               class="text-slate-600 text-xs cursor-not-allowed"
-              title="Blocked: streams with unknown language (und). Use 🛠️ to assign languages and unblock."
+              title="${I18N.blockedTitle}"
             >
               ⛔
             </span>
@@ -450,7 +464,7 @@
             <form method="post" action="/queue/${mediaId}/enqueue">
               <button
                 class="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded"
-                title="Queue file"
+                title="${I18N.queueTitle}"
               >
                 ▶️
               </button>
@@ -462,7 +476,7 @@
           <form method="post" action="/queue/${mediaId}/dequeue">
             <button
               class="bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded"
-              title="Remove from queue"
+              title="${I18N.dequeueTitle}"
             >
               ⏹
             </button>
@@ -473,7 +487,7 @@
           <form method="post" action="/queue/${mediaId}/rescan">
             <button
               class="bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs px-2 py-1 rounded"
-              title="${status === "failed" ? "Retry failed file" : "Re-scan file"}"
+              title="${status === "failed" ? I18N.retryTitle : I18N.rescanTitle}"
             >
               🔄
             </button>
@@ -617,6 +631,28 @@
         const modal = document.getElementById("inspect-streams-modal");
         const contentEl = document.getElementById("inspect-streams-content");
         const closeBtn = document.getElementById("inspect-streams-close");
+
+        // Localized strings (injected server-side)
+        const I18N = {
+          unsaved: {{ t('dash.modal.unsaved')|tojson }},
+          noMediaId: {{ t('dash.modal.no_media_id')|tojson }},
+          saveFailed: {{ t('dash.modal.save_failed')|tojson }},
+          saveError: {{ t('dash.modal.save_error')|tojson }},
+          loadingJson: {{ t('dash.modal.loading_json')|tojson }},
+          loadingStreams: {{ t('dash.modal.loading_streams')|tojson }},
+          failedJson: {{ t('dash.modal.failed_json')|tojson }},
+          failedStreams: {{ t('dash.modal.failed_streams')|tojson }},
+          failedRender: {{ t('dash.modal.failed_render')|tojson }},
+          unknownFile: {{ t('dash.modal.unknown_file')|tojson }},
+          video: {{ t('dash.modal.video')|tojson }},
+          audioStreams: {{ t('dash.modal.audio_streams')|tojson }},
+          subtitleStreams: {{ t('dash.modal.subtitle_streams')|tojson }},
+          colIndex: {{ t('dash.modal.col.index')|tojson }},
+          colCodec: {{ t('dash.modal.col.codec')|tojson }},
+          colChannels: {{ t('dash.modal.col.channels')|tojson }},
+          colLanguage: {{ t('dash.modal.col.language')|tojson }},
+          none: {{ t('dash.modal.none')|tojson }},
+        };
       
         const streamOverrides = {
           audio: {},
@@ -641,7 +677,7 @@
         function closeModal() {
           if (hasUnsavedChanges) {
             const confirmClose = confirm(
-              "You have unsaved language changes. Close anyway?"
+              I18N.unsaved
             );
             if (!confirmClose) return;
           }
@@ -730,7 +766,7 @@
           div.innerHTML = `
             <h4 class="text-slate-200 font-bold">${title}</h4>
             <div class="bg-slate-900 border border-slate-700 rounded p-3">
-              ${html || '<span class="text-slate-500 text-sm">None</span>'}
+              ${html || '<span class="text-slate-500 text-sm">' + I18N.none + '</span>'}
             </div>
           `;
           return div;
@@ -741,7 +777,7 @@
           const v = video[0];
           container.appendChild(
             section(
-              "🎬 Video",
+              "🎬 " + I18N.video,
               `<div class="text-sm text-slate-300">
                 Stream ${v.index} · ${v.codec_name} · ${v.width}x${v.height}
               </div>`
@@ -785,11 +821,11 @@
 
           container.appendChild(
             section(
-              "🔊 Audio Streams",
+              "🔊 " + I18N.audioStreams,
               `<table class="w-full text-sm">
                 <thead class="text-slate-400 border-b border-slate-700">
                   <tr>
-                    <th>Index</th><th>Codec</th><th>Channels</th><th>Language</th>
+                    <th>${I18N.colIndex}</th><th>${I18N.colCodec}</th><th>${I18N.colChannels}</th><th>${I18N.colLanguage}</th>
                   </tr>
                 </thead>
                 <tbody class="text-slate-300">${rows}</tbody>
@@ -833,11 +869,11 @@
 
           container.appendChild(
             section(
-              "💬 Subtitle Streams",
+              "💬 " + I18N.subtitleStreams,
               `<table class="w-full text-sm">
                 <thead class="text-slate-400 border-b border-slate-700">
                   <tr>
-                    <th>Index</th><th>Codec</th><th>Language</th>
+                    <th>${I18N.colIndex}</th><th>${I18N.colCodec}</th><th>${I18N.colLanguage}</th>
                   </tr>
                 </thead>
                 <tbody class="text-slate-300">${rows}</tbody>
@@ -857,21 +893,21 @@
           openModal();
           
           // Set filename in modal header
-          const filename = btn.dataset.fileName || "Unknown file";
+          const filename = btn.dataset.fileName || I18N.unknownFile;
           document.getElementById("inspect-streams-filename").textContent =
             `— ${filename}`;
 
           // Init both panels
           document.getElementById("inspect-streams-json").textContent =
-            "Loading ffprobe JSON...";
-          contentEl.innerHTML = "Loading parsed streams...";
+            I18N.loadingJson;
+          contentEl.innerHTML = I18N.loadingStreams;
         
           try {
             const res = await fetch(`/api/media/${mediaId}/ffprobe`);
             if (!res.ok) {
               document.getElementById("inspect-streams-json").textContent =
-                "Failed to load ffprobe data.";
-              contentEl.innerHTML = "Failed to load stream data.";
+                I18N.failedJson;
+              contentEl.innerHTML = I18N.failedStreams;
               return;
             }
         
@@ -916,13 +952,13 @@
               renderStreams(data);
             } catch (renderErr) {
               console.error("Render error:", renderErr);
-              contentEl.innerHTML = "Failed to render stream view.";
+              contentEl.innerHTML = I18N.failedRender;
             }
 
           } catch (err) {
             document.getElementById("inspect-streams-json").textContent =
-              "Failed to load ffprobe data.";
-            contentEl.innerHTML = "Failed to load stream data.";
+              I18N.failedJson;
+            contentEl.innerHTML = I18N.failedStreams;
             console.error(err);
           }
         });
@@ -952,7 +988,7 @@
         
         document.getElementById("save-stream-overrides").addEventListener("click", async () => {
           if (!currentMediaId) {
-            alert("Cannot determine media ID.");
+            alert(I18N.noMediaId);
             return;
           }
         
@@ -964,7 +1000,7 @@
             });
         
             if (!res.ok) {
-              alert("Failed to save overrides.");
+              alert(I18N.saveFailed);
               return;
             }
         
@@ -974,7 +1010,7 @@
         
           } catch (err) {
             console.error(err);
-            alert("Unexpected error saving overrides.");
+            alert(I18N.saveError);
           }
         });
         

@@ -18,7 +18,7 @@
 
     <!-- Page title -->
     <h1 class="text-2xl font-bold text-slate-200">
-        Processing Queue
+        {{ t('queue.title') }}
     </h1>
 
     {# 
@@ -29,7 +29,7 @@
         href="/scan"
         class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors"
     >
-        🔄 Scan for New Media
+        🔄 {{ t('dash.scan_btn') }}
     </a>
 </div>
 
@@ -46,7 +46,7 @@
         <!-- Section header with count -->
         <h2 class="text-amber-400 font-bold mb-4 flex items-center">
             <span class="mr-2">⏳</span>
-            Pending ({{ pending|length }})
+            {{ t('queue.pending', count=pending|length) }}
         </h2>
 
         <!-- List of pending files -->
@@ -75,7 +75,7 @@
 							<button
 								type="submit"
 								class="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded"
-								title="Queue file for processing"
+								title="{{ t('dash.queue_title') }}"
 							>
 								▶️
 							</button>
@@ -91,7 +91,7 @@
     <!-- ========================= -->
     <section class="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
         <h2 class="text-yellow-400 font-bold mb-4">
-            Queued ({{ queued|length }})
+            {{ t('queue.queued', count=queued|length) }}
         </h2>
         
         {% for file in queued %}
@@ -105,7 +105,7 @@
                     <button
                         type="submit"
                         class="bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded"
-                        title="Remove from queue"
+                        title="{{ t('dash.dequeue_title') }}"
                     >
                         ⏹
                     </button>
@@ -122,7 +122,7 @@
         <!-- Section header with count -->
         <h2 class="text-blue-400 font-bold mb-4 flex items-center">
             <span class="mr-2">⚙️</span>
-            In Progress ({{ processing|length }})
+            {{ t('queue.in_progress', count=processing|length) }}
         </h2>
 
         <!-- List of files currently being processed -->
@@ -157,7 +157,7 @@
         <!-- Section header -->
         <h2 class="text-green-400 font-bold mb-4 flex items-center">
             <span class="mr-2">✅</span>
-            Recently Completed
+            {{ t('queue.completed') }}
         </h2>
 
         <!-- List of completed files -->
@@ -179,7 +179,7 @@
                             <button
                                 type="submit"
                                 class="bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs px-2 py-1 rounded"
-                                title="Re-scan file"
+                                title="{{ t('dash.rescan_title') }}"
                             >
                                 🔄
                             </button>

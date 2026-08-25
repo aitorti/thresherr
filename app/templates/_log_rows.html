@@ -26,7 +26,7 @@
 </tr>
 {% else %}
 <tr>
-  <td colspan="4" class="py-8 text-center text-sm text-slate-500">No log entries match your filters.</td>
+  <td colspan="4" class="py-8 text-center text-sm text-slate-500">{{ t('logs.no_entries') }}</td>
 </tr>
 {% endfor %}
 
@@ -38,7 +38,7 @@
       hx-get="/system/logs?level={{ level }}&q={{ q|urlencode }}&page={{ page + 1 }}"
       hx-target="this"
       hx-swap="outerHTML">
-      Load more
+      {{ t('logs.load_more') }}
     </button>
   </td>
 </tr>

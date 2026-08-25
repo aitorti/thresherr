@@ -8,7 +8,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <!-- Browser tab title -->
-    <title>Thresherr 🌾 - Media Converter</title>
+    <title>{{ t('brand.title') }}</title>
 
     <!-- Tailwind CSS loaded from CDN (utility-first CSS framework) -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -42,46 +42,46 @@
           <a href="/"
              class="block px-3 py-2 rounded-md mb-1 transition-colors
                     {% if path == '/' %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
-            Monitored Media Files
+            {{ t('nav.media_files') }}
           </a>
 
           <a href="/profiles"
              class="block px-3 py-2 rounded-md mb-1 transition-colors
                     {% if path.startswith('/profiles') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
-            Profiles
+            {{ t('nav.profiles') }}
           </a>
 
           <a href="/libraries"
              class="block px-3 py-2 rounded-md mb-1 transition-colors
                     {% if path.startswith('/libraries') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
-            Libraries
+            {{ t('nav.libraries') }}
           </a>
 
           <a href="/queue"
              class="block px-3 py-2 rounded-md mb-1 transition-colors
                     {% if path.startswith('/queue') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
-            Queue
+            {{ t('nav.queue') }}
           </a>
 
           {# System section — *arr family convention #}
-          <div class="text-xs font-bold uppercase tracking-widest text-slate-500 mt-5 mb-1 px-3">System</div>
+          <div class="text-xs font-bold uppercase tracking-widest text-slate-500 mt-5 mb-1 px-3">{{ t('nav.system') }}</div>
 
           <a href="/system/logs"
              class="block px-3 py-2 rounded-md mb-1 transition-colors
                     {% if path.startswith('/system/logs') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
-            Logs
+            {{ t('nav.logs') }}
           </a>
 
           <a href="/system/logfiles"
              class="block px-3 py-2 rounded-md mb-1 transition-colors
                     {% if path.startswith('/system/logfiles') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
-            Log Files
+            {{ t('nav.log_files') }}
           </a>
 
           <a href="/settings"
              class="block px-3 py-2 rounded-md mb-1 transition-colors
                     {% if path.startswith('/settings') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
-            Settings
+            {{ t('nav.settings') }}
           </a>
         </nav>
 
@@ -97,22 +97,22 @@
           {# These values are injected by the backend for ALL pages #}
           <div class="space-y-2">
             <div class="bg-slate-800/70 border border-slate-700 rounded-lg p-3">
-              <div class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Total Monitored</div>
-              <div id="stats-total-gb" class="text-sm font-extrabold text-slate-100 mt-1">{{ total_gb }} GB</div>
+          <div class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{{ t('stats.total_monitored') }}</div>
+          <div id="stats-total-gb" class="text-sm font-extrabold text-slate-100 mt-1">{{ total_gb }} GB</div>
             </div>
 
             <div class="bg-slate-800/70 border border-slate-700 rounded-lg p-3">
-              <div class="text-[10px] text-amber-400 font-bold uppercase tracking-widest">Before Processing</div>
+              <div class="text-[10px] text-amber-400 font-bold uppercase tracking-widest">{{ t('stats.before') }}</div>
               <div id="stats-processed-orig" class="text-sm font-extrabold text-slate-100 mt-1">{{ processed_orig_gb }} GB</div>
             </div>
 
             <div class="bg-slate-800/70 border border-slate-700 rounded-lg p-3">
-              <div class="text-[10px] text-green-400 font-bold uppercase tracking-widest">After Processing</div>
+              <div class="text-[10px] text-green-400 font-bold uppercase tracking-widest">{{ t('stats.after') }}</div>
               <div id="stats-processed-final" class="text-sm font-extrabold text-slate-100 mt-1">{{ processed_final_gb }} GB</div>
             </div>
 
             <div class="bg-blue-900/20 border border-blue-500/40 rounded-lg p-3">
-              <div class="text-[10px] text-blue-300 font-bold uppercase tracking-widest">Total Savings</div>
+              <div class="text-[10px] text-blue-300 font-bold uppercase tracking-widest">{{ t('stats.total_savings') }}</div>
               <div class="flex items-baseline gap-2 mt-1">
                 <div id="stats-savings-gb" class="text-sm font-extrabold text-blue-100">{{ savings_gb }} GB</div>
                 <div id="stats-savings-pct" class="text-[11px] text-blue-400">({{ savings_pct }}%)</div>
@@ -153,7 +153,7 @@
     (function readFlash() {
       const params = new URLSearchParams(window.location.search);
       if (params.get("error") === "und_blocked") {
-        showBanner("⚠️ Blocked: streams with unknown language (und). Use 🛠️ to assign languages and unblock.", "error");
+        showBanner("{{ t('flash.und_blocked') }}", "error");
       }
       const batch = params.get("batch");
       if (batch) {

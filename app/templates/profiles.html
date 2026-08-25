@@ -23,7 +23,7 @@
         
         <!-- Section title -->
         <h2 class="text-xl font-bold mb-6 text-amber-400 flex items-center">
-            <span class="mr-2">⚙️</span> New Profile Configuration
+            <span class="mr-2">⚙️</span> {{ t('prof.new') }}
         </h2>
         
         {# 
@@ -34,11 +34,11 @@
             
             <!-- Profile name -->
             <div>
-                <label class="block font-semibold mb-1">Profile Name</label>
+                <label class="block font-semibold mb-1">{{ t('prof.name') }}</label>
                 <input 
                     type="text"
                     name="name"
-                    placeholder="e.g. High Quality 4K"
+                    placeholder="{{ t('prof.name_ph') }}"
                     required
                     class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 focus:border-amber-500 outline-none text-slate-200"
                 >
@@ -47,7 +47,7 @@
             <!-- Video codec and container selection -->
             <div class="grid grid-cols-2 gap-3">
                 <div>
-                    <label class="block font-semibold mb-1">Video Codec</label>
+                    <label class="block font-semibold mb-1">{{ t('prof.video_codec') }}</label>
                     <select name="video_codec" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 text-slate-200">
                         <option value="h264" selected>H.264</option>
                         <option value="h265">H.265</option>
@@ -57,7 +57,7 @@
                 </div>
 
                 <div>
-                    <label class="block font-semibold mb-1">Container</label>
+                    <label class="block font-semibold mb-1">{{ t('prof.container') }}</label>
                     <select name="container" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 text-slate-200">
                         <option value="mkv" selected>MKV</option>
                         <option value="mp4">MP4</option>
@@ -70,7 +70,7 @@
             <!-- Video resolution and bitrate limits -->
             <div class="grid grid-cols-2 gap-3">
                 <div>
-                    <label class="block font-semibold mb-1">Max Resolution</label>
+                    <label class="block font-semibold mb-1">{{ t('prof.max_res') }}</label>
                     <select name="video_max_res" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 text-slate-200">
                         <option value="480">480p</option>
                         <option value="720">720p</option>
@@ -81,7 +81,7 @@
                 </div>
 
                 <div>
-                    <label class="block font-semibold mb-1">Max Bitrate</label>
+                    <label class="block font-semibold mb-1">{{ t('prof.max_bitrate') }}</label>
                     <select name="video_max_bitrate" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 text-slate-200">
                         <option value="2000">2 Mbps (SD)</option>
                         <option value="5000">5 Mbps (HD)</option>
@@ -97,7 +97,7 @@
             <!-- Audio configuration -->
             <div class="grid grid-cols-2 gap-3">
                 <div>
-                    <label class="block font-semibold mb-1 text-blue-300">Audio Codec</label>
+                    <label class="block font-semibold mb-1 text-blue-300">{{ t('prof.audio_codec') }}</label>
                     <select name="audio_codec" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 text-slate-200">
                         <option value="aac">AAC</option>
                         <option value="eac3" selected>E-AC3</option>
@@ -109,7 +109,7 @@
                 </div>
 
                 <div>
-                    <label class="block font-semibold mb-1 text-blue-300">Def. Audio Lang</label>
+                    <label class="block font-semibold mb-1 text-blue-300">{{ t('prof.def_audio') }}</label>
                     <input 
                         type="text"
                         name="audio_def_language"
@@ -122,7 +122,7 @@
             <!-- Audio language whitelist -->
             <div>
                 <label class="block font-semibold mb-1 text-blue-300 text-xs">
-                    Whitelist Audio Lang (comma separated)
+                    {{ t('prof.audio_whitelist') }}
                 </label>
                 <input 
                     type="text"
@@ -137,7 +137,7 @@
             <!-- Subtitle configuration -->
             <div class="grid grid-cols-2 gap-3">
                 <div>
-                    <label class="block font-semibold mb-1 text-green-300">Subtitle Codec</label>
+                    <label class="block font-semibold mb-1 text-green-300">{{ t('prof.sub_codec') }}</label>
                     <select name="subtitle_codec" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 text-slate-200">
                         <option value="subrip" selected>SubRip (SRT)</option>
                         <option value="vtt">VTT</option>
@@ -147,7 +147,7 @@
                 </div>
 
                 <div>
-                    <label class="block font-semibold mb-1 text-green-300">Def. Sub Lang</label>
+                    <label class="block font-semibold mb-1 text-green-300">{{ t('prof.def_sub') }}</label>
                     <input 
                         type="text"
                         name="subtitle_def_language"
@@ -160,7 +160,7 @@
             <!-- Subtitle language whitelist -->
             <div>
                 <label class="block font-semibold mb-1 text-green-300 text-xs">
-                    Whitelist Sub Lang (comma separated)
+                    {{ t('prof.sub_whitelist') }}
                 </label>
                 <input 
                     type="text"
@@ -175,7 +175,7 @@
                 type="submit"
                 class="w-full bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold py-3 rounded-lg transition-all transform active:scale-95 mt-4"
             >
-                🌾 Save Profile
+                🌾 {{ t('prof.save') }}
             </button>
         </form>
     </section>
@@ -184,7 +184,7 @@
     <!-- Created profile list -->
     <!-- ========================= -->
     <section class="lg:col-span-2 bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-2xl">
-        <h2 class="text-xl font-bold mb-6 text-slate-300">Active Profiles</h2>
+        <h2 class="text-xl font-bold mb-6 text-slate-300">{{ t('prof.active') }}</h2>
 
         <div id="profile-list" class="grid grid-cols-1 md:grid-cols-2 gap-4">
             {% for profile in profiles %}
@@ -199,9 +199,9 @@
                         <form 
                             action="/profiles/{{ profile.id }}/delete"
                             method="POST"
-                            onsubmit="return confirm('Delete profile? All related libraries will also be deleted.');"
+                            onsubmit="return confirm('{{ t('prof.delete_confirm')|escapejs }}');"
                         >
-                            <button type="submit" class="text-red-500 hover:text-red-400 transition-colors" title="Delete Profile">
+                            <button type="submit" class="text-red-500 hover:text-red-400 transition-colors" title="{{ t('prof.delete_title') }}">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                           d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7
@@ -236,7 +236,7 @@
             {% else %}
                 <!-- Empty state when no profiles exist -->
                 <p id="empty-msg" class="text-slate-500 italic">
-                    No profiles created yet.
+                    {{ t('prof.empty') }}
                 </p>
             {% endfor %}
         </div>
