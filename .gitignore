@@ -213,3 +213,6 @@ app/thresherr.db
 
 # Runtime data volume (SQLite database lives here)
 data/
+
+# Local trash (old DB files moved aside on the server)
+app/_trash/

@@ -1,16 +1,28 @@
 from fastapi import FastAPI, Request, Form, Depends, HTTPException, Query, Body
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from database import engine, SessionLocal
 from scanner import scan_libraries, get_video_metadata
 from typing import Optional, Dict
+from logging_setup import (
+    TRACE,
+    LOG_DIR,
+    setup_logging,
+    get_logger,
+    get_log_level,
+    set_log_level,
+)
 
 import models
 import subprocess
 import json
 import os
+import glob
+import re
+import time
+from datetime import datetime
 from urllib.parse import quote
 
 # 1. Database setup
@@ -19,6 +31,27 @@ models.Base.metadata.create_all(bind=engine)
 # 2. App & Templates initialization
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
+
+# 2b. Logging (*arr-style: rolling files + SQLite table, System -> Logs)
+setup_logging()
+ui_logger = get_logger("ui")
+
+
+# 2c. Request logging (visible in thresherr.trace.txt, like the *arr trace)
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start = time.perf_counter()
+    response = await call_next(request)
+    duration_ms = (time.perf_counter() - start) * 1000
+    get_logger("http").log(
+        TRACE,
+        "%s %s -> %s (%d ms)",
+        request.method,
+        request.url.path,
+        response.status_code,
+        duration_ms,
+    )
+    return response
 
 # 3. Dependency to get DB session
 def get_db():
@@ -120,6 +153,7 @@ async def create_profile(
     )
     db.add(new_profile)
     db.commit()
+    ui_logger.debug("Profile created: %s", name)
     return RedirectResponse(url="/profiles", status_code=303)
 
 # --- WORKGIN WITH LIBRARIES ---
@@ -151,6 +185,7 @@ async def add_library(
     )
     db.add(new_library)
     db.commit()
+    ui_logger.debug("Library added: %s (%s)", name, media_path)
     return RedirectResponse(url="/libraries", status_code=303)
 
 # --- WORKING WITH QUEUED FILES ---
@@ -177,6 +212,7 @@ async def get_queue(request: Request, db: Session = Depends(get_db)):
 @app.get("/scan")
 async def manual_scan(request: Request, db: Session = Depends(get_db)):
     new_count = scan_libraries(db)
+    ui_logger.info("Manual scan completed: %s new media file(s)", new_count)
     return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303,)
 
 # --- DELETE PROFILES & LIBRARIES ---
@@ -187,6 +223,7 @@ async def delete_profile(profile_id: int, db: Session = Depends(get_db)):
     if profile:
         db.delete(profile)
         db.commit()
+        ui_logger.info("Profile deleted: id=%s (%s)", profile_id, profile.name)
     return RedirectResponse(url="/profiles", status_code=303)
 
 @app.post("/libraries/{library_id}/delete")
@@ -195,6 +232,7 @@ async def delete_library(library_id: int, db: Session = Depends(get_db)):
     if library:
         db.delete(library)
         db.commit()
+        ui_logger.info("Library deleted: id=%s (%s)", library_id, library.name)
     return RedirectResponse(url="/libraries", status_code=303)
 
 # --- WORKING WITH JOB QUEUE ---
@@ -208,6 +246,11 @@ async def enqueue_media(media_id: int, request: Request, db: Session = Depends(g
     # SAFETY: block enqueue if there is any 'und' (human must decide).
     # Fresh ffprobe so the decision never relies on stale scan summary.
     if has_und_language(media, fresh=True):
+        ui_logger.warning(
+            "Enqueue blocked for media_file id=%s (%s): unknown language (und)",
+            media.id,
+            media.file_name,
+        )
         referer = request.headers.get("referer", "/")
         sep = "&" if "?" in referer else "?"
         return RedirectResponse(
@@ -217,6 +260,7 @@ async def enqueue_media(media_id: int, request: Request, db: Session = Depends(g
 
     media.status = "queued"
     db.commit()
+    ui_logger.info("Enqueued media_file id=%s (%s)", media.id, media.file_name)
 
     return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303)
 
@@ -226,6 +270,7 @@ async def dequeue_media(media_id: int, request: Request, db: Session = Depends(g
     if media and media.status == "queued":
         media.status = "pending"
         db.commit()
+        ui_logger.info("Dequeued media_file id=%s (%s)", media.id, media.file_name)
     return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303,)
 
 @app.post("/queue/{media_id}/rescan")
@@ -243,6 +288,7 @@ async def rescan_media(media_id: int, request: Request, db: Session = Depends(ge
         media.last_error = None
         media.warnings = None
         db.commit()
+        ui_logger.info("Rescanned media_file id=%s (%s) -> pending", media.id, media.file_name)
 
     return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303,)
 
@@ -321,6 +367,12 @@ async def enqueue_library(
         enqueued += 1
 
     db.commit()
+    ui_logger.info(
+        "Batch enqueue library id=%s: %s enqueued, %s blocked (und)",
+        library_id,
+        enqueued,
+        blocked,
+    )
 
     referer = request.headers.get("referer", "/")
     sep = "&" if "?" in referer else "?"
@@ -347,6 +399,7 @@ async def dequeue_library(
         .update({models.MediaFile.status: "pending"}, synchronize_session=False)
     )
     db.commit()
+    ui_logger.info("Batch dequeue library id=%s", library_id)
 
     return RedirectResponse(
         url=request.headers.get("referer", "/"),
@@ -379,6 +432,7 @@ async def rescan_library(
         )
     )
     db.commit()
+    ui_logger.info("Batch rescan library id=%s -> pending", library_id)
 
     return RedirectResponse(
         url=request.headers.get("referer", "/"),
@@ -617,6 +671,7 @@ def save_stream_overrides(
         media.stream_overrides = json.dumps(payload)
 
     db.commit()
+    ui_logger.debug("Stream overrides saved for media_file id=%s", media_id)
     return {"ok": True}
 
 def _contains_und(value: str | None) -> bool:
@@ -679,3 +734,193 @@ def has_und_language(media: models.MediaFile, fresh: bool = False) -> bool:
     return _contains_und(media.audio_languages) or _contains_und(
         media.subtitle_languages
     )
+
+
+# -------------------------------------------------
+# SYSTEM: LOGS (*arr-style, System -> Logs)
+# -------------------------------------------------
+
+LOGS_PER_PAGE = 50
+
+
+def _format_log_time(dt) -> str:
+    """Render a naive-UTC Log row in Europe/Madrid, *arr-style table format."""
+    try:
+        from zoneinfo import ZoneInfo
+        from datetime import timezone as dt_timezone
+
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=dt_timezone.utc)
+        return dt.astimezone(ZoneInfo("Europe/Madrid")).strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+
+
+@app.get("/system/logs", response_class=HTMLResponse)
+async def system_logs(
+    request: Request,
+    level: str = "all",
+    q: str = "",
+    page: int = 1,
+    db: Session = Depends(get_db),
+):
+    """System -> Logs: paginated table with level filter and text search."""
+    stats = compute_global_stats(db)
+
+    query = db.query(models.Log)
+    if level != "all":
+        if level == "error":
+            query = query.filter(models.Log.level.in_(("ERROR", "FATAL")))
+        else:
+            query = query.filter(models.Log.level == level.upper())
+    if q:
+        query = query.filter(models.Log.message.ilike(f"%{q}%"))
+
+    total = query.count()
+    logs = (
+        query.order_by(models.Log.id.desc())
+        .offset((page - 1) * LOGS_PER_PAGE)
+        .limit(LOGS_PER_PAGE)
+        .all()
+    )
+    has_more = (page * LOGS_PER_PAGE) < total
+
+    # HTMX "load more" requests get only the rows fragment
+    is_hx = request.headers.get("HX-Request") == "true"
+    template_name = "_log_rows.html" if is_hx else "system_logs.html"
+
+    return templates.TemplateResponse(
+        request=request,
+        name=template_name,
+        context={
+            **stats,
+            "logs": logs,
+            "level": level,
+            "q": q,
+            "page": page,
+            "has_more": has_more,
+            "fmt_log_time": _format_log_time,
+        },
+    )
+
+
+# -------------------------------------------------
+# SYSTEM: LOG FILES (*arr-style, System -> Log Files)
+# -------------------------------------------------
+
+_LOG_FILE_RE = re.compile(r"^thresherr(\.debug|\.trace)?\.txt(\.\d+)?$")
+_VIEW_TAIL_BYTES = 256 * 1024
+
+
+def _safe_log_file_name(file_name: str) -> str:
+    """Validate a log file name; never allow paths or arbitrary files."""
+    if not _LOG_FILE_RE.fullmatch(file_name or ""):
+        raise HTTPException(status_code=400, detail="Invalid log file name")
+    return file_name
+
+
+def _list_log_files() -> list[dict]:
+    files = []
+    for path in glob.glob(os.path.join(LOG_DIR, "thresherr*.txt*")):
+        st = os.stat(path)
+        files.append(
+            {
+                "name": os.path.basename(path),
+                "size": st.st_size,
+                "mtime_str": _format_log_time(
+                    datetime.fromtimestamp(st.st_mtime)
+                ),
+            }
+        )
+    files.sort(key=lambda f: f["name"])
+    return files
+
+
+def _read_tail(path: str, max_bytes: int) -> str:
+    """Read the last max_bytes of a file (log files can be huge)."""
+    size = os.path.getsize(path)
+    with open(path, "rb") as f:
+        if size <= max_bytes:
+            data = f.read()
+        else:
+            f.seek(size - max_bytes)
+            data = f.read()
+    return data.decode("utf-8", errors="replace")
+
+
+@app.get("/system/logfiles", response_class=HTMLResponse)
+async def system_logfiles(request: Request, db: Session = Depends(get_db)):
+    stats = compute_global_stats(db)
+    return templates.TemplateResponse(
+        request=request,
+        name="system_logfiles.html",
+        context={**stats, "files": _list_log_files(), "log_dir": LOG_DIR},
+    )
+
+
+@app.get("/system/logfiles/view/{file_name}", response_class=HTMLResponse)
+async def view_log_file(file_name: str, request: Request, db: Session = Depends(get_db)):
+    name = _safe_log_file_name(file_name)
+    path = os.path.join(LOG_DIR, name)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Log file not found")
+
+    stats = compute_global_stats(db)
+    return templates.TemplateResponse(
+        request=request,
+        name="system_logview.html",
+        context={
+            **stats,
+            "file_name": name,
+            "content": _read_tail(path, _VIEW_TAIL_BYTES),
+            "truncated": os.path.getsize(path) > _VIEW_TAIL_BYTES,
+        },
+    )
+
+
+@app.get("/system/logfiles/download/{file_name}")
+async def download_log_file(file_name: str):
+    name = _safe_log_file_name(file_name)
+    path = os.path.join(LOG_DIR, name)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Log file not found")
+    return FileResponse(path, media_type="text/plain", filename=name)
+
+
+@app.post("/system/logfiles/delete/{file_name}")
+async def delete_log_file(file_name: str):
+    name = _safe_log_file_name(file_name)
+    path = os.path.join(LOG_DIR, name)
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Log file not found")
+    os.remove(path)
+    ui_logger.info("Log file deleted: %s", name)
+    return RedirectResponse(url="/system/logfiles", status_code=303)
+
+
+# -------------------------------------------------
+# SETTINGS: GENERAL (Log level, like the *arr family)
+# -------------------------------------------------
+
+@app.get("/settings", response_class=HTMLResponse)
+async def get_settings(request: Request, db: Session = Depends(get_db)):
+    stats = compute_global_stats(db)
+    return templates.TemplateResponse(
+        request=request,
+        name="settings.html",
+        context={
+            **stats,
+            "log_level": get_log_level(),
+            "log_dir": LOG_DIR,
+        },
+    )
+
+
+@app.post("/settings")
+async def save_settings(log_level: str = Form(...)):
+    try:
+        applied = set_log_level(log_level)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid log level")
+    ui_logger.info("Log level changed to %s (runtime, no restart)", applied)
+    return RedirectResponse(url="/settings", status_code=303)

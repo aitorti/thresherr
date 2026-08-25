@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-6xl">
+  <!-- Breadcrumb, *arr style -->
+  <div class="text-xs text-slate-500 font-semibold mb-1">
+    <a href="/system/logfiles" class="hover:text-amber-400">System → Log Files</a>
+  </div>
+
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+    <h1 class="text-2xl font-extrabold text-slate-100 font-mono">{{ file_name }}</h1>
+    <div class="flex gap-2">
+      <a href="/system/logfiles"
+         class="px-3 py-1.5 rounded-md bg-slate-800 border border-slate-700 text-sm text-slate-300 font-semibold hover:bg-slate-700 transition-colors">Back</a>
+      <a href="/system/logfiles/view/{{ file_name }}"
+         class="px-3 py-1.5 rounded-md bg-slate-800 border border-slate-700 text-sm text-slate-300 font-semibold hover:bg-slate-700 transition-colors">Refresh</a>
+      <a href="/system/logfiles/download/{{ file_name }}"
+         class="px-3 py-1.5 rounded-md bg-amber-600 text-sm text-slate-950 font-bold hover:bg-amber-500 transition-colors">Download</a>
+    </div>
+  </div>
+
+  {% if truncated %}
+  <div class="mb-3 text-xs text-amber-400 bg-amber-900/20 border border-amber-800/50 rounded-md px-3 py-2">
+    Showing only the last 256 KB of this file. Use Download to get the full file.
+  </div>
+  {% endif %}
+
+  <div class="rounded-lg border border-slate-700 bg-slate-950 overflow-hidden">
+    <pre class="p-4 text-xs leading-relaxed text-slate-300 font-mono overflow-x-auto whitespace-pre-wrap break-words max-h-[70vh] overflow-y-auto">{{ content }}</pre>
+  </div>
+</div>
+{% endblock %}

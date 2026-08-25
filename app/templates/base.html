@@ -62,6 +62,27 @@
                     {% if path.startswith('/queue') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
             Queue
           </a>
+
+          {# System section — *arr family convention #}
+          <div class="text-xs font-bold uppercase tracking-widest text-slate-500 mt-5 mb-1 px-3">System</div>
+
+          <a href="/system/logs"
+             class="block px-3 py-2 rounded-md mb-1 transition-colors
+                    {% if path.startswith('/system/logs') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
+            Logs
+          </a>
+
+          <a href="/system/logfiles"
+             class="block px-3 py-2 rounded-md mb-1 transition-colors
+                    {% if path.startswith('/system/logfiles') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
+            Log Files
+          </a>
+
+          <a href="/settings"
+             class="block px-3 py-2 rounded-md mb-1 transition-colors
+                    {% if path.startswith('/settings') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
+            Settings
+          </a>
         </nav>
 
         <!-- Spacer -->

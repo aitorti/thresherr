@@ -10,6 +10,9 @@ from sqlalchemy.orm import Session
 from scanner import get_video_metadata
 from scanner import infer_stream_language
 from database import SessionLocal, engine
+from logging_setup import get_logger, setup_logging
+
+logger = get_logger("worker")
 
 # Ensure DB schema exists
 models.Base.metadata.create_all(bind=engine)
@@ -55,12 +58,9 @@ def remove_temp_output(job: models.MediaFile) -> None:
         temp_output = temp_output_path(job.full_path, job.library.temp_path)
         if os.path.exists(temp_output):
             os.remove(temp_output)
-            print(
-                f"[worker] removed temp output: {temp_output}",
-                flush=True,
-            )
+            logger.debug("Removed temp output: %s", temp_output)
     except Exception as exc:
-        print(f"[worker] could not remove temp output: {exc}", flush=True)
+        logger.warning("Could not remove temp output %s: %s", temp_output, exc)
 
 
 # -------------------------------------------------
@@ -143,10 +143,7 @@ def requeue_stale_processing(db: Session) -> int:
         job.verification_result = None
         job.last_error = None
         job.warnings = None
-        print(
-            f"[worker] re-queued stale job id={job.id} ({job.file_name})",
-            flush=True,
-        )
+        logger.warning("Re-queued stale job id=%s (%s)", job.id, job.file_name)
 
     if stale_jobs:
         db.commit()
@@ -833,8 +830,8 @@ def execute_job_plan(job_plan: dict, input_path: str, temp_dir: str) -> str:
     # Output path
     cmd.append(output_path)
 
-    # Debug: print full command
-    print("[worker] ffmpeg cmd:", " ".join(cmd), flush=True)
+    # Debug: log full command
+    logger.debug("ffmpeg cmd: %s", " ".join(cmd))
 
     # Run ffmpeg
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -1026,7 +1023,8 @@ def safe_replace_cross_fs(original_path: str, temp_path: str) -> None:
 # -------------------------------------------------
 
 def run_worker():
-    print("[worker] starting", flush=True)
+    setup_logging()
+    logger.info("Worker starting")
 
     while True:
         db = SessionLocal()
@@ -1041,14 +1039,19 @@ def run_worker():
                 time.sleep(WORKER_SLEEP_SECONDS)
                 continue
 
-            print(f"[worker] processing media_file id={job.id}", flush=True)
+            logger.info("Processing media_file id=%s (%s)", job.id, job.file_name)
 
             profile = job.library.profile
 
             inspection = inspect_file(job)
             
             # Temporally
-            print(f"[worker] inspect: container={inspection.get('container')} "f"audio={len(inspection.get('audio_streams', []))} "f"subs={len(inspection.get('subtitle_streams', []))}", flush=True)
+            logger.debug(
+                "inspect: container=%s audio=%s subs=%s",
+                inspection.get("container"),
+                len(inspection.get("audio_streams", [])),
+                len(inspection.get("subtitle_streams", [])),
+            )
             #############
 
             job_plan = build_job_plan(job, profile, inspection)
@@ -1059,15 +1062,20 @@ def run_worker():
             temp_output = execute_job_plan(job_plan, input_path=job.full_path, temp_dir=job.library.temp_path,)
             
             # Temporally
-            print("[worker] audio plan:",[(s["index"], s["action"], s["language"], s["codec"], s.get("target_codec")) for s in job_plan["audio"]["streams"]], flush=True)
-            
-            print(
-                "[worker] subtitle plan:",[(s["index"], s["action"], s["language"], s["codec"],"forced" if s.get("forced") else "full", "DEFAULT" if s.get("set_default") else "") for s in job_plan["subtitles"]["streams"]], flush=True,)
+            logger.debug(
+                "audio plan: %s",
+                [(s["index"], s["action"], s["language"], s["codec"], s.get("target_codec")) for s in job_plan["audio"]["streams"]],
+            )
+
+            logger.debug(
+                "subtitle plan: %s",
+                [(s["index"], s["action"], s["language"], s["codec"], "forced" if s.get("forced") else "full", "DEFAULT" if s.get("set_default") else "") for s in job_plan["subtitles"]["streams"]],
+            )
             #############
 
             verification = verify_result(temp_output, job_plan)
             
-            print(f"[worker] verification: {verification}", flush=True)
+            logger.info("verification: %s", verification)
             
             job.verification_result = verification
 
@@ -1095,7 +1103,7 @@ def run_worker():
             job.finished_at = _utcnow()
             db.commit()
 
-            print(f"[worker] finished media_file id={job.id} status={job.status}", flush=True)
+            logger.info("Finished media_file id=%s status=%s", job.id, job.status)
 
         except Exception as exc:
             db.rollback()
@@ -1108,17 +1116,11 @@ def run_worker():
                     job.finished_at = _utcnow()
                     db.commit()
                     remove_temp_output(job)
-                    print(
-                        f"[worker] marked job id={job.id} as failed: {exc}",
-                        flush=True,
-                    )
+                    logger.error("Marked job id=%s as failed: %s", job.id, exc)
                 except Exception as inner:
                     db.rollback()
-                    print(
-                        f"[worker] could not mark job id={job.id} as failed: {inner}",
-                        flush=True,
-                    )
-            print(f"[worker] ERROR: {exc}", flush=True)
+                    logger.error("Could not mark job id=%s as failed: %s", job.id, inner)
+            logger.exception("Unhandled worker error: %s", exc)
 
         finally:
             db.close()

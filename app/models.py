@@ -152,3 +152,29 @@ class MediaFile(Base):
         nullable=True
     )
     # Blocking error message if status == failed
+
+
+# --------------------
+# Logs (*arr-style, System -> Logs UI)
+# --------------------
+class Log(Base):
+    __tablename__ = "logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # Naive UTC timestamp (SQLite-friendly), rendered in Europe/Madrid in the UI
+    time = Column(DateTime, nullable=False, index=True)
+    # TRACE | DEBUG | INFO | WARN | ERROR | FATAL
+    level = Column(String, nullable=False, index=True)
+    logger = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
+    exception = Column(Text, nullable=True)
+
+
+# --------------------
+# Settings (key/value, e.g. log_level)
+# --------------------
+class Setting(Base):
+    __tablename__ = "settings"
+
+    key = Column(String, primary_key=True)
+    value = Column(String, nullable=True)

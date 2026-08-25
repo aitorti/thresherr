@@ -5,6 +5,9 @@ import json
 import unicodedata
 from sqlalchemy.orm import Session
 import models
+from logging_setup import get_logger
+
+logger = get_logger("scanner")
 
 # Common video extensions
 VIDEO_EXTENSIONS = (".mkv", ".mp4", ".avi", ".mov", ".m4v", ".webm")
@@ -233,7 +236,7 @@ def get_video_metadata(file_path: str) -> dict:
         }
 
     except Exception as exc:
-        print(f"[scanner] ffprobe failed for {file_path}: {exc}")
+        logger.warning("ffprobe failed for %s: %s", file_path, exc)
         return {
             "video_codec": None,
             "resolution": None,

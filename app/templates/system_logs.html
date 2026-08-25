@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-6xl">
+  <!-- Breadcrumb, *arr style -->
+  <div class="text-xs text-slate-500 font-semibold mb-1">System</div>
+  <h1 class="text-2xl font-extrabold text-slate-100 mb-4">Logs</h1>
+
+  <!-- Level filter tabs + search -->
+  <div class="flex flex-wrap items-center gap-3 mb-4">
+    <div class="flex rounded-md overflow-hidden border border-slate-700">
+      {% for key, label in [('all', 'All'), ('info', 'Info'), ('warn', 'Warn'), ('error', 'Error')] %}
+        {% if level == key %}
+          <a href="/system/logs?level={{ key }}&q={{ q|urlencode }}"
+             class="px-4 py-1.5 text-sm font-semibold bg-slate-700 text-amber-300">{{ label }}</a>
+        {% else %}
+          <a href="/system/logs?level={{ key }}&q={{ q|urlencode }}"
+             class="px-4 py-1.5 text-sm font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 transition-colors">{{ label }}</a>
+        {% endif %}
+      {% endfor %}
+    </div>
+
+    <input
+      type="text"
+      name="q"
+      value="{{ q }}"
+      placeholder="Search messages..."
+      class="flex-1 min-w-[200px] max-w-xs px-3 py-1.5 rounded-md bg-slate-800 border border-slate-700 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500"
+      hx-get="/system/logs?level={{ level }}"
+      hx-vals='{"page": 1}'
+      hx-trigger="keyup changed delay:400ms"
+      hx-target="#log-table"
+      hx-swap="innerHTML"
+      hx-push-url="true">
+  </div>
+
+  <!-- Log table -->
+  <div class="rounded-lg border border-slate-700 bg-slate-900 overflow-hidden">
+    <table class="w-full text-left">
+      <thead>
+        <tr class="bg-slate-800/80 text-[10px] uppercase tracking-widest text-slate-400">
+          <th class="py-2 px-3 font-bold">Time</th>
+          <th class="py-2 px-3 font-bold">Level</th>
+          <th class="py-2 px-3 font-bold">Message</th>
+          <th class="py-2 px-3 font-bold">Logger</th>
+        </tr>
+      </thead>
+      <tbody id="log-table">
+        {% include "_log_rows.html" %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="text-xs text-slate-500 mt-3">
+    Log level can be changed in
+    <a href="/settings" class="text-amber-400 hover:underline font-semibold">Settings → General</a>.
+    Full files are available under
+    <a href="/system/logfiles" class="text-amber-400 hover:underline font-semibold">System → Log Files</a>.
+  </p>
+</div>
+{% endblock %}
