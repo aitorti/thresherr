@@ -73,6 +73,17 @@ def get_db():
 # UI language + template rendering helper
 # -------------------------------------------------
 
+DATE_FORMATS = {
+    "iso": "%Y-%m-%d",
+    "eu": "%d/%m/%Y",
+    "us": "%m/%d/%Y",
+}
+TIME_FORMATS = {
+    "24": "%H:%M",
+    "12": "%I:%M %p",
+}
+
+
 def _ui_language(db: Session) -> str:
     """UI language from settings; English when unset/invalid."""
     row = (
@@ -85,17 +96,44 @@ def _ui_language(db: Session) -> str:
     return i18n.DEFAULT_LANGUAGE
 
 
+def _make_fmt_dt(db: Session):
+    """Return a fmt_dt(datetime) callable honouring Interface settings."""
+    date_fmt = DATE_FORMATS.get(
+        _get_setting(db, "date_format", "iso"), DATE_FORMATS["iso"]
+    )
+    time_fmt = TIME_FORMATS.get(
+        _get_setting(db, "time_format", "24"), TIME_FORMATS["24"]
+    )
+    pattern = f"{date_fmt} {time_fmt}"
+
+    def fmt_dt(dt):
+        """Naive-UTC datetime -> Europe/Madrid with the configured pattern."""
+        try:
+            from zoneinfo import ZoneInfo
+            from datetime import timezone as dt_timezone
+
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=dt_timezone.utc)
+            return dt.astimezone(ZoneInfo("Europe/Madrid")).strftime(pattern)
+        except Exception:
+            return dt.strftime(pattern)
+
+    return fmt_dt
+
+
 def render(request: Request, name: str, db: Session, **context) -> HTMLResponse:
     """
     Render a template with the *arr-style i18n helpers injected:
     - t(key, **kwargs): translate for the current UI language
     - lang: current language code
     - languages: available languages (code -> native name)
+    - fmt_dt(datetime): date/time rendering per Interface settings
     """
     lang = _ui_language(db)
     context["t"] = i18n.translator(lang)
     context["lang"] = lang
     context["languages"] = i18n.LANGUAGES
+    context["fmt_dt"] = _make_fmt_dt(db)
     return templates.TemplateResponse(request=request, name=name, context=context)
 
 
@@ -331,7 +369,13 @@ async def add_library(
 
 # --- WORKING WITH QUEUED FILES ---
 
-@app.get("/queue", response_class=HTMLResponse)
+@app.get("/queue", include_in_schema=False)
+async def queue_redirect():
+    """Legacy /queue -> Activities -> Queue."""
+    return RedirectResponse(url="/activities/queue", status_code=303)
+
+
+@app.get("/activities/queue", response_class=HTMLResponse)
 async def get_queue(request: Request, db: Session = Depends(get_db)):
     stats = compute_global_stats(db)
     pending = db.query(models.MediaFile).filter(models.MediaFile.status == "pending").all()
@@ -889,19 +933,6 @@ def has_und_language(media: models.MediaFile, fresh: bool = False) -> bool:
 LOGS_PER_PAGE = 50
 
 
-def _format_log_time(dt) -> str:
-    """Render a naive-UTC Log row in Europe/Madrid, *arr-style table format."""
-    try:
-        from zoneinfo import ZoneInfo
-        from datetime import timezone as dt_timezone
-
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=dt_timezone.utc)
-        return dt.astimezone(ZoneInfo("Europe/Madrid")).strftime("%Y-%m-%d %H:%M:%S")
-    except Exception:
-        return dt.strftime("%Y-%m-%d %H:%M:%S")
-
-
 @app.get("/system/logs", response_class=HTMLResponse)
 async def system_logs(
     request: Request,
@@ -945,7 +976,6 @@ async def system_logs(
         q=q,
         page=page,
         has_more=has_more,
-        fmt_log_time=_format_log_time,
     )
 
 
@@ -972,9 +1002,7 @@ def _list_log_files() -> list[dict]:
             {
                 "name": os.path.basename(path),
                 "size": st.st_size,
-                "mtime_str": _format_log_time(
-                    datetime.fromtimestamp(st.st_mtime)
-                ),
+                "mtime": st.st_mtime,
             }
         )
     files.sort(key=lambda f: f["name"])
@@ -996,12 +1024,17 @@ def _read_tail(path: str, max_bytes: int) -> str:
 @app.get("/system/logfiles", response_class=HTMLResponse)
 async def system_logfiles(request: Request, db: Session = Depends(get_db)):
     stats = compute_global_stats(db)
+    fmt_dt = _make_fmt_dt(db)
+    files = [
+        {**f, "mtime_str": fmt_dt(datetime.fromtimestamp(f["mtime"]))}
+        for f in _list_log_files()
+    ]
     return render(
         request=request,
         name="system_logfiles.html",
         db=db,
         **stats,
-        files=_list_log_files(),
+        files=files,
         log_dir=LOG_DIR,
     )
 
@@ -1049,60 +1082,33 @@ async def delete_log_file(file_name: str):
 # SETTINGS: GENERAL (Log level, like the *arr family)
 # -------------------------------------------------
 
-@app.get("/settings", response_class=HTMLResponse)
-async def get_settings(request: Request, db: Session = Depends(get_db)):
+@app.get("/settings", include_in_schema=False)
+async def settings_redirect():
+    """Legacy /settings -> General."""
+    return RedirectResponse(url="/settings/general", status_code=303)
+
+
+# -------------------------------------------------
+# Settings: GENERAL (log level + security)
+# -------------------------------------------------
+
+@app.get("/settings/general", response_class=HTMLResponse)
+async def get_settings_general(request: Request, db: Session = Depends(get_db)):
     stats = compute_global_stats(db)
     return render(
         request=request,
-        name="settings.html",
+        name="settings_general.html",
         db=db,
         **stats,
         log_level=get_log_level(),
         log_dir=LOG_DIR,
         api_key=get_api_key(db),
-        naming_enabled=_get_setting(db, "naming_enabled", "0"),
-        naming_template=_get_setting(db, "naming_template", ""),
-        recycle_enabled=_get_setting(db, "recycle_bin_enabled", "0"),
-        recycle_path=_get_setting(db, "recycle_bin_path", "/data/recycle_bin"),
-        recycle_days=_get_setting(db, "recycle_bin_days", "7"),
-        recycle_stats=_recycle_stats(
-            _get_setting(db, "recycle_bin_path", "/data/recycle_bin") or ""
-        ),
     )
 
 
-@app.post("/settings/api-key/reset")
-async def reset_api_key_route(db: Session = Depends(get_db)):
-    reset_api_key(db)
-    return RedirectResponse(url="/settings", status_code=303)
-
-
-@app.get("/settings/naming/preview")
-async def naming_preview(template: str = ""):
-    """Live preview for the naming template, using a sample movie."""
-    name = naming.build_output_name(
-        template=template,
-        title="Matrix Revolutions",
-        year="2003",
-        quality="1080p",
-        video_codec="h264",
-        audio_codecs="E-AC3",
-        audio_languages="ES-EN",
-        subtitle_languages="ES",
-        container="mkv",
-    )
-    return {"name": name}
-
-
-@app.post("/settings")
-async def save_settings(
+@app.post("/settings/general")
+async def save_settings_general(
     log_level: str = Form(...),
-    ui_language: str = Form(None),
-    naming_enabled: str = Form(None),
-    naming_template: str = Form(""),
-    recycle_bin_enabled: str = Form(None),
-    recycle_bin_path: str = Form(""),
-    recycle_bin_days: str = Form("7"),
     db: Session = Depends(get_db),
 ):
     try:
@@ -1110,11 +1116,49 @@ async def save_settings(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid log level")
     ui_logger.info("Log level changed to %s (runtime, no restart)", applied)
+    db.commit()
+    return RedirectResponse(url="/settings/general", status_code=303)
 
-    if ui_language and i18n.is_valid_language(ui_language):
-        _set_setting(db, "ui_language", ui_language)
-        ui_logger.info("UI language changed to %s (runtime, no restart)", ui_language)
 
+@app.post("/settings/api-key/reset")
+async def reset_api_key_route(db: Session = Depends(get_db)):
+    reset_api_key(db)
+    return RedirectResponse(url="/settings/general", status_code=303)
+
+
+# -------------------------------------------------
+# Settings: MEDIA MANAGEMENT (naming + recycle bin)
+# -------------------------------------------------
+
+@app.get("/settings/media-management", response_class=HTMLResponse)
+async def get_settings_media_management(
+    request: Request, db: Session = Depends(get_db)
+):
+    stats = compute_global_stats(db)
+    recycle_path = _get_setting(db, "recycle_bin_path", "/data/recycle_bin") or ""
+    return render(
+        request=request,
+        name="settings_media_management.html",
+        db=db,
+        **stats,
+        naming_enabled=_get_setting(db, "naming_enabled", "0"),
+        naming_template=_get_setting(db, "naming_template", ""),
+        recycle_enabled=_get_setting(db, "recycle_bin_enabled", "0"),
+        recycle_path=recycle_path,
+        recycle_days=_get_setting(db, "recycle_bin_days", "7"),
+        recycle_stats=_recycle_stats(recycle_path),
+    )
+
+
+@app.post("/settings/media-management")
+async def save_settings_media_management(
+    naming_enabled: str = Form(None),
+    naming_template: str = Form(""),
+    recycle_bin_enabled: str = Form(None),
+    recycle_bin_path: str = Form(""),
+    recycle_bin_days: str = Form("7"),
+    db: Session = Depends(get_db),
+):
     _set_setting(db, "naming_enabled", "1" if naming_enabled else "0")
     _set_setting(db, "naming_template", naming_template)
     ui_logger.info(
@@ -1137,8 +1181,71 @@ async def save_settings(
         recycle_days_int,
     )
     db.commit()
+    return RedirectResponse(url="/settings/media-management", status_code=303)
 
-    return RedirectResponse(url="/settings", status_code=303)
+
+@app.get("/settings/naming/preview")
+async def naming_preview(template: str = ""):
+    """Live preview for the naming template, using a sample movie."""
+    name = naming.build_output_name(
+        template=template,
+        title="Matrix Revolutions",
+        year="2003",
+        quality="1080p",
+        video_codec="h264",
+        audio_codecs="E-AC3",
+        audio_languages="ES-EN",
+        subtitle_languages="ES",
+        container="mkv",
+    )
+    return {"name": name}
+
+
+# -------------------------------------------------
+# Settings: INTERFACE (language + date/time formats)
+# -------------------------------------------------
+
+@app.get("/settings/interfaz", response_class=HTMLResponse)
+async def get_settings_interfaz(request: Request, db: Session = Depends(get_db)):
+    stats = compute_global_stats(db)
+    return render(
+        request=request,
+        name="settings_interfaz.html",
+        db=db,
+        **stats,
+        date_format=_get_setting(db, "date_format", "iso"),
+        time_format=_get_setting(db, "time_format", "24"),
+        week_start=_get_setting(db, "week_start", "monday"),
+    )
+
+
+@app.post("/settings/interfaz")
+async def save_settings_interfaz(
+    ui_language: str = Form(None),
+    date_format: str = Form("iso"),
+    time_format: str = Form("24"),
+    week_start: str = Form("monday"),
+    db: Session = Depends(get_db),
+):
+    if ui_language and i18n.is_valid_language(ui_language):
+        _set_setting(db, "ui_language", ui_language)
+        ui_logger.info("UI language changed to %s (runtime, no restart)", ui_language)
+
+    if date_format in DATE_FORMATS:
+        _set_setting(db, "date_format", date_format)
+    if time_format in TIME_FORMATS:
+        _set_setting(db, "time_format", time_format)
+    if week_start in ("monday", "sunday"):
+        _set_setting(db, "week_start", week_start)
+    ui_logger.info(
+        "Interface settings saved (lang=%s, date=%s, time=%s, week=%s)",
+        ui_language,
+        date_format,
+        time_format,
+        week_start,
+    )
+    db.commit()
+    return RedirectResponse(url="/settings/interfaz", status_code=303)
 
 
 @app.post("/settings")

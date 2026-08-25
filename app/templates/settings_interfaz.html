@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-3xl">
+  <div class="text-xs text-slate-500 font-semibold mb-1">{{ t('nav.settings') }} → {{ t('nav.interfaz') }}</div>
+  <h1 class="text-2xl font-extrabold text-slate-100 mb-4">{{ t('settings.interfaz') }}</h1>
+
+  <form method="post" action="/settings/interfaz"
+        class="rounded-lg border border-slate-700 bg-slate-900 p-5 space-y-5">
+
+    <div>
+      <label for="ui_language" class="block text-sm font-bold text-slate-200 mb-1">{{ t('settings.ui_language') }}</label>
+      <p class="text-xs text-slate-500 mb-2">{{ t('settings.ui_language_hint') }}</p>
+      <select id="ui_language" name="ui_language"
+              class="px-3 py-2 rounded-md bg-slate-800 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-amber-500">
+        {% for code, native_name in languages.items() %}
+          <option value="{{ code }}" {% if lang == code %}selected{% endif %}>{{ native_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div>
+        <label for="date_format" class="block text-xs font-bold text-slate-300 mb-1">{{ t('interfaz.date_format') }}</label>
+        <select id="date_format" name="date_format"
+                class="px-3 py-2 rounded-md bg-slate-800 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-amber-500">
+          <option value="iso" {% if date_format == 'iso' %}selected{% endif %}>2026-08-25</option>
+          <option value="eu" {% if date_format == 'eu' %}selected{% endif %}>25/08/2026</option>
+          <option value="us" {% if date_format == 'us' %}selected{% endif %}>08/25/2026</option>
+        </select>
+      </div>
+
+      <div>
+        <label for="time_format" class="block text-xs font-bold text-slate-300 mb-1">{{ t('interfaz.time_format') }}</label>
+        <select id="time_format" name="time_format"
+                class="px-3 py-2 rounded-md bg-slate-800 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-amber-500">
+          <option value="24" {% if time_format == '24' %}selected{% endif %}>18:30</option>
+          <option value="12" {% if time_format == '12' %}selected{% endif %}>06:30 PM</option>
+        </select>
+      </div>
+
+      <div>
+        <label for="week_start" class="block text-xs font-bold text-slate-300 mb-1">{{ t('interfaz.week_start') }}</label>
+        <select id="week_start" name="week_start"
+                class="px-3 py-2 rounded-md bg-slate-800 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-amber-500">
+          <option value="monday" {% if week_start == 'monday' %}selected{% endif %}>{{ t('interfaz.monday') }}</option>
+          <option value="sunday" {% if week_start == 'sunday' %}selected{% endif %}>{{ t('interfaz.sunday') }}</option>
+        </select>
+      </div>
+    </div>
+
+    <button type="submit"
+            class="px-4 py-2 rounded-md bg-amber-600 text-sm text-slate-950 font-bold hover:bg-amber-500 transition-colors">
+      {{ t('settings.save') }}
+    </button>
+  </form>
+</div>
+{% endblock %}
