@@ -161,6 +161,46 @@
     });
   </script>
 
+  {# ------------------------------------------------------------ #}
+  {# Media Management: Recycle Bin (*arr style)                  #}
+  {# ------------------------------------------------------------ #}
+  <div class="rounded-lg border border-slate-700 bg-slate-900 p-5 mt-6">
+    <h2 class="text-sm font-bold text-slate-200 mb-1">{{ t('settings.recycle_bin') }}</h2>
+
+    <label class="flex items-center gap-2 cursor-pointer mt-3">
+      <input type="checkbox" name="recycle_bin_enabled" value="1"
+             {% if recycle_enabled == '1' %}checked{% endif %}
+             class="w-4 h-4 accent-amber-500">
+      <span class="text-sm font-semibold text-slate-200">{{ t('recycle.enabled') }}</span>
+    </label>
+    <p class="text-xs text-slate-500 mb-3 ml-6">{{ t('recycle.enabled_hint') }}</p>
+
+    <label for="recycle_bin_path" class="block text-xs font-bold text-slate-300 mb-1">{{ t('recycle.path') }}</label>
+    <input
+      type="text"
+      name="recycle_bin_path"
+      value="{{ recycle_path }}"
+      placeholder="/data/recycle_bin"
+      class="w-full font-mono text-xs bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-slate-200 focus:outline-none focus:border-amber-500 mb-1"
+    >
+    <p class="text-xs text-slate-500 mb-3">{{ t('recycle.path_hint') }}</p>
+
+    <label for="recycle_bin_days" class="block text-xs font-bold text-slate-300 mb-1">{{ t('recycle.days') }}</label>
+    <input
+      type="number"
+      name="recycle_bin_days"
+      value="{{ recycle_days }}"
+      min="1"
+      max="365"
+      class="w-24 bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-amber-500"
+    >
+    <p class="text-xs text-slate-500 mt-2">{{ t('recycle.days_hint') }}</p>
+
+    <div class="rounded-md bg-slate-950 border border-slate-800 px-3 py-2 text-xs mt-3">
+      {{ t('recycle.stats', count=recycle_stats.count, size_mb=recycle_stats.size_mb) }}
+    </div>
+  </div>
+
   <p class="text-xs text-slate-500 mt-3">
     {{ t('settings.log_files_hint', dir=log_dir) }}
     <a href="/system/logfiles" class="text-amber-400 hover:underline font-semibold">{{ t('logfiles.link') }}</a>.

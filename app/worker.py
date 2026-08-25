@@ -1101,6 +1101,59 @@ def build_output_name_from_job(
 
 
 # -------------------------------------------------
+# Recycle bin (*arr style, Settings -> Media Management)
+# -------------------------------------------------
+
+def _recycle_config(db) -> tuple[bool, str, int]:
+    """(enabled, path, cleanup_days) from the settings table."""
+    def val(key: str, default: str | None = None) -> str | None:
+        row = db.query(models.Setting).filter(models.Setting.key == key).first()
+        return row.value if row and row.value is not None else default
+
+    enabled = val("recycle_bin_enabled", "0") == "1"
+    path = (val("recycle_bin_path") or "").strip()
+    try:
+        days = int(val("recycle_bin_days", "7") or "7")
+    except ValueError:
+        days = 7
+    return enabled, path, days
+
+
+def move_to_recycle_bin(source_path: str, recycle_dir: str) -> str:
+    """
+    Move the original file into the recycle bin before replacement.
+
+    The mtime is reset to 'now' so retention counts from entry into the
+    bin (a 2010 file parked today must NOT be purged tomorrow).
+    """
+    os.makedirs(recycle_dir, exist_ok=True)
+    dest = naming.unique_dest_path(recycle_dir, os.path.basename(source_path))
+    shutil.move(source_path, dest)  # works cross-filesystem (copy + remove)
+    now = time.time()
+    os.utime(dest, (now, now))
+    return dest
+
+
+def cleanup_recycle_bin(recycle_dir: str, days: int) -> int:
+    """Delete files older than `days` days; returns the number removed."""
+    if not recycle_dir or not os.path.isdir(recycle_dir):
+        return 0
+    cutoff = time.time() - days * 86400
+    removed = 0
+    for entry in os.listdir(recycle_dir):
+        full = os.path.join(recycle_dir, entry)
+        if not os.path.isfile(full):
+            continue
+        try:
+            if os.path.getmtime(full) < cutoff:
+                os.remove(full)
+                removed += 1
+        except OSError:
+            pass
+    return removed
+
+
+# -------------------------------------------------
 # Main worker loop
 # -------------------------------------------------
 
@@ -1108,9 +1161,14 @@ def run_worker():
     setup_logging()
     logger.info("Worker starting")
 
+    # Periodic recycle bin cleanup (~every hour with 5s sleep)
+    RECYCLE_CLEANUP_EVERY = 720
+    cycle_count = 0
+
     while True:
         db = SessionLocal()
         job = None
+        cycle_count += 1
         try:
             # Recover jobs stuck in 'processing' (crashed/killed worker)
             requeue_stale_processing(db)
@@ -1179,6 +1237,21 @@ def run_worker():
                             os.path.basename(final_path),
                         )
 
+                # Recycle bin: park the ORIGINAL file before it gets replaced
+                recycle_enabled, recycle_path, _ = _recycle_config(db)
+                if recycle_enabled and recycle_path:
+                    try:
+                        parked = move_to_recycle_bin(job.full_path, recycle_path)
+                        logger.info(
+                            "Original moved to recycle bin: %s",
+                            os.path.basename(parked),
+                        )
+                    except Exception as exc:
+                        # Never lose the original: fail the job instead
+                        raise RuntimeError(
+                            f"could not move original to recycle bin: {exc}"
+                        ) from exc
+
                 safe_replace_cross_fs(job.full_path, temp_output, dest_path=final_path)
 
                 # Re-scan final file for UI metadata
@@ -1224,6 +1297,19 @@ def run_worker():
 
         finally:
             db.close()
+
+            # Recycle bin cleanup (cheap, once per hour)
+            if cycle_count % RECYCLE_CLEANUP_EVERY == 0:
+                _cleanup_db = SessionLocal()
+                try:
+                    _, recycle_path, recycle_days = _recycle_config(_cleanup_db)
+                    removed = cleanup_recycle_bin(recycle_path, recycle_days)
+                    if removed:
+                        logger.info(
+                            "Recycle bin cleanup: removed %s file(s)", removed
+                        )
+                finally:
+                    _cleanup_db.close()
 
 
 if __name__ == "__main__":

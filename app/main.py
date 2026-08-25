@@ -118,6 +118,22 @@ def _set_setting(db: Session, key: str, value: str) -> None:
         db.add(models.Setting(key=key, value=value))
 
 
+def _recycle_stats(path: str) -> dict:
+    """(count, size_mb) of files currently parked in the recycle bin."""
+    count = 0
+    total = 0
+    if path and os.path.isdir(path):
+        try:
+            for entry in os.listdir(path):
+                full = os.path.join(path, entry)
+                if os.path.isfile(full):
+                    count += 1
+                    total += os.path.getsize(full)
+        except OSError:
+            pass
+    return {"count": count, "size_mb": round(total / 1048576, 1)}
+
+
 # -------------------------------------------------
 # API Key (*arr-style, Settings -> General -> Security)
 # -------------------------------------------------
@@ -1046,6 +1062,12 @@ async def get_settings(request: Request, db: Session = Depends(get_db)):
         api_key=get_api_key(db),
         naming_enabled=_get_setting(db, "naming_enabled", "0"),
         naming_template=_get_setting(db, "naming_template", ""),
+        recycle_enabled=_get_setting(db, "recycle_bin_enabled", "0"),
+        recycle_path=_get_setting(db, "recycle_bin_path", "/data/recycle_bin"),
+        recycle_days=_get_setting(db, "recycle_bin_days", "7"),
+        recycle_stats=_recycle_stats(
+            _get_setting(db, "recycle_bin_path", "/data/recycle_bin") or ""
+        ),
     )
 
 
@@ -1078,6 +1100,9 @@ async def save_settings(
     ui_language: str = Form(None),
     naming_enabled: str = Form(None),
     naming_template: str = Form(""),
+    recycle_bin_enabled: str = Form(None),
+    recycle_bin_path: str = Form(""),
+    recycle_bin_days: str = Form("7"),
     db: Session = Depends(get_db),
 ):
     try:
@@ -1096,6 +1121,20 @@ async def save_settings(
         "Naming config saved (enabled=%s, template=%s)",
         bool(naming_enabled),
         naming_template,
+    )
+
+    try:
+        recycle_days_int = max(1, int(recycle_bin_days))
+    except ValueError:
+        recycle_days_int = 7
+    _set_setting(db, "recycle_bin_enabled", "1" if recycle_bin_enabled else "0")
+    _set_setting(db, "recycle_bin_path", recycle_bin_path.strip())
+    _set_setting(db, "recycle_bin_days", str(recycle_days_int))
+    ui_logger.info(
+        "Recycle bin config saved (enabled=%s, path=%s, days=%s)",
+        bool(recycle_bin_enabled),
+        recycle_bin_path.strip(),
+        recycle_days_int,
     )
     db.commit()
 
