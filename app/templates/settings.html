@@ -29,47 +29,10 @@
       </select>
     </div>
 
-    <button type="submit"
-            class="px-4 py-2 rounded-md bg-amber-600 text-sm text-slate-950 font-bold hover:bg-amber-500 transition-colors">
-      {{ t('settings.save') }}
-    </button>
-  </form>
-
   {# ------------------------------------------------------------ #}
   {# Security: API Key (*arr style)                              #}
   {# ------------------------------------------------------------ #}
   <div class="rounded-lg border border-slate-700 bg-slate-900 p-5 mt-6">
-    <h2 class="text-sm font-bold text-slate-200 mb-1">{{ t('settings.security') }}</h2>
-    <p class="text-xs text-slate-500 mb-4">{{ t('settings.api_key_hint') }}</p>
-
-    <label for="api-key-input" class="block text-xs font-bold text-slate-300 mb-1">{{ t('settings.api_key') }}</label>
-    <div class="flex items-center gap-2 mb-2">
-      <input
-        id="api-key-input"
-        type="password"
-        readonly
-        value="{{ api_key }}"
-        class="flex-1 font-mono text-xs bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-slate-200 focus:outline-none focus:border-amber-500"
-      >
-      <button id="api-key-toggle" type="button"
-              class="px-3 py-2 rounded-md bg-slate-800 border border-slate-700 text-sm hover:bg-slate-700 transition-colors"
-              title="Show / hide">👁</button>
-    </div>
-
-    <form method="post" action="/settings/api-key/reset"
-          onsubmit="return confirm('{{ t('settings.reset_confirm')|e }}');">
-      <button type="submit"
-              class="px-3 py-1.5 rounded-md bg-red-900/60 border border-red-800/60 text-xs font-bold text-red-300 hover:bg-red-800/60 transition-colors">
-        {{ t('settings.reset_api_key') }}
-      </button>
-    </form>
-
-    <p class="text-xs text-slate-500 mt-4">
-      {{ t('settings.api_example') }}
-      <code class="font-mono text-slate-400">curl -H "X-Api-Key: {{ api_key }}" http://192.168.1.25:8505/api/v1/system/status</code>
-    </p>
-  </div>
-
   {# ------------------------------------------------------------ #}
   {# Media Management: Naming (*arr style)                       #}
   {# ------------------------------------------------------------ #}
@@ -108,20 +71,6 @@
       <span id="naming-preview" class="font-mono text-green-400"></span>
     </div>
   </div>
-
-  <script>
-    document.addEventListener("DOMContentLoaded", () => {
-      const input = document.getElementById("api-key-input");
-      const toggle = document.getElementById("api-key-toggle");
-      if (input && toggle) {
-        toggle.addEventListener("click", () => {
-          const show = input.type === "password";
-          input.type = show ? "text" : "password";
-          toggle.textContent = show ? "🙈" : "👁";
-        });
-      }
-    });
-  </script>
 
   <script>
     document.addEventListener("DOMContentLoaded", () => {
@@ -200,6 +149,61 @@
       {{ t('recycle.stats', count=recycle_stats.count, size_mb=recycle_stats.size_mb) }}
     </div>
   </div>
+
+  <button type="submit"
+          class="px-4 py-2 rounded-md bg-amber-600 text-sm text-slate-950 font-bold hover:bg-amber-500 transition-colors">
+    {{ t('settings.save') }}
+  </button>
+  </form>
+
+  {# ------------------------------------------------------------ #}
+  {# Security: API Key (*arr style)                              #}
+  {# ------------------------------------------------------------ #}
+  <div class="rounded-lg border border-slate-700 bg-slate-900 p-5 mt-6">
+    <h2 class="text-sm font-bold text-slate-200 mb-1">{{ t('settings.security') }}</h2>
+    <p class="text-xs text-slate-500 mb-4">{{ t('settings.api_key_hint') }}</p>
+
+    <label for="api-key-input" class="block text-xs font-bold text-slate-300 mb-1">{{ t('settings.api_key') }}</label>
+    <div class="flex items-center gap-2 mb-2">
+      <input
+        id="api-key-input"
+        type="password"
+        readonly
+        value="{{ api_key }}"
+        class="flex-1 font-mono text-xs bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-slate-200 focus:outline-none focus:border-amber-500"
+      >
+      <button id="api-key-toggle" type="button"
+              class="px-3 py-2 rounded-md bg-slate-800 border border-slate-700 text-sm hover:bg-slate-700 transition-colors"
+              title="Show / hide">👁</button>
+    </div>
+
+    <form method="post" action="/settings/api-key/reset"
+          onsubmit="return confirm('{{ t('settings.reset_confirm')|e }}');">
+      <button type="submit"
+              class="px-3 py-1.5 rounded-md bg-red-900/60 border border-red-800/60 text-xs font-bold text-red-300 hover:bg-red-800/60 transition-colors">
+        {{ t('settings.reset_api_key') }}
+      </button>
+    </form>
+
+    <p class="text-xs text-slate-500 mt-4">
+      {{ t('settings.api_example') }}
+      <code class="font-mono text-slate-400">curl -H "X-Api-Key: {{ api_key }}" http://192.168.1.25:8505/api/v1/system/status</code>
+    </p>
+  </div>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const input = document.getElementById("api-key-input");
+      const toggle = document.getElementById("api-key-toggle");
+      if (input && toggle) {
+        toggle.addEventListener("click", () => {
+          const show = input.type === "password";
+          input.type = show ? "text" : "password";
+          toggle.textContent = show ? "🙈" : "👁";
+        });
+      }
+    });
+  </script>
 
   <p class="text-xs text-slate-500 mt-3">
     {{ t('settings.log_files_hint', dir=log_dir) }}
