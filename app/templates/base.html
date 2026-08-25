@@ -20,143 +20,147 @@
 
 <body class="bg-slate-950 text-slate-100 h-screen overflow-hidden font-sans">
   {# ------------------------------------------------------------ #}
-  {# Layout: topbar + left sidebar (fixed on desktop, off-canvas   #}
-  {# on mobile) + main content                                     #}
+  {# Layout: full-width topbar (brand always top-left) on top of   #}
+  {# a row with the sidebar (fixed on desktop, off-canvas on       #}
+  {# mobile) and the main content.                                 #}
   {# ------------------------------------------------------------ #}
 
   {% set path = request.url.path %}
 
-  <div class="flex h-screen overflow-hidden">
+  <div class="flex flex-col h-screen overflow-hidden">
 
-    <!-- MOBILE OVERLAY (closes the sidebar when clicking outside) -->
-    <div id="sidebar-overlay" class="fixed inset-0 bg-black/60 z-30 hidden lg:hidden"></div>
-
-    <!-- LEFT SIDEBAR -->
-    <aside id="sidebar"
-           class="fixed lg:static inset-y-0 left-0 z-40 w-64 shrink-0 bg-slate-900 border-r border-slate-700
-                  transform -translate-x-full lg:translate-x-0 transition-transform duration-200">
-      <nav class="h-full overflow-y-auto px-3 py-4 text-sm font-semibold">
-        <a href="/"
-           class="block px-3 py-2 rounded-md mb-1 transition-colors
-                  {% if path == '/' %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
-          {{ t('nav.media_files') }}
-        </a>
-
-        <a href="/activities/queue"
-           class="block px-3 py-2 rounded-md mb-1 transition-colors
-                  {% if path.startswith('/activities') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
-          {{ t('nav.activities') }}
-        </a>
-
-        <a href="/libraries"
-           class="block px-3 py-2 rounded-md mb-1 transition-colors
-                  {% if path.startswith('/libraries') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
-          {{ t('nav.libraries') }}
-        </a>
-
-        <a href="/profiles"
-           class="block px-3 py-2 rounded-md mb-1 transition-colors
-                  {% if path.startswith('/profiles') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
-          {{ t('nav.profiles') }}
-        </a>
-
-        {# Settings section — *arr family convention #}
-        <div class="text-xs font-bold uppercase tracking-widest text-slate-500 mt-5 mb-1 px-3">{{ t('nav.settings') }}</div>
-
-        <a href="/settings/media-management"
-           class="block px-3 py-2 rounded-md mb-1 transition-colors
-                  {% if path.startswith('/settings/media-management') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
-          {{ t('nav.media_management') }}
-        </a>
-
-        <a href="/settings/general"
-           class="block px-3 py-2 rounded-md mb-1 transition-colors
-                  {% if path.startswith('/settings/general') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
-          {{ t('nav.general') }}
-        </a>
-
-        <a href="/settings/interfaz"
-           class="block px-3 py-2 rounded-md mb-1 transition-colors
-                  {% if path.startswith('/settings/interfaz') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
-          {{ t('nav.interfaz') }}
-        </a>
-
-        {# System section — *arr family convention #}
-        <div class="text-xs font-bold uppercase tracking-widest text-slate-500 mt-5 mb-1 px-3">{{ t('nav.system') }}</div>
-
-        <a href="#" class="block px-3 py-2 rounded-md mb-1 text-slate-500 cursor-not-allowed"
-           title="{{ t('nav.coming_soon') }}">
-          {{ t('nav.status') }}
-        </a>
-
-        <a href="#" class="block px-3 py-2 rounded-md mb-1 text-slate-500 cursor-not-allowed"
-           title="{{ t('nav.coming_soon') }}">
-          {{ t('nav.tasks') }}
-        </a>
-
-        <a href="#" class="block px-3 py-2 rounded-md mb-1 text-slate-500 cursor-not-allowed"
-           title="{{ t('nav.coming_soon') }}">
-          {{ t('nav.backups') }}
-        </a>
-
-        <a href="/system/logs"
-           class="block px-3 py-2 rounded-md mb-1 transition-colors
-                  {% if path.startswith('/system/logs') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
-          {{ t('nav.logs') }}
-        </a>
-
-        <a href="/system/logfiles"
-           class="block px-3 py-2 rounded-md mb-1 transition-colors
-                  {% if path.startswith('/system/logfiles') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
-          {{ t('nav.log_files') }}
-        </a>
-      </nav>
-    </aside>
-
-    <!-- MAIN COLUMN: topbar + content -->
-    <div class="flex-1 flex flex-col min-w-0">
-
-      <!-- TOPBAR -->
-      <header class="h-14 shrink-0 bg-slate-900/90 border-b border-slate-700 flex items-center gap-3 px-4 z-20">
+    <!-- TOPBAR (full width: brand top-left, hamburger, search, user) -->
+    <header class="h-14 shrink-0 bg-slate-900/90 border-b border-slate-700 flex items-center z-20">
+      <!-- Brand block: same width as the sidebar column (w-64) -->
+      <div class="w-64 shrink-0 h-full flex items-center gap-2 px-4 border-r border-slate-700">
         <!-- Hamburger (mobile only) -->
         <button id="sidebar-toggle" type="button"
                 class="lg:hidden text-slate-300 hover:text-amber-300 text-xl leading-none"
                 title="Menu">☰</button>
 
-        <!-- Brand -->
+        <!-- Brand: always in the top-left corner, aligned with the sidebar -->
         <span class="text-xl font-bold text-amber-400 flex items-center gap-2 whitespace-nowrap">
           <span>🌾</span><span class="hidden sm:inline">Thresherr</span>
         </span>
+      </div>
 
-        <!-- Global search -->
-        <div class="relative flex-1 max-w-md ml-2">
-          <input
-            id="global-search-input"
-            type="text"
-            placeholder="{{ t('search.placeholder') }}"
-            autocomplete="off"
-            class="w-full px-3 py-1.5 rounded-md bg-slate-800 border border-slate-700 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500"
-          >
-          <div id="global-search-results" class="hidden absolute left-0 right-0 top-full mt-1 rounded-md border border-slate-700 bg-slate-900 shadow-xl z-50 max-h-96 overflow-y-auto"></div>
-        </div>
+      <!-- Global search -->
+      <div class="relative flex-1 max-w-md px-4">
+        <input
+          id="global-search-input"
+          type="text"
+          placeholder="{{ t('search.placeholder') }}"
+          autocomplete="off"
+          class="w-full px-3 py-1.5 rounded-md bg-slate-800 border border-slate-700 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500"
+        >
+        <div id="global-search-results" class="hidden absolute left-4 right-4 top-full mt-1 rounded-md border border-slate-700 bg-slate-900 shadow-xl z-50 max-h-96 overflow-y-auto"></div>
+      </div>
 
-        <!-- User / session (active when UI auth is enabled) -->
-        <div class="ml-auto relative" id="user-area">
-          {% if current_user %}
-          <button id="user-menu-btn" type="button"
-                  class="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-slate-200 hover:bg-slate-800 transition-colors">
-            <span class="text-lg">👤</span><span class="hidden md:inline">{{ current_user }}</span>
-          </button>
-          <div id="user-menu" class="hidden absolute right-0 top-full mt-1 w-40 rounded-md border border-slate-700 bg-slate-900 shadow-xl z-50">
-            <form method="post" action="/logout">
-              <button type="submit" class="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-slate-800 rounded-md">
-                {{ t('auth.logout') }}
-              </button>
-            </form>
-          </div>
-          {% endif %}
+      <!-- User / session (active when UI auth is enabled) -->
+      <div class="ml-auto relative pr-4" id="user-area">
+        {% if current_user %}
+        <button id="user-menu-btn" type="button"
+                class="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-slate-200 hover:bg-slate-800 transition-colors">
+          <span class="text-lg">👤</span><span class="hidden md:inline">{{ current_user }}</span>
+        </button>
+        <div id="user-menu" class="hidden absolute right-0 top-full mt-1 w-40 rounded-md border border-slate-700 bg-slate-900 shadow-xl z-50">
+          <form method="post" action="/logout">
+            <button type="submit" class="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-slate-800 rounded-md">
+              {{ t('auth.logout') }}
+            </button>
+          </form>
         </div>
-      </header>
+        {% endif %}
+      </div>
+    </header>
+
+    <!-- ROW: sidebar + main content -->
+    <div class="flex flex-1 min-h-0 relative">
+
+      <!-- MOBILE OVERLAY (closes the sidebar when clicking outside) -->
+      <div id="sidebar-overlay" class="fixed inset-0 top-14 bg-black/60 z-30 hidden lg:hidden"></div>
+
+      <!-- LEFT SIDEBAR -->
+      <aside id="sidebar"
+             class="fixed lg:static top-14 lg:top-auto bottom-0 left-0 z-40 w-64 shrink-0 bg-slate-900 border-r border-slate-700
+                    transform -translate-x-full lg:translate-x-0 transition-transform duration-200">
+        <nav class="h-full overflow-y-auto px-3 py-4 text-sm font-semibold">
+          <a href="/"
+             class="block px-3 py-2 rounded-md mb-1 transition-colors
+                    {% if path == '/' %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
+            {{ t('nav.media_files') }}
+          </a>
+
+          <a href="/activities/queue"
+             class="block px-3 py-2 rounded-md mb-1 transition-colors
+                    {% if path.startswith('/activities') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
+            {{ t('nav.activities') }}
+          </a>
+
+          <a href="/libraries"
+             class="block px-3 py-2 rounded-md mb-1 transition-colors
+                    {% if path.startswith('/libraries') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
+            {{ t('nav.libraries') }}
+          </a>
+
+          <a href="/profiles"
+             class="block px-3 py-2 rounded-md mb-1 transition-colors
+                    {% if path.startswith('/profiles') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
+            {{ t('nav.profiles') }}
+          </a>
+
+          {# Settings section — *arr family convention #}
+          <div class="text-xs font-bold uppercase tracking-widest text-slate-500 mt-5 mb-1 px-3">{{ t('nav.settings') }}</div>
+
+          <a href="/settings/media-management"
+             class="block px-3 py-2 rounded-md mb-1 transition-colors
+                    {% if path.startswith('/settings/media-management') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
+            {{ t('nav.media_management') }}
+          </a>
+
+          <a href="/settings/general"
+             class="block px-3 py-2 rounded-md mb-1 transition-colors
+                    {% if path.startswith('/settings/general') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
+            {{ t('nav.general') }}
+          </a>
+
+          <a href="/settings/interfaz"
+             class="block px-3 py-2 rounded-md mb-1 transition-colors
+                    {% if path.startswith('/settings/interfaz') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
+            {{ t('nav.interfaz') }}
+          </a>
+
+          {# System section — *arr family convention #}
+          <div class="text-xs font-bold uppercase tracking-widest text-slate-500 mt-5 mb-1 px-3">{{ t('nav.system') }}</div>
+
+          <a href="#" class="block px-3 py-2 rounded-md mb-1 text-slate-500 cursor-not-allowed"
+             title="{{ t('nav.coming_soon') }}">
+            {{ t('nav.status') }}
+          </a>
+
+          <a href="#" class="block px-3 py-2 rounded-md mb-1 text-slate-500 cursor-not-allowed"
+             title="{{ t('nav.coming_soon') }}">
+            {{ t('nav.tasks') }}
+          </a>
+
+          <a href="#" class="block px-3 py-2 rounded-md mb-1 text-slate-500 cursor-not-allowed"
+             title="{{ t('nav.coming_soon') }}">
+            {{ t('nav.backups') }}
+          </a>
+
+          <a href="/system/logs"
+             class="block px-3 py-2 rounded-md mb-1 transition-colors
+                    {% if path.startswith('/system/logs') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
+            {{ t('nav.logs') }}
+          </a>
+
+          <a href="/system/logfiles"
+             class="block px-3 py-2 rounded-md mb-1 transition-colors
+                    {% if path.startswith('/system/logfiles') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
+            {{ t('nav.log_files') }}
+          </a>
+        </nav>
+      </aside>
 
       <!-- MAIN CONTENT -->
       <main class="flex-1 min-w-0 px-6 py-6 overflow-y-auto">
