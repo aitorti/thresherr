@@ -168,6 +168,12 @@
   "logview.truncated": "Showing only the last 256 KB of this file. Use Download to get the full file.",
 
   "settings.general": "General",
+  "settings.security": "Security",
+  "settings.api_key": "API Key",
+  "settings.api_key_hint": "Authenticates API calls from other apps (e.g. the *arr family). Send it as header X-Api-Key or ?apikey=...",
+  "settings.reset_api_key": "Reset API Key",
+  "settings.reset_confirm": "Reset API key? Existing integrations using the old key will stop working.",
+  "settings.api_example": "Example:",
   "settings.log_level": "Log level",
   "settings.log_level_hint": "Changes are applied immediately — no restart needed. Debug and Trace files are always written regardless of this setting.",
   "settings.ui_language": "UI Language",

@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request, Form, Depends, HTTPException, Query, Body
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.templating import Jinja2Templates
+from fastapi import APIRouter
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from database import engine, SessionLocal
@@ -23,8 +24,12 @@ import os
 import glob
 import re
 import time
+import hmac
+import secrets
 from datetime import datetime
 from urllib.parse import quote
+
+APP_VERSION = "0.1.0"
 
 # 1. Database setup
 models.Base.metadata.create_all(bind=engine)
@@ -91,6 +96,71 @@ def render(request: Request, name: str, db: Session, **context) -> HTMLResponse:
     context["lang"] = lang
     context["languages"] = i18n.LANGUAGES
     return templates.TemplateResponse(request=request, name=name, context=context)
+
+
+# -------------------------------------------------
+# API Key (*arr-style, Settings -> General -> Security)
+# -------------------------------------------------
+
+def get_api_key(db: Session) -> str:
+    """Current API key; auto-generated and persisted on first use."""
+    row = (
+        db.query(models.Setting)
+        .filter(models.Setting.key == "api_key")
+        .first()
+    )
+    if row and row.value:
+        return row.value
+    key = secrets.token_hex(16)
+    db.add(models.Setting(key="api_key", value=key))
+    db.commit()
+    ui_logger.info("API key generated (first run)")
+    return key
+
+
+def reset_api_key(db: Session) -> str:
+    """Generate and persist a fresh API key."""
+    key = secrets.token_hex(16)
+    row = (
+        db.query(models.Setting)
+        .filter(models.Setting.key == "api_key")
+        .first()
+    )
+    if row:
+        row.value = key
+    else:
+        db.add(models.Setting(key="api_key", value=key))
+    db.commit()
+    ui_logger.info("API key reset")
+    return key
+
+
+def require_api_key(request: Request, db: Session = Depends(get_db)) -> None:
+    """
+    Dependency for external API routes: header X-Api-Key or ?apikey=...
+    Comparison is constant-time to avoid timing attacks.
+    """
+    provided = request.headers.get("X-Api-Key") or request.query_params.get("apikey")
+    expected = get_api_key(db)
+    if not provided or not hmac.compare_digest(provided.encode(), expected.encode()):
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+
+# External API (v1) — the seed for *arr-style integrations
+api_v1 = APIRouter(prefix="/api/v1", dependencies=[Depends(require_api_key)])
+
+
+@api_v1.get("/system/status")
+async def api_system_status(db: Session = Depends(get_db)):
+    """Lightweight status endpoint, the first piece of the public API."""
+    return {
+        "app": "thresherr",
+        "version": APP_VERSION,
+        "stats": compute_global_stats(db),
+    }
+
+
+app.include_router(api_v1)
 
 # --- LOADING GLOBAL STATISTICS ---
 
@@ -953,7 +1023,14 @@ async def get_settings(request: Request, db: Session = Depends(get_db)):
         **stats,
         log_level=get_log_level(),
         log_dir=LOG_DIR,
+        api_key=get_api_key(db),
     )
+
+
+@app.post("/settings/api-key/reset")
+async def reset_api_key_route(db: Session = Depends(get_db)):
+    reset_api_key(db)
+    return RedirectResponse(url="/settings", status_code=303)
 
 
 @app.post("/settings")
@@ -982,3 +1059,10 @@ async def save_settings(
         ui_logger.info("UI language changed to %s (runtime, no restart)", ui_language)
 
     return RedirectResponse(url="/settings", status_code=303)
+
+# Ensure an API key exists from the very first run (Settings -> General -> Security)
+_bootstrap_db = SessionLocal()
+try:
+    get_api_key(_bootstrap_db)
+finally:
+    _bootstrap_db.close()

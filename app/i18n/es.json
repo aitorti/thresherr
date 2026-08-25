@@ -168,6 +168,12 @@
   "logview.truncated": "Mostrando solo los últimos 256 KB de este archivo. Usa Descargar para obtener el archivo completo.",
 
   "settings.general": "General",
+  "settings.security": "Seguridad",
+  "settings.api_key": "Clave de API",
+  "settings.api_key_hint": "Autentica las llamadas a la API desde otras aplicaciones (p. ej. la familia *arr). Envíala como cabecera X-Api-Key o ?apikey=...",
+  "settings.reset_api_key": "Restablecer clave de API",
+  "settings.reset_confirm": "¿Restablecer la clave de API? Las integraciones que usen la clave antigua dejarán de funcionar.",
+  "settings.api_example": "Ejemplo:",
   "settings.log_level": "Nivel de registro",
   "settings.log_level_hint": "Los cambios se aplican al instante, sin reiniciar. Los archivos Debug y Trace se escriben siempre, independientemente de este ajuste.",
   "settings.ui_language": "Idioma de la interfaz",
