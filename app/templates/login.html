@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ t('brand.title') }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="bg-slate-950 text-slate-100 min-h-screen flex items-center justify-center font-sans px-4">
+  <form method="post" action="/login"
+        class="w-full max-w-sm bg-slate-900 border border-slate-700 rounded-xl p-8 shadow-2xl">
+    <div class="text-center mb-6">
+      <span class="text-4xl">🌾</span>
+      <h1 class="text-2xl font-bold text-amber-400 mt-2">Thresherr</h1>
+      <p class="text-xs text-slate-500 mt-1">{{ t('auth.login_subtitle') }}</p>
+    </div>
+
+    {% if error %}
+    <div class="mb-4 text-xs text-red-300 bg-red-900/30 border border-red-800/60 rounded-md px-3 py-2">
+      {{ t('auth.invalid') }}
+    </div>
+    {% endif %}
+
+    <input type="hidden" name="next" value="{{ next }}">
+
+    <label for="username" class="block text-xs font-bold text-slate-300 mb-1">{{ t('auth.username') }}</label>
+    <input
+      id="username"
+      type="text"
+      name="username"
+      required
+      autofocus
+      autocomplete="username"
+      class="w-full mb-4 bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-amber-500"
+    >
+
+    <label for="password" class="block text-xs font-bold text-slate-300 mb-1">{{ t('auth.password') }}</label>
+    <input
+      id="password"
+      type="password"
+      name="password"
+      required
+      autocomplete="current-password"
+      class="w-full mb-6 bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-amber-500"
+    >
+
+    <button type="submit"
+            class="w-full py-2 rounded-md bg-amber-600 text-sm text-slate-950 font-bold hover:bg-amber-500 transition-colors">
+      {{ t('auth.login') }}
+    </button>
+  </form>
+</body>
+</html>

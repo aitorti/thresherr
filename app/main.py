@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Request, Form, Depends, HTTPException, Query, Body
-from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi import APIRouter
 from sqlalchemy.orm import Session
@@ -27,7 +27,8 @@ import re
 import time
 import hmac
 import secrets
-from datetime import datetime
+import hashlib
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
 APP_VERSION = "0.1.0"
@@ -134,7 +135,116 @@ def render(request: Request, name: str, db: Session, **context) -> HTMLResponse:
     context["lang"] = lang
     context["languages"] = i18n.LANGUAGES
     context["fmt_dt"] = _make_fmt_dt(db)
+    context["current_user"] = _current_user(db, request)
+    context["auth_enabled"] = _get_setting(db, "auth_enabled", "0") == "1"
     return templates.TemplateResponse(request=request, name=name, context=context)
+
+
+# -------------------------------------------------
+# UI Authentication (*arr style: Authentication: Forms)
+# -------------------------------------------------
+
+SESSION_COOKIE = "thresherr_session"
+SESSION_DAYS = 30
+_PBKDF2_ITERATIONS = 200_000
+
+
+def hash_password(password: str) -> str:
+    """PBKDF2-SHA256 with a random salt: 'salt$hex'."""
+    salt = secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256", password.encode(), salt.encode(), _PBKDF2_ITERATIONS
+    )
+    return f"{salt}${digest.hex()}"
+
+
+def verify_password(password: str, stored: str) -> bool:
+    try:
+        salt, expected = stored.split("$", 1)
+        digest = hashlib.pbkdf2_hmac(
+            "sha256", password.encode(), salt.encode(), _PBKDF2_ITERATIONS
+        )
+        return hmac.compare_digest(digest.hex(), expected)
+    except Exception:
+        return False
+
+
+def create_session(db: Session) -> str:
+    """Create a session row and return its token."""
+    token = secrets.token_urlsafe(32)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.add(
+        models.UserSession(
+            token=token,
+            created_at=now,
+            expires_at=now + timedelta(days=SESSION_DAYS),
+        )
+    )
+    db.commit()
+    return token
+
+
+def _current_user(db: Session, request: Request) -> str | None:
+    """Username for the request session, or None (auth disabled or invalid)."""
+    if _get_setting(db, "auth_enabled", "0") != "1":
+        return None
+    token = request.cookies.get(SESSION_COOKIE)
+    if not token:
+        return None
+    row = (
+        db.query(models.UserSession)
+        .filter(models.UserSession.token == token)
+        .first()
+    )
+    if not row:
+        return None
+    if row.expires_at < datetime.now(timezone.utc).replace(tzinfo=None):
+        db.delete(row)
+        db.commit()
+        return None
+    return _get_setting(db, "auth_username", "") or None
+
+
+def delete_session(db: Session, token: str) -> None:
+    row = (
+        db.query(models.UserSession)
+        .filter(models.UserSession.token == token)
+        .first()
+    )
+    if row:
+        db.delete(row)
+        db.commit()
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """
+    Enforce UI authentication when enabled (Settings -> General -> Security).
+
+    Public: /login and /api/v1/* (API-key authenticated). Everything else
+    requires a valid session cookie; HTML requests are redirected to the
+    login page, API requests get 401.
+    """
+    path = request.url.path
+    if path == "/login" or path.startswith("/api/v1"):
+        return await call_next(request)
+
+    db = SessionLocal()
+    try:
+        if _get_setting(db, "auth_enabled", "0") == "1":
+            token = request.cookies.get(SESSION_COOKIE)
+            if _current_user(db, request) is None:
+                if path.startswith("/api/"):
+                    return JSONResponse(
+                        {"detail": "Not authenticated"}, status_code=401
+                    )
+                return RedirectResponse(
+                    url="/login?next=" + quote(path), status_code=303
+                )
+    finally:
+        db.close()
+
+    return await call_next(request)
 
 
 # -------------------------------------------------
@@ -1103,12 +1213,17 @@ async def get_settings_general(request: Request, db: Session = Depends(get_db)):
         log_level=get_log_level(),
         log_dir=LOG_DIR,
         api_key=get_api_key(db),
+        auth_enabled_setting=_get_setting(db, "auth_enabled", "0"),
+        auth_username=_get_setting(db, "auth_username", ""),
     )
 
 
 @app.post("/settings/general")
 async def save_settings_general(
     log_level: str = Form(...),
+    auth_enabled: str = Form(None),
+    auth_username: str = Form(""),
+    auth_password: str = Form(""),
     db: Session = Depends(get_db),
 ):
     try:
@@ -1116,8 +1231,110 @@ async def save_settings_general(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid log level")
     ui_logger.info("Log level changed to %s (runtime, no restart)", applied)
+
+    # Authentication (*arr style)
+    username = auth_username.strip()
+    _set_setting(db, "auth_username", username)
+    if auth_password:
+        _set_setting(db, "auth_password_hash", hash_password(auth_password))
+        ui_logger.info("Auth password updated")
+
+    has_credentials = bool(username) and bool(
+        _get_setting(db, "auth_password_hash", "")
+    )
+    want_auth = auth_enabled == "1"
+    if want_auth and has_credentials:
+        _set_setting(db, "auth_enabled", "1")
+        ui_logger.info("UI authentication ENABLED")
+    else:
+        _set_setting(db, "auth_enabled", "0")
+        if want_auth and not has_credentials:
+            ui_logger.warning(
+                "Auth enable requested but username/password missing; keeping auth off"
+            )
     db.commit()
     return RedirectResponse(url="/settings/general", status_code=303)
+
+
+# -------------------------------------------------
+# Login / Logout
+# -------------------------------------------------
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(
+    request: Request,
+    next: str = "",
+    error: str = "",
+):
+    # Already authenticated? Go straight to the app
+    db = SessionLocal()
+    try:
+        if _current_user(db, request) is not None:
+            return RedirectResponse(url=next or "/", status_code=303)
+    finally:
+        db.close()
+    return templates.TemplateResponse(
+        request=request,
+        name="login.html",
+        context={
+            "next": next if next.startswith("/") else "",
+            "error": error,
+            "t": i18n.translator(i18n.DEFAULT_LANGUAGE),
+        },
+    )
+
+
+@app.post("/login")
+async def login_submit(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    next: str = Form(""),
+):
+    db = SessionLocal()
+    try:
+        stored_hash = _get_setting(db, "auth_password_hash", "") or ""
+        expected_user = _get_setting(db, "auth_username", "") or ""
+        if (
+            _get_setting(db, "auth_enabled", "0") == "1"
+            and username == expected_user
+            and stored_hash
+            and verify_password(password, stored_hash)
+        ):
+            token = create_session(db)
+            ui_logger.info("User logged in: %s", username)
+            resp = RedirectResponse(
+                url=next if next.startswith("/") else "/", status_code=303
+            )
+            resp.set_cookie(
+                SESSION_COOKIE,
+                token,
+                max_age=SESSION_DAYS * 86400,
+                httponly=True,
+                samesite="lax",
+                path="/",
+            )
+            return resp
+    finally:
+        db.close()
+
+    ui_logger.warning("Failed login attempt for user: %s", username)
+    return RedirectResponse(url="/login?error=invalid", status_code=303)
+
+
+@app.post("/logout")
+async def logout_submit(request: Request):
+    token = request.cookies.get(SESSION_COOKIE)
+    if token:
+        db = SessionLocal()
+        try:
+            delete_session(db, token)
+        finally:
+            db.close()
+    ui_logger.info("User logged out")
+    resp = RedirectResponse(url="/login", status_code=303)
+    resp.delete_cookie(SESSION_COOKIE, path="/")
+    return resp
 
 
 @app.post("/settings/api-key/reset")

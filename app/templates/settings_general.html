@@ -18,6 +18,42 @@
       </select>
     </div>
 
+    <div class="border-t border-slate-800 pt-5">
+      <h2 class="text-sm font-bold text-slate-200 mb-1">{{ t('auth.authentication') }}</h2>
+      <p class="text-xs text-slate-500 mb-3">{{ t('auth.authentication_hint') }}</p>
+
+      <label class="flex items-center gap-2 cursor-pointer mb-4">
+        <input type="checkbox" name="auth_enabled" value="1"
+               {% if auth_enabled_setting == '1' %}checked{% endif %}
+               class="w-4 h-4 accent-amber-500">
+        <span class="text-sm font-semibold text-slate-200">{{ t('auth.enabled') }}</span>
+      </label>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label for="auth_username" class="block text-xs font-bold text-slate-300 mb-1">{{ t('auth.username') }}</label>
+          <input
+            type="text"
+            name="auth_username"
+            value="{{ auth_username }}"
+            autocomplete="username"
+            class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-amber-500"
+          >
+        </div>
+        <div>
+          <label for="auth_password" class="block text-xs font-bold text-slate-300 mb-1">{{ t('auth.password') }}</label>
+          <input
+            type="password"
+            name="auth_password"
+            placeholder="••••••••"
+            autocomplete="new-password"
+            class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-amber-500"
+          >
+          <p class="text-xs text-slate-500 mt-1">{{ t('auth.password_hint') }}</p>
+        </div>
+      </div>
+    </div>
+
     <button type="submit"
             class="px-4 py-2 rounded-md bg-amber-600 text-sm text-slate-950 font-bold hover:bg-amber-500 transition-colors">
       {{ t('settings.save') }}

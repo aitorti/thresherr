@@ -178,3 +178,15 @@ class Setting(Base):
 
     key = Column(String, primary_key=True)
     value = Column(String, nullable=True)
+
+
+# --------------------
+# UI sessions (auth, *arr style: Authentication: Forms)
+# --------------------
+class UserSession(Base):
+    __tablename__ = "sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    token = Column(String, unique=True, nullable=False, index=True)
+    created_at = Column(DateTime, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
