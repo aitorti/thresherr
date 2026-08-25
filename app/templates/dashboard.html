@@ -5,6 +5,12 @@
     Inline styles specific to this view.
     Includes filter input styling and progress bar animation.
 -->
+{% if q %}
+<div class="mb-4 flex items-center gap-3 rounded-md border border-amber-800/50 bg-amber-900/20 px-3 py-2 text-sm">
+  <span class="text-slate-300">{{ t('search.filtered_by') }}: <strong class="text-amber-300">{{ q }}</strong></span>
+  <a href="/" class="text-xs text-slate-400 hover:text-slate-200 underline">✕ {{ t('search.clear') }}</a>
+</div>
+{% endif %}
 <style>
     /* Input fields used to filter table columns */
     .filter-input {

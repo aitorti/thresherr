@@ -382,16 +382,22 @@ def compute_global_stats(db: Session) -> dict:
 # 4. Routes
 
 @app.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request, db: Session = Depends(get_db)):
+async def dashboard(
+    request: Request,
+    q: str = "",
+    db: Session = Depends(get_db),
+):
     # Global statistics (shared with sidebar)
     stats = compute_global_stats(db)
 
-    # THIS LINE IS CRITICAL:
-    media_files = db.query(models.MediaFile).order_by(models.MediaFile.id.desc()).all()
-    
+    # Optional filter from the topbar global search (?q=)
+    query = db.query(models.MediaFile)
+    if q:
+        query = query.filter(models.MediaFile.file_name.ilike(f"%{q}%"))
+    media_files = query.order_by(models.MediaFile.id.desc()).all()
+
     for mf in media_files:
         mf.has_stream_overrides = mf.stream_overrides is not None
-
 
     return render(
         request=request,
@@ -399,6 +405,7 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
         db=db,
         **stats,
         media_files=media_files,
+        q=q,
     )
 
 # --- WORKGIN WITH PROFILES ---
@@ -507,6 +514,52 @@ async def get_queue(request: Request, db: Session = Depends(get_db)):
         queued=queued,
         processing=processing,
         completed=completed,
+    )
+
+
+@app.get("/activities/history", response_class=HTMLResponse)
+async def activity_history(
+    request: Request,
+    status: str = "all",
+    q: str = "",
+    page: int = 1,
+    db: Session = Depends(get_db),
+):
+    """Activity -> History: processed files (completed/failed), paginated."""
+    stats = compute_global_stats(db)
+
+    query = db.query(models.MediaFile).filter(
+        models.MediaFile.status.in_(("completed", "failed"))
+    )
+    if status == "completed":
+        query = query.filter(models.MediaFile.status == "completed")
+    elif status == "failed":
+        query = query.filter(models.MediaFile.status == "failed")
+    if q:
+        query = query.filter(models.MediaFile.file_name.ilike(f"%{q}%"))
+
+    total = query.count()
+    entries = (
+        query.order_by(models.MediaFile.finished_at.desc())
+        .offset((page - 1) * LOGS_PER_PAGE)
+        .limit(LOGS_PER_PAGE)
+        .all()
+    )
+    has_more = (page * LOGS_PER_PAGE) < total
+
+    is_hx = request.headers.get("HX-Request") == "true"
+    template_name = "_history_rows.html" if is_hx else "activities_history.html"
+
+    return render(
+        request=request,
+        name=template_name,
+        db=db,
+        **stats,
+        entries=entries,
+        status=status,
+        q=q,
+        page=page,
+        has_more=has_more,
     )
 
 @app.get("/scan")
@@ -738,6 +791,41 @@ async def rescan_library(
         url=request.headers.get("referer", "/"),
         status_code=303,
     )
+
+# -------------------------------------------------
+# GLOBAL SEARCH (topbar)
+# -------------------------------------------------
+
+@app.get("/api/search")
+async def global_search(
+    q: str = "",
+    limit: int = 10,
+    db: Session = Depends(get_db),
+):
+    """Search media files by file name (title, quality, languages...)."""
+    q = q.strip()
+    if not q:
+        return {"results": []}
+
+    results = (
+        db.query(models.MediaFile)
+        .filter(models.MediaFile.file_name.ilike(f"%{q}%"))
+        .order_by(models.MediaFile.id.desc())
+        .limit(limit)
+        .all()
+    )
+    return {
+        "results": [
+            {
+                "id": m.id,
+                "file_name": m.file_name,
+                "library": m.library.name if m.library else "",
+                "status": m.status,
+            }
+            for m in results
+        ]
+    }
+
 
 # --- DASHBOARD POLLING API ---
 

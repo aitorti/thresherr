@@ -91,10 +91,19 @@
             {{ t('nav.media_files') }}
           </a>
 
+          {# Activities section — Queue + History, like the *arr family #}
+          <div class="text-xs font-bold uppercase tracking-widest text-slate-500 mt-5 mb-1 px-3">{{ t('nav.activities') }}</div>
+
           <a href="/activities/queue"
              class="block px-3 py-2 rounded-md mb-1 transition-colors
-                    {% if path.startswith('/activities') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
-            {{ t('nav.activities') }}
+                    {% if path.startswith('/activities/queue') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
+            {{ t('nav.queue') }}
+          </a>
+
+          <a href="/activities/history"
+             class="block px-3 py-2 rounded-md mb-1 transition-colors
+                    {% if path.startswith('/activities/history') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
+            {{ t('nav.history') }}
           </a>
 
           <a href="/libraries"
@@ -173,6 +182,70 @@
 
   <!-- Flash banner (messages from redirects, e.g. und_blocked / batch results) -->
   <div id="flash-banner" class="hidden fixed top-4 right-4 z-50 max-w-md rounded-lg shadow-lg px-4 py-3 text-sm font-semibold border"></div>
+
+  <script>
+    // Localized strings for the global search dropdown
+    window.THRESHERR_STATUS = {
+      completed: {{ t('status.completed')|tojson }},
+      processing: {{ t('status.processing')|tojson }},
+      failed: {{ t('status.failed')|tojson }},
+      queued: {{ t('status.queued')|tojson }},
+      pending: {{ t('status.pending')|tojson }},
+    };
+    window.THRESHERR_NO_RESULTS = {{ t('search.no_results')|tojson }};
+
+    function escapeHtml(value) {
+      const div = document.createElement("div");
+      div.textContent = value == null ? "" : String(value);
+      return div.innerHTML;
+    }
+    function statusLabel(status) {
+      return window.THRESHERR_STATUS[status] || status;
+    }
+
+    // Global search dropdown (topbar)
+    (() => {
+      const input = document.getElementById("global-search-input");
+      const results = document.getElementById("global-search-results");
+      if (!input || !results) return;
+
+      let timer = null;
+      input.addEventListener("input", () => {
+        clearTimeout(timer);
+        const q = input.value.trim();
+        if (q.length < 2) {
+          results.classList.add("hidden");
+          results.innerHTML = "";
+          return;
+        }
+        timer = setTimeout(async () => {
+          try {
+            const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+            const data = await res.json();
+            if (!data.results || !data.results.length) {
+              results.innerHTML =
+                `<div class="px-3 py-2 text-xs text-slate-500">${window.THRESHERR_NO_RESULTS}</div>`;
+            } else {
+              results.innerHTML = data.results.map((r) => `
+                <a href="/?q=${encodeURIComponent(q)}" class="block px-3 py-2 hover:bg-slate-800 border-b border-slate-800 last:border-0">
+                  <div class="text-sm text-slate-200 truncate">${escapeHtml(r.file_name)}</div>
+                  <div class="text-[10px] text-slate-500">${escapeHtml(r.library)} · ${statusLabel(r.status)}</div>
+                </a>`).join("");
+            }
+            results.classList.remove("hidden");
+          } catch (err) {
+            results.classList.add("hidden");
+          }
+        }, 250);
+      });
+
+      document.addEventListener("click", (e) => {
+        if (!input.contains(e.target) && !results.contains(e.target)) {
+          results.classList.add("hidden");
+        }
+      });
+    })();
+  </script>
 
   <script>
     // Mobile sidebar toggle
