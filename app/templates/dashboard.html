@@ -1,300 +1,299 @@
 {% extends "base.html" %}
 
+{# ------------------------------------------------------------------ #}
+{# Action buttons (SVG icons, *arr style) — shared by all views        #}
+{# ------------------------------------------------------------------ #}
+{% macro enqueue_btn(file) %}
+<form method="post" action="/queue/{{ file.id }}/enqueue" class="inline">
+  <button type="submit" title="{{ t('dash.queue_title') }}"
+          class="action-btn text-slate-400 hover:text-green-400 transition-colors">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+  </button>
+</form>
+{% endmacro %}
+
+{% macro dequeue_btn(file) %}
+<form method="post" action="/queue/{{ file.id }}/dequeue" class="inline">
+  <button type="submit" title="{{ t('dash.dequeue_title') }}"
+          class="action-btn text-slate-400 hover:text-red-400 transition-colors">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+  </button>
+</form>
+{% endmacro %}
+
+{% macro rescan_btn(file) %}
+<form method="post" action="/queue/{{ file.id }}/rescan" class="inline">
+  <button type="submit" title="{% if file.status == 'failed' %}{{ t('dash.retry_title') }}{% else %}{{ t('dash.rescan_title') }}{% endif %}"
+          class="action-btn text-slate-400 hover:text-amber-300 transition-colors">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/><path d="M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+  </button>
+</form>
+{% endmacro %}
+
+{% macro inspect_btn(file) %}
+<button type="button" class="inspect-streams action-btn text-amber-400 hover:text-amber-300 transition-colors"
+        title="{{ t('dash.inspect_title') }}"
+        data-media-id="{{ file.id }}" data-file-name="{{ file.file_name }}">
+  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+</button>
+{% endmacro %}
+
+{% macro primary_actions(file) %}
+<div class="primary-actions flex items-center justify-center gap-2">
+  {% if file.status == 'pending' %}
+    {% if (file.audio_languages and "und" in file.audio_languages) or (file.subtitle_languages and "und" in file.subtitle_languages) %}
+      {% if not file.stream_overrides %}
+        <span class="text-slate-600 text-sm cursor-not-allowed" title="{{ t('dash.und_blocked_title') }}">⛔</span>
+      {% else %}
+        {{ enqueue_btn(file) }}
+      {% endif %}
+    {% else %}
+      {{ enqueue_btn(file) }}
+    {% endif %}
+  {% elif file.status == 'queued' %}
+    {{ dequeue_btn(file) }}
+  {% elif file.status == 'completed' or file.status == 'failed' %}
+    {{ rescan_btn(file) }}
+  {% else %}
+    <span class="text-slate-600 text-sm">—</span>
+  {% endif %}
+
+  {% if (file.audio_languages and "und" in file.audio_languages) or (file.subtitle_languages and "und" in file.subtitle_languages) %}
+    {{ inspect_btn(file) }}
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% macro status_badge(file) %}
+{% if (file.audio_languages and "und" in file.audio_languages) or (file.subtitle_languages and "und" in file.subtitle_languages) %}
+  {% if not file.stream_overrides %}
+    <span class="px-2 py-0.5 rounded bg-amber-900/40 text-amber-400 text-[10px] font-bold uppercase border border-amber-800/50 align-middle"
+          title="{{ t('dash.und_badge_title') }}">⚠️ und</span>
+  {% endif %}
+{% endif %}
+{% if file.status == 'completed' %}
+  <span class="px-2 py-0.5 rounded bg-green-900/40 text-green-400 text-[10px] font-bold uppercase border border-green-800/50">{{ t('status.completed') }}</span>
+{% elif file.status == 'processing' %}
+  <span class="px-2 py-0.5 rounded bg-blue-900/40 text-blue-400 text-[10px] font-bold uppercase border border-blue-800 animate-pulse">{{ t('status.processing') }}</span>
+{% elif file.status == 'failed' %}
+  <span class="px-2 py-0.5 rounded bg-red-900/40 text-red-400 text-[10px] font-bold uppercase border border-red-800/50"
+        title="{% if file.last_error %}{{ file.last_error }}{% else %}{{ t('status.failed') }}{% endif %}">{{ t('status.failed') }}</span>
+{% elif file.status == 'queued' %}
+  <span class="px-2 py-0.5 rounded bg-red-900/40 text-red-400 text-[10px] font-bold uppercase border border-red-800/50">{{ t('status.queued') }}</span>
+{% else %}
+  <span class="px-2 py-0.5 rounded bg-slate-700/60 text-slate-400 text-[10px] font-bold uppercase border border-slate-600/50">{{ t('status.pending') }}</span>
+{% endif %}
+{% endmacro %}
+
+{% macro poster_placeholder(extra) %}
+<div class="aspect-[2/3] bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 flex items-center justify-center {{ extra }}">
+  <span class="text-5xl opacity-40">🎬</span>
+</div>
+{% endmacro %}
+
 {% block content %}
-<!-- 
-    Inline styles specific to this view.
-    Includes filter input styling and progress bar animation.
--->
+<style>
+  .action-btn { padding: 3px; border-radius: 4px; display: inline-flex; }
+  .action-btn:hover { background: rgba(51, 65, 85, 0.4); }
+  .sort-btn { background: none; border: none; cursor: pointer; font: inherit; color: inherit; }
+  .sort-btn:hover { color: #fcd34d; }
+</style>
+
 {% if q %}
 <div class="mb-4 flex items-center gap-3 rounded-md border border-amber-800/50 bg-amber-900/20 px-3 py-2 text-sm">
   <span class="text-slate-300">{{ t('search.filtered_by') }}: <strong class="text-amber-300">{{ q }}</strong></span>
   <a href="/" class="text-xs text-slate-400 hover:text-slate-200 underline">✕ {{ t('search.clear') }}</a>
 </div>
 {% endif %}
-<style>
-    /* Input fields used to filter table columns */
-    .filter-input {
-        background: rgba(15, 23, 42, 0.6);
-        border: 1px solid rgba(51, 65, 85, 0.5);
-        color: #94a3b8;
-        font-size: 10px;
-        padding: 4px 8px;
-        border-radius: 4px;
-        width: 100%;
-        outline: none;
-        transition: all 0.2s;
-    }
 
-    /* Visual feedback when a filter input is focused */
-    .filter-input:focus {
-        border-color: #f59e0b;
-        background: rgba(15, 23, 42, 0.9);
-    }
-    
-    /* Shimmer animation applied to the active progress bar */
-    .progress-shimmer {
-        background: linear-gradient(
-            90deg,
-            transparent,
-            rgba(255,255,255,0.1),
-            transparent
-        );
-        background-size: 200% 100%;
-        animation: shimmer 2s infinite;
-    }
+{# ------------------------------------------------------------------ #}
+{# Toolbar: view toggle + sorting + filters                            #}
+{# ------------------------------------------------------------------ #}
+<form method="get" action="/" class="flex flex-wrap items-center gap-3 mb-4">
+  <input type="hidden" name="q" value="{{ q }}">
 
-    /* Keyframes for the shimmer animation */
-    @keyframes shimmer {
-        0%   { background-position: -200% 0; }
-        100% { background-position: 200% 0; }
-    }
-</style>
+  <!-- View toggle -->
+  <div class="flex rounded-md overflow-hidden border border-slate-700">
+    {% for key, icon in [('table', '☰'), ('posters', '▦'), ('overview', '☷')] %}
+      {% if view == key %}
+        <button type="submit" name="view" value="{{ key }}"
+                class="px-3 py-1.5 text-sm font-semibold bg-slate-700 text-amber-300">{{ icon }} {{ t('view.' ~ key) }}</button>
+      {% else %}
+        <button type="submit" name="view" value="{{ key }}"
+                class="px-3 py-1.5 text-sm font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 transition-colors">{{ icon }} {{ t('view.' ~ key) }}</button>
+      {% endif %}
+    {% endfor %}
+  </div>
 
-<!-- Media files table -->
+  <!-- Sort -->
+  <select name="sort" onchange="this.form.submit()"
+          class="px-2 py-1.5 rounded-md bg-slate-800 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-amber-500">
+    {% for key in ['title', 'year', 'size', 'status', 'library', 'resolution'] %}
+      <option value="{{ key }}" {% if sort == key %}selected{% endif %}>{{ t('sort.' ~ key) }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" name="dir" value="{{ 'asc' if dir == 'desc' else 'desc' }}"
+          class="px-2.5 py-1.5 rounded-md bg-slate-800 border border-slate-700 text-sm text-slate-300 hover:bg-slate-700 transition-colors"
+          title="{{ t('sort.direction') }}">{{ '▲' if dir == 'asc' else '▼' }}</button>
+
+  <!-- Filters -->
+  <select name="status" onchange="this.form.submit()" class="px-2 py-1.5 rounded-md bg-slate-800 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-amber-500">
+    <option value="all" {% if status == 'all' %}selected{% endif %}>{{ t('filter.status') }}: {{ t('filter.all') }}</option>
+    {% for key in ['pending', 'queued', 'processing', 'completed', 'failed'] %}
+      <option value="{{ key }}" {% if status == key %}selected{% endif %}>{{ t('status.' ~ key) }}</option>
+    {% endfor %}
+  </select>
+
+  <select name="library" onchange="this.form.submit()" class="px-2 py-1.5 rounded-md bg-slate-800 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-amber-500">
+    <option value="">{{ t('filter.library') }}: {{ t('filter.all') }}</option>
+    {% for lib in libraries %}
+      <option value="{{ lib.id }}" {% if library == lib.id|string %}selected{% endif %}>{{ lib.name }}</option>
+    {% endfor %}
+  </select>
+
+  <select name="quality" onchange="this.form.submit()" class="px-2 py-1.5 rounded-md bg-slate-800 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-amber-500">
+    <option value="">{{ t('filter.quality') }}: {{ t('filter.all') }}</option>
+    {% for res in resolutions %}
+      <option value="{{ res }}" {% if quality == res %}selected{% endif %}>{{ res }}</option>
+    {% endfor %}
+  </select>
+
+  <select name="audio" onchange="this.form.submit()" class="px-2 py-1.5 rounded-md bg-slate-800 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-amber-500">
+    <option value="">{{ t('filter.audio') }}: {{ t('filter.all') }}</option>
+    {% for lang in audio_langs %}
+      <option value="{{ lang }}" {% if audio == lang %}selected{% endif %}>{{ lang }}</option>
+    {% endfor %}
+  </select>
+
+  <select name="subs" onchange="this.form.submit()" class="px-2 py-1.5 rounded-md bg-slate-800 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-amber-500">
+    <option value="">{{ t('filter.subs') }}: {{ t('filter.all') }}</option>
+    {% for lang in sub_langs %}
+      <option value="{{ lang }}" {% if subs == lang %}selected{% endif %}>{{ lang }}</option>
+    {% endfor %}
+  </select>
+
+  <a href="/" class="text-xs text-slate-500 hover:text-slate-300 underline">✕ {{ t('search.clear') }}</a>
+  <span class="text-xs text-slate-500">{{ t('dash.count', count=media_files|length) }}</span>
+</form>
+
+{# ------------------------------------------------------------------ #}
+{# TABLE VIEW                                                          #}
+{# ------------------------------------------------------------------ #}
+{% if view == 'table' %}
 <div class="bg-slate-800 rounded-xl border border-slate-700 shadow-2xl overflow-hidden mb-12">
-    <!-- Table header -->
-    <div class="p-5 border-b border-slate-700 bg-slate-900/30 flex justify-between items-center">
-        <h2 class="font-bold text-slate-200 text-base uppercase tracking-wider flex items-center">
-            <span class="mr-3 text-xl">📁</span> {{ t('dash.title') }}
-        </h2>
-
-        <div class="flex items-center gap-3">
-          <!-- Scan for new media -->
-          <a
-            href="/scan"
-            class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1"
-            title="{{ t('dash.scan_title') }}"
-          >
-            🔍 {{ t('dash.scan_btn') }}
-          </a>
-        
-          <!-- Total files counter -->
-          <span class="text-xs text-slate-400 bg-slate-900 px-3 py-1.5 rounded-lg border border-slate-700 font-mono">
-            {{ t('dash.total_files') }}: {{ media_files|length }}
-          </span>
-        </div>
-    </div>
-
-    <!-- Scrollable table container -->
-    <div class="overflow-x-auto">
-        <table class="w-full text-left border-collapse" id="mediaTable">
-            <!-- Column headers -->
-            <thead class="bg-slate-900/80 text-slate-500 uppercase text-[11px] tracking-widest border-b border-slate-700">
-                <tr>
-                    <th class="px-6 py-4 font-bold">{{ t('dash.col.library') }}</th>
-                    <th class="px-6 py-4 font-bold">{{ t('dash.col.title') }}</th>
-                    <th class="px-6 py-4 font-bold">{{ t('dash.col.video_codec') }}</th>
-                    <th class="px-6 py-4 font-bold">{{ t('dash.col.resolution') }}</th>
-                    <th class="px-6 py-4 font-bold">{{ t('dash.col.audio') }}</th>
-                    <th class="px-6 py-4 font-bold">{{ t('dash.col.subtitles') }}</th>
-                    <th class="px-6 py-4 font-bold text-right">{{ t('dash.col.orig_size') }}</th>
-                    <th class="px-6 py-4 font-bold text-right">{{ t('dash.col.processed') }}</th>
-                    <th class="px-6 py-4 font-bold text-right">{{ t('dash.col.actions') }}</th>
-                    <th class="px-6 py-4 font-bold text-center">{{ t('dash.col.status') }}</th>
-                </tr>
-
-                <!-- Filter row (one input per column) -->
-                <tr class="bg-slate-900/40 border-b border-slate-700/50">
-                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="{{ t('dash.filter') }}" onkeyup="filterTable(0)"></th>
-                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="{{ t('dash.filter') }}" onkeyup="filterTable(1)"></th>
-                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="{{ t('dash.filter') }}" onkeyup="filterTable(2)"></th>
-                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="{{ t('dash.filter') }}" onkeyup="filterTable(3)"></th>
-                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="{{ t('dash.filter') }}" onkeyup="filterTable(4)"></th>
-                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="{{ t('dash.filter') }}" onkeyup="filterTable(5)"></th>
-                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="{{ t('dash.filter_size') }}" onkeyup="filterTable(6)"></th>
-                    <th class="px-4 py-2"></th>
-                    <th class="px-4 py-2"></th>
-                    <th class="px-4 py-2"><input type="text" class="filter-input" placeholder="{{ t('dash.filter_status') }}" onkeyup="filterTable(8)"></th>
-                </tr>
-            </thead>
-
-            <!-- Table body populated dynamically via Jinja -->
-            <tbody class="divide-y divide-slate-700/50">
-                {% for file in media_files %}
-                
-                <tr class="hover:bg-slate-700/20 transition-colors text-sm" data-media-id="{{ file.id }}" data-und-blocked="{% if (file.audio_languages and "und" in file.audio_languages) or (file.subtitle_languages and "und" in file.subtitle_languages) %}{% if not file.stream_overrides %}true{% else %}false{% endif %}{% else %}false{% endif %}">
-                    <td class="px-6 py-4 text-slate-500 font-mono italic">
-                        {{ file.library.name }}
-                    </td>
-
-                    <td class="px-6 py-4 font-semibold text-slate-100 truncate max-w-[240px]" title="{{ file.file_name }}">
-                        {{ file.file_name }}
-                    </td>
-
-                    <td class="px-6 py-4" data-field="video_codec">
-                        <span class="bg-slate-900 text-amber-500/90 px-2.5 py-1 rounded-md border border-slate-700 font-mono text-xs font-bold">
-                            {{ file.video_codec|upper if file.video_codec else '???' }}
-                        </span>
-                    </td>
-
-                    <td class="px-6 py-4 text-slate-400 font-mono" data-field="resolution">
-                        {{ file.resolution if file.resolution else '---' }}
-                    </td>
-                    
-                    <td class="px-6 py-4 border rounded {% if file.has_stream_overrides %}border-amber-500{% else %}border-transparent{% endif %}" data-field="audio">
-                        <div class="text-blue-400 font-medium uppercase text-xs">
-                            {{ file.audio_codec if file.audio_codec else 'None' }}
-                        </div>
-                        <div class="text-[10px] text-slate-400 italic mt-0.5">
-                            {{ file.audio_languages if file.audio_languages else '-' }}
-                        </div>
-                    </td>
-
-                    <td class="px-6 py-4 border rounded {% if file.has_stream_overrides %}border-amber-500{% else %}border-transparent{% endif %}" data-field="subtitles">
-                        <div class="text-green-400 font-medium uppercase text-xs">
-                            {{ file.subtitle_codec if file.subtitle_codec else 'None' }}
-                        </div>
-                        <div class="text-[10px] text-slate-400 italic mt-0.5">
-                            {{ file.subtitle_languages if file.subtitle_languages else '-' }}
-                        </div>
-                    </td>
-
-                    <!-- Original file size (MB) -->
-                    <td class="px-6 py-4 text-right text-slate-200 font-mono">
-                        {% if file.size_original is not none %}
-                          {{ (file.size_original / 1048576) | round(0) | int }} MB
-                        {% else %}
-                          -
-                        {% endif %}
-                    </td>
-
-                    <!-- Processed file size (only if completed) -->
-                    <td class="px-6 py-4 text-right text-slate-300 font-mono" data-field="size_final">
-                        {% if file.status == 'completed' and file.size_final is not none %}
-                          <span class="text-green-400">
-                            {{ (file.size_final / 1048576) | round(0) | int }} MB
-                          </span>
-                        {% else %}
-                          <span class="text-slate-600">-</span>
-                        {% endif %}
-                    </td>
-                    
-                    <!-- ACTIONS -->
-                    <td class="px-6 py-4 text-center" data-role="actions">
-                      <div class="flex items-center justify-center gap-2">
-                        
-                        <div class="primary-actions">
-                          {% if file.status == 'pending' %}
-                            {% if (file.audio_languages and "und" in file.audio_languages) or (file.subtitle_languages and "und" in file.subtitle_languages) %}
-                              {% if not file.stream_overrides %}
-                                <span
-                                  class="text-slate-600 text-xs cursor-not-allowed"
-                                  title="{{ t('dash.und_blocked_title') }}"
-                                >
-                                  ⛔
-                                </span>
-                              {% else %}
-                                <form method="post" action="/queue/{{ file.id }}/enqueue">
-                                  <button
-                                    type="submit"
-                                    class="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded"
-                                    title="{{ t('dash.queue_title') }}"
-                                  >
-                                    ▶️
-                                  </button>
-                                </form>
-                              {% endif %}
-                            {% else %}
-                              <form method="post" action="/queue/{{ file.id }}/enqueue">
-                                <button
-                                  type="submit"
-                                  class="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded"
-                                  title="{{ t('dash.queue_title') }}"
-                                >
-                                  ▶️
-                                </button>
-                              </form>
-                            {% endif %}
-                    
-                          {% elif file.status == 'queued' %}
-                            <form method="post" action="/queue/{{ file.id }}/dequeue">
-                              <button
-                                type="submit"
-                                class="bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded"
-                                title="{{ t('dash.dequeue_title') }}"
-                              >
-                                ⏹
-                              </button>
-                            </form>
-                    
-                          {% elif file.status == 'completed' or file.status == 'failed' %}
-                            <form method="post" action="/queue/{{ file.id }}/rescan">
-                              <button
-                                type="submit"
-                                class="bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs px-2 py-1 rounded"
-                                title="{% if file.status == 'failed' %}{{ t('dash.retry_title') }}{% else %}{{ t('dash.rescan_title') }}{% endif %}"
-                              >
-                                🔄
-                              </button>
-                            </form>
-                    
-                          {% else %}
-                            <span class="text-slate-600 text-xs">—</span>
-                          {% endif %}
-                        </div>
-                    
-                        {% if
-                          (file.audio_languages and "und" in file.audio_languages)
-                          or
-                          (file.subtitle_languages and "und" in file.subtitle_languages)
-                        %}
-                            <button
-                              type="button"
-                              class="inspect-streams text-amber-400 hover:text-amber-300"
-                              title="{{ t('dash.inspect_title') }}"
-                              data-media-id="{{ file.id }}"
-                              data-file-name="{{ file.file_name }}"
-                            >
-                              🛠️
-                            </button>
-                        {% endif %}
-                    
-                      </div>
-                    </td>
-                    
-                    <!-- File processing status badge -->
-                    <td class="px-6 py-4 text-center" data-role="status" data-current-status="{{ file.status }}">
-                        {% if (file.audio_languages and "und" in file.audio_languages) or (file.subtitle_languages and "und" in file.subtitle_languages) %}
-                          {% if not file.stream_overrides %}
-                            <span
-                                class="px-2 py-1 rounded bg-amber-900/40 text-amber-400 text-[10px] font-bold uppercase border border-amber-800/50 align-middle"
-                                title="{{ t('dash.und_badge_title') }}"
-                            >
-                                ⚠️ und
-                            </span>
-                          {% endif %}
-                        {% endif %}
-                        {% if file.status == 'completed' %}
-                            <span class="px-3 py-1 rounded bg-green-900/40 text-green-400 text-xs font-bold uppercase border border-green-800/50">
-                                {{ t('status.completed') }}
-                            </span>
-                        {% elif file.status == 'processing' %}
-                            <span class="px-3 py-1 rounded bg-blue-900/40 text-blue-400 text-xs font-bold uppercase border border-blue-800 animate-pulse">
-                                {{ t('status.processing') }}
-                            </span>
-                        {% elif file.status == 'failed' %}
-                            <span
-                                class="px-3 py-1 rounded bg-red-900/40 text-red-400 text-xs font-bold uppercase border border-red-800/50"
-                                title="{% if file.last_error %}{{ file.last_error }}{% else %}{{ t('status.failed') }}{% endif %}"
-                            >
-                                {{ t('status.failed') }}
-                            </span>
-                        {% elif file.status == 'queued' %}
-                            <span class="px-3 py-1 rounded bg-red-900/40 text-red-400 text-xs font-bold uppercase border border-red-800/50">
-                                {{ t('status.queued') }}
-                            </span>
-                        {% else %}
-                            <span class="px-3 py-1 rounded bg-slate-700/60 text-slate-400 text-xs font-bold uppercase border border-slate-600/50">
-                                {{ t('status.pending') }}
-                            </span>
-                        {% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
+  <div class="overflow-x-auto">
+    <table class="w-full text-left border-collapse" id="mediaTable">
+      <thead class="bg-slate-900/80 text-slate-500 uppercase text-[11px] tracking-widest border-b border-slate-700">
+        <tr>
+          {% for key, label in [('title', 'dash.col.title'), ('year', 'dash.col.year'), ('library', 'dash.col.library'), ('resolution', 'dash.col.resolution'), ('size', 'dash.col.orig_size')] %}
+          <th class="px-4 py-3 font-bold whitespace-nowrap">
+            <button type="submit" name="sort" value="{{ key }}" class="sort-btn">
+              {{ t(label) }}{% if sort == key %} {{ '▲' if dir == 'asc' else '▼' }}{% endif %}
+            </button>
+          </th>
+          {% endfor %}
+          <th class="px-4 py-3 font-bold whitespace-nowrap">{{ t('dash.col.audio') }}</th>
+          <th class="px-4 py-3 font-bold whitespace-nowrap">{{ t('dash.col.subtitles') }}</th>
+          <th class="px-4 py-3 font-bold text-right whitespace-nowrap">{{ t('dash.col.processed') }}</th>
+          <th class="px-4 py-3 font-bold text-center whitespace-nowrap">{{ t('dash.col.actions') }}</th>
+          <th class="px-4 py-3 font-bold text-center whitespace-nowrap">{{ t('dash.col.status') }}</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-700/50">
+        {% for file in media_files %}
+        <tr class="hover:bg-slate-700/20 transition-colors text-sm" data-media-id="{{ file.id }}"
+            data-und-blocked="{% if (file.audio_languages and "und" in file.audio_languages) or (file.subtitle_languages and "und" in file.subtitle_languages) %}{% if not file.stream_overrides %}true{% else %}false{% endif %}{% else %}false{% endif %}">
+          <td class="px-4 py-3 font-semibold text-slate-100 truncate max-w-[280px]" title="{{ file.file_name }}">{{ file.file_name }}</td>
+          <td class="px-4 py-3 text-slate-400 font-mono whitespace-nowrap">{{ file.year or '—' }}</td>
+          <td class="px-4 py-3 text-slate-500 font-mono italic whitespace-nowrap">{{ file.library.name if file.library else '—' }}</td>
+          <td class="px-4 py-3 text-slate-400 font-mono whitespace-nowrap" data-field="resolution">{{ file.resolution or '—' }}</td>
+          <td class="px-4 py-3 text-right text-slate-200 font-mono whitespace-nowrap">{{ (file.size_original / 1048576)|round(0)|int if file.size_original is not none else '—' }} MB</td>
+          <td class="px-4 py-3">
+            <div class="text-blue-400 font-medium uppercase text-xs" data-field="audio_codec">{{ file.audio_codec or '—' }}</div>
+            <div class="text-[10px] text-slate-400 italic mt-0.5">{{ file.audio_languages or '-' }}</div>
+          </td>
+          <td class="px-4 py-3">
+            <div class="text-green-400 font-medium uppercase text-xs">{{ file.subtitle_codec or '—' }}</div>
+            <div class="text-[10px] text-slate-400 italic mt-0.5">{{ file.subtitle_languages or '-' }}</div>
+          </td>
+          <td class="px-4 py-3 text-right text-slate-300 font-mono whitespace-nowrap" data-field="size_final">
+            {% if file.status == 'completed' and file.size_final is not none %}
+              <span class="text-green-400">{{ (file.size_final / 1048576)|round(0)|int }} MB</span>
+            {% else %}<span class="text-slate-600">—</span>{% endif %}
+          </td>
+          <td class="px-4 py-3 text-center" data-role="actions">{{ primary_actions(file) }}</td>
+          <td class="px-4 py-3 text-center" data-role="status" data-current-status="{{ file.status }}">{{ status_badge(file) }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="10" class="py-10 text-center text-sm text-slate-500">{{ t('dash.empty') }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
+{% endif %}
+
+{# ------------------------------------------------------------------ #}
+{# POSTERS VIEW                                                        #}
+{# ------------------------------------------------------------------ #}
+{% if view == 'posters' %}
+<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 mb-12">
+  {% for file in media_files %}
+  <div class="bg-slate-900 rounded-xl border border-slate-700 overflow-hidden hover:border-slate-500 transition-colors flex flex-col"
+       data-media-id="{{ file.id }}"
+       data-und-blocked="{% if (file.audio_languages and "und" in file.audio_languages) or (file.subtitle_languages and "und" in file.subtitle_languages) %}{% if not file.stream_overrides %}true{% else %}false{% endif %}{% else %}false{% endif %}">
+    {{ poster_placeholder('') }}
+    <div class="p-2.5 flex-1 flex flex-col gap-1.5">
+      <div class="text-xs font-semibold text-slate-100 truncate" title="{{ file.file_name }}">{{ file.file_name }}</div>
+      <div class="text-[10px] text-slate-500 font-mono">
+        {{ file.year or '—' }} · {{ file.resolution or '—' }} · {{ (file.size_original / 1048576)|round(0)|int if file.size_original is not none else '—' }} MB
+      </div>
+      <div class="text-[10px] text-slate-500 truncate" title="{{ file.audio_languages or '' }}">{{ t('dash.col.audio') }}: {{ file.audio_languages or '—' }}</div>
+      <div class="text-[10px] text-slate-500 truncate" title="{{ file.subtitle_languages or '' }}">{{ t('dash.col.subtitles') }}: {{ file.subtitle_languages or '—' }}</div>
+      <div class="mt-auto pt-1 flex items-center justify-between gap-1">
+        <div data-role="status" data-current-status="{{ file.status }}">{{ status_badge(file) }}</div>
+        <div data-role="actions">{{ primary_actions(file) }}</div>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="col-span-full py-10 text-center text-sm text-slate-500">{{ t('dash.empty') }}</div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{# ------------------------------------------------------------------ #}
+{# OVERVIEW VIEW                                                       #}
+{# ------------------------------------------------------------------ #}
+{% if view == 'overview' %}
+<div class="space-y-3 mb-12">
+  {% for file in media_files %}
+  <div class="flex gap-4 bg-slate-900 rounded-xl border border-slate-700 p-3 hover:border-slate-500 transition-colors"
+       data-media-id="{{ file.id }}"
+       data-und-blocked="{% if (file.audio_languages and "und" in file.audio_languages) or (file.subtitle_languages and "und" in file.subtitle_languages) %}{% if not file.stream_overrides %}true{% else %}false{% endif %}{% else %}false{% endif %}">
+    <div class="w-16 shrink-0">{{ poster_placeholder('rounded-lg overflow-hidden text-2xl') }}</div>
+    <div class="flex-1 min-w-0">
+      <div class="font-semibold text-slate-100 truncate" title="{{ file.file_name }}">{{ file.file_name }}</div>
+      <div class="text-xs text-slate-400 mt-0.5">
+        {{ file.year or '—' }} · {{ file.resolution or '—' }} · {{ file.video_codec or '—' }} ·
+        {{ file.audio_codec or '—' }} ({{ file.audio_languages or '—' }}) ·
+        {{ file.subtitle_codec or '—' }} ({{ file.subtitle_languages or '—' }})
+      </div>
+      <div class="text-[10px] text-slate-500 mt-0.5 font-mono">
+        {{ file.library.name if file.library else '—' }} · {{ (file.size_original / 1048576)|round(0)|int if file.size_original is not none else '—' }} MB
+        {% if file.status == 'completed' and file.size_final is not none %} → {{ (file.size_final / 1048576)|round(0)|int }} MB{% endif %}
+      </div>
+    </div>
+    <div class="flex flex-col items-end justify-between gap-2 shrink-0">
+      <div data-role="status" data-current-status="{{ file.status }}">{{ status_badge(file) }}</div>
+      <div data-role="actions">{{ primary_actions(file) }}</div>
+    </div>
+  </div>
+  {% else %}
+  <div class="py-10 text-center text-sm text-slate-500">{{ t('dash.empty') }}</div>
+  {% endfor %}
+</div>
+{% endif %}
 
 <!-- Inspect Streams Modal -->
 <div id="inspect-streams-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70">
@@ -308,7 +307,7 @@
                 class="ml-2 text-slate-400 font-normal text-sm truncate"
               ></span>
             </h3>
-        
+
             <button
               id="inspect-streams-close"
               class="text-slate-400 hover:text-slate-200 text-xl"
@@ -316,11 +315,10 @@
               ✖
             </button>
           </div>
-    
-    
+
         <!-- Two panel layout -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 h-[70vh]">
-        
+
           <!-- LEFT: Raw ffprobe -->
         <div class="flex flex-col min-h-0">
           <h4 class="text-slate-300 font-semibold mb-2">🔍 {{ t('dash.modal.raw') }}</h4>
@@ -331,9 +329,8 @@
                    border border-slate-700"
           >{{ t('dash.modal.loading') }}</pre>
         </div>
-    
+
           <!-- RIGHT: Parsed streams -->
-        
             <div class="flex flex-col min-h-0">
               <h4 class="text-slate-300 font-semibold mb-2">🧩 {{ t('dash.modal.parsed') }}</h4>
               <div
@@ -341,18 +338,14 @@
                 class="flex-1 space-y-6 overflow-auto"
               ></div>
             </div>
-        
           </div>
-        
-          <!-- FOOTER (azul) -->
+
+          <!-- FOOTER -->
           <div
             id="inspect-streams-footer"
             class="mt-4 pt-3 border-t border-slate-700 grid grid-cols-1 md:grid-cols-2"
           >
-            <!-- EMPTY LEFT CELL (amarillo) -->
             <div></div>
-        
-            <!-- RIGHT CELL (verde) -->
             <div class="flex justify-end gap-3">
               <button
                 id="clear-stream-overrides"
@@ -360,7 +353,7 @@
               >
                 🧹 {{ t('dash.modal.clear_overrides') }}
               </button>
-        
+
               <button
                 id="save-stream-overrides"
                 class="hidden bg-amber-600 hover:bg-amber-700 text-black text-xs font-bold px-3 py-1 rounded"
@@ -372,41 +365,20 @@
     </div>
 </div>
 
-<!-- Client-side table filtering logic -->
 <script>
-    /**
-     * Filters table rows based on all active filter inputs.
-     * Each input corresponds to a column index.
-     */
-    function filterTable(columnIndex) {
-        const table = document.getElementById("mediaTable");
-        const inputs = document.querySelectorAll(".filter-input");
-        const rows = table
-            .getElementsByTagName("tbody")[0]
-            .getElementsByTagName("tr");
-
-        // Iterate over each row
-        for (let i = 0; i < rows.length; i++) {
-            let shouldShow = true;
-
-            // Check all filter inputs against the current row
-            inputs.forEach((input, idx) => {
-                const filterValue = input.value.toLowerCase();
-                if (filterValue) {
-                    const cells = rows[i].getElementsByTagName("td");
-                    const cellText = cells[idx].textContent.toLowerCase();
-
-                    // Hide row if any filter does not match
-                    if (cellText.indexOf(filterValue) === -1) {
-                        shouldShow = false;
-                    }
-                }
-            });
-
-            // Show or hide the row
-            rows[i].style.display = shouldShow ? "" : "none";
-        }
+  // Persist the selected view in localStorage (Radarr-like)
+  (() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("view")) {
+      localStorage.setItem("thresherr.view", params.get("view"));
+    } else {
+      const saved = localStorage.getItem("thresherr.view");
+      if (saved && saved !== "table") {
+        params.set("view", saved);
+        window.location.replace("/?" + params.toString());
+      }
     }
+  })();
 </script>
 
 <script>
@@ -432,80 +404,57 @@
       rescanTitle: {{ t('dash.rescan_title')|tojson }},
     };
 
-    function updateStatusBadge(cell, status) {
-      const baseClasses = "px-3 py-1 rounded text-xs font-bold uppercase border";
+    const SVG = {
+      play: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
+      stop: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>',
+      refresh: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/><path d="M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>',
+    };
 
-      const statusMap = {
-        completed: `${baseClasses} bg-green-900/40 text-green-400 border-green-800/50`,
-        processing: `${baseClasses} bg-blue-900/40 text-blue-400 border-blue-800 animate-pulse`,
-        failed: `${baseClasses} bg-red-900/40 text-red-400 border-red-800/50`,
-        queued: `${baseClasses} bg-slate-700/60 text-slate-400 border-slate-600/50`,
-        pending: `${baseClasses} bg-slate-700/60 text-slate-400 border-slate-600/50`,
+    function statusBadgeHtml(status) {
+      const base = "px-2 py-0.5 rounded text-[10px] font-bold uppercase border";
+      const map = {
+        completed: `${base} bg-green-900/40 text-green-400 border-green-800/50`,
+        processing: `${base} bg-blue-900/40 text-blue-400 border-blue-800 animate-pulse`,
+        failed: `${base} bg-red-900/40 text-red-400 border-red-800/50`,
+        queued: `${base} bg-red-900/40 text-red-400 border-red-800/50`,
+        pending: `${base} bg-slate-700/60 text-slate-400 border-slate-600/50`,
       };
-
-      cell.innerHTML = `<span class="${statusMap[status] || statusMap.pending}">
-        ${I18N[status] || status}
-      </span>`;
+      return `<span class="${map[status] || map.pending}">${I18N[status] || status}</span>`;
     }
 
+    function updateStatusBadge(cell, status) {
+      cell.innerHTML = statusBadgeHtml(status);
+    }
 
     function updateActions(cell, status, mediaId) {
       const container = cell.querySelector(".primary-actions");
       if (!container) return;
-    
+
       if (status === "pending") {
-        const tr = cell.closest("tr");
-        const blocked = tr && tr.dataset.undBlocked === "true";
+        const card = cell.closest("[data-media-id]");
+        const blocked = card && card.dataset.undBlocked === "true";
         if (blocked) {
-          container.innerHTML = `
-            <span
-              class="text-slate-600 text-xs cursor-not-allowed"
-              title="${I18N.blockedTitle}"
-            >
-              ⛔
-            </span>
-          `;
+          container.innerHTML = `<span class="text-slate-600 text-sm cursor-not-allowed" title="${I18N.blockedTitle}">⛔</span>`;
         } else {
           container.innerHTML = `
-            <form method="post" action="/queue/${mediaId}/enqueue">
-              <button
-                class="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded"
-                title="${I18N.queueTitle}"
-              >
-                ▶️
-              </button>
-            </form>
-          `;
+            <form method="post" action="/queue/${mediaId}/enqueue" class="inline">
+              <button class="action-btn text-slate-400 hover:text-green-400 transition-colors" title="${I18N.queueTitle}">${SVG.play}</button>
+            </form>`;
         }
       } else if (status === "queued") {
         container.innerHTML = `
-          <form method="post" action="/queue/${mediaId}/dequeue">
-            <button
-              class="bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded"
-              title="${I18N.dequeueTitle}"
-            >
-              ⏹
-            </button>
-          </form>
-        `;
+          <form method="post" action="/queue/${mediaId}/dequeue" class="inline">
+            <button class="action-btn text-slate-400 hover:text-red-400 transition-colors" title="${I18N.dequeueTitle}">${SVG.stop}</button>
+          </form>`;
       } else if (status === "completed" || status === "failed") {
         container.innerHTML = `
-          <form method="post" action="/queue/${mediaId}/rescan">
-            <button
-              class="bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs px-2 py-1 rounded"
-              title="${status === "failed" ? I18N.retryTitle : I18N.rescanTitle}"
-            >
-              🔄
-            </button>
-          </form>
-        `;
+          <form method="post" action="/queue/${mediaId}/rescan" class="inline">
+            <button class="action-btn text-slate-400 hover:text-amber-300 transition-colors" title="${status === "failed" ? I18N.retryTitle : I18N.rescanTitle}">${SVG.refresh}</button>
+          </form>`;
       } else {
-        container.innerHTML = `
-          <span class="text-slate-600 text-xs">—</span>
-        `;
+        container.innerHTML = `<span class="text-slate-600 text-sm">—</span>`;
       }
     }
-
 
     async function pollStatuses() {
       try {
@@ -513,31 +462,30 @@
         const data = await response.json();
 
         data.forEach(({ id, status }) => {
-          const row = document.querySelector(`tr[data-media-id="${id}"]`);
-          if (!row) return;
+          const card = document.querySelector(`[data-media-id="${id}"]`);
+          if (!card) return;
 
-          const actionCell = row.querySelector("[data-role='actions']");
-          const statusCell = row.querySelector("[data-role='status']");
+          const actionCell = card.querySelector("[data-role='actions']");
+          const statusCell = card.querySelector("[data-role='status']");
 
-        const previousStatus = statusCell.dataset.currentStatus;
-        
-        if (!previousStatus || previousStatus !== status) {
-          statusCell.dataset.currentStatus = status;
-          updateStatusBadge(statusCell, status);
-          updateActions(actionCell, status, id);
-        
-          // Only refresh metadata when processing is completed
-          if (previousStatus !== "completed" && status === "completed") {
-            refreshMediaRow(id);
+          const previousStatus = statusCell.dataset.currentStatus;
+
+          if (!previousStatus || previousStatus !== status) {
+            statusCell.dataset.currentStatus = status;
+            updateStatusBadge(statusCell, status);
+            updateActions(actionCell, status, id);
+
+            // Only refresh metadata when processing is completed
+            if (previousStatus !== "completed" && status === "completed") {
+              refreshMediaRow(id);
+            }
           }
-        }
-
         });
       } catch (err) {
         console.error("Polling error:", err);
       }
     }
-    
+
     async function updateGlobalStats() {
       try {
         const response = await fetch("/api/dashboard/stats");
@@ -545,25 +493,16 @@
 
         const stats = await response.json();
 
-        document.getElementById("stats-total-gb").textContent =
-          `${stats.total_gb} GB`;
-
-        document.getElementById("stats-processed-orig").textContent =
-          `${stats.processed_orig_gb} GB`;
-
-        document.getElementById("stats-processed-final").textContent =
-          `${stats.processed_final_gb} GB`;
-
-        document.getElementById("stats-savings-gb").textContent =
-          `${stats.savings_gb} GB`;
-
-        document.getElementById("stats-savings-pct").textContent =
-          `(${stats.savings_pct}%)`;
+        document.getElementById("stats-total-gb").textContent = `${stats.total_gb} GB`;
+        document.getElementById("stats-processed-orig").textContent = `${stats.processed_orig_gb} GB`;
+        document.getElementById("stats-processed-final").textContent = `${stats.processed_final_gb} GB`;
+        document.getElementById("stats-savings-gb").textContent = `${stats.savings_gb} GB`;
+        document.getElementById("stats-savings-pct").textContent = `(${stats.savings_pct}%)`;
       } catch (err) {
         console.error("Stats polling error:", err);
       }
     }
-    
+
     async function refreshMediaRow(mediaId) {
       try {
         const response = await fetch(`/api/media/${mediaId}/row`);
@@ -572,493 +511,335 @@
         const data = await response.json();
         if (!data || !data.id) return;
 
-        const row = document.querySelector(`tr[data-media-id="${mediaId}"]`);
-        if (!row) return;
+        const card = document.querySelector(`[data-media-id="${mediaId}"]`);
+        if (!card) return;
 
-        // Video codec
-        const videoCell = row.querySelector('[data-field="video_codec"]');
-        if (videoCell) {
-          videoCell.innerHTML = `
-            <span class="bg-slate-900 text-amber-500/90 px-2.5 py-1 rounded-md border border-slate-700 font-mono text-xs font-bold">
-              ${data.video_codec ? data.video_codec.toUpperCase() : "???"}
-            </span>`;
-        }
+        const resCell = card.querySelector('[data-field="resolution"]');
+        if (resCell) resCell.textContent = data.resolution || "---";
 
-        // Resolution
-        const resCell = row.querySelector('[data-field="resolution"]');
-        if (resCell) {
-          resCell.textContent = data.resolution || "---";
-        }
-
-        // Audio
-        const audioCell = row.querySelector('[data-field="audio"]');
-        if (audioCell) {
-          audioCell.innerHTML = `
-            <div class="text-blue-400 font-medium uppercase text-xs">
-              ${data.audio_codec || "None"}
-            </div>
-            <div class="text-[10px] text-slate-400 italic mt-0.5">
-              ${data.audio_languages || "-"}
-            </div>`;
-        }
-
-        // Subtitles
-        const subCell = row.querySelector('[data-field="subtitles"]');
-        if (subCell) {
-          subCell.innerHTML = `
-            <div class="text-green-400 font-medium uppercase text-xs">
-              ${data.subtitle_codec || "None"}
-            </div>
-            <div class="text-[10px] text-slate-400 italic mt-0.5">
-              ${data.subtitle_languages || "-"}
-            </div>`;
-        }
-
-        // Processed size
-        const sizeCell = row.querySelector('[data-field="size_final"]');
+        const sizeCell = card.querySelector('[data-field="size_final"]');
         if (sizeCell) {
           sizeCell.innerHTML = data.size_final_mb
             ? `<span class="text-green-400">${data.size_final_mb} MB</span>`
             : `<span class="text-slate-600">-</span>`;
         }
+
+        const audioCell = card.querySelector('[data-field="audio_codec"]');
+        if (audioCell) audioCell.textContent = data.audio_codec || "None";
       } catch (err) {
         console.error("Error refreshing media row:", err);
       }
     }
 
-    
-    setInterval(() => {pollStatuses(); updateGlobalStats(); }, POLL_INTERVAL_MS);});
+    setInterval(() => { pollStatuses(); updateGlobalStats(); }, POLL_INTERVAL_MS);
+  });
+</script>
 
-    // -------------------------------------------------
-    // Inspect streams (ffprobe viewer)
-    // -------------------------------------------------
-    
-    (() => {
-        const modal = document.getElementById("inspect-streams-modal");
-        const contentEl = document.getElementById("inspect-streams-content");
-        const closeBtn = document.getElementById("inspect-streams-close");
+<script>
+  // -------------------------------------------------
+  // Inspect streams (ffprobe viewer)
+  // -------------------------------------------------
 
-        // Localized strings (injected server-side)
-        const I18N = {
-          unsaved: {{ t('dash.modal.unsaved')|tojson }},
-          noMediaId: {{ t('dash.modal.no_media_id')|tojson }},
-          saveFailed: {{ t('dash.modal.save_failed')|tojson }},
-          saveError: {{ t('dash.modal.save_error')|tojson }},
-          loadingJson: {{ t('dash.modal.loading_json')|tojson }},
-          loadingStreams: {{ t('dash.modal.loading_streams')|tojson }},
-          failedJson: {{ t('dash.modal.failed_json')|tojson }},
-          failedStreams: {{ t('dash.modal.failed_streams')|tojson }},
-          failedRender: {{ t('dash.modal.failed_render')|tojson }},
-          unknownFile: {{ t('dash.modal.unknown_file')|tojson }},
-          video: {{ t('dash.modal.video')|tojson }},
-          audioStreams: {{ t('dash.modal.audio_streams')|tojson }},
-          subtitleStreams: {{ t('dash.modal.subtitle_streams')|tojson }},
-          colIndex: {{ t('dash.modal.col.index')|tojson }},
-          colCodec: {{ t('dash.modal.col.codec')|tojson }},
-          colChannels: {{ t('dash.modal.col.channels')|tojson }},
-          colLanguage: {{ t('dash.modal.col.language')|tojson }},
-          none: {{ t('dash.modal.none')|tojson }},
-        };
-      
-        const streamOverrides = {
-          audio: {},
-          subtitle: {}
-        };
-        
-        let hasUnsavedChanges = false;
-        let currentMediaId = null;
+  (() => {
+    const modal = document.getElementById("inspect-streams-modal");
+    const contentEl = document.getElementById("inspect-streams-content");
+    const closeBtn = document.getElementById("inspect-streams-close");
 
-        function openModal() {
-        
-            hasUnsavedChanges = false;
-            streamOverrides.audio = {};
-            streamOverrides.subtitle = {};
-    
-            modal.classList.remove("hidden");
-            modal.classList.add("flex");
+    // Localized strings (injected server-side)
+    const I18N = {
+      unsaved: {{ t('dash.modal.unsaved')|tojson }},
+      noMediaId: {{ t('dash.modal.no_media_id')|tojson }},
+      saveFailed: {{ t('dash.modal.save_failed')|tojson }},
+      saveError: {{ t('dash.modal.save_error')|tojson }},
+      loadingJson: {{ t('dash.modal.loading_json')|tojson }},
+      loadingStreams: {{ t('dash.modal.loading_streams')|tojson }},
+      failedJson: {{ t('dash.modal.failed_json')|tojson }},
+      failedStreams: {{ t('dash.modal.failed_streams')|tojson }},
+      failedRender: {{ t('dash.modal.failed_render')|tojson }},
+      unknownFile: {{ t('dash.modal.unknown_file')|tojson }},
+      video: {{ t('dash.modal.video')|tojson }},
+      audioStreams: {{ t('dash.modal.audio_streams')|tojson }},
+      subtitleStreams: {{ t('dash.modal.subtitle_streams')|tojson }},
+      colIndex: {{ t('dash.modal.col.index')|tojson }},
+      colCodec: {{ t('dash.modal.col.codec')|tojson }},
+      colChannels: {{ t('dash.modal.col.channels')|tojson }},
+      colLanguage: {{ t('dash.modal.col.language')|tojson }},
+      none: {{ t('dash.modal.none')|tojson }},
+    };
 
-            hasUnsavedChanges = false;
-        }
+    const streamOverrides = {
+      audio: {},
+      subtitle: {}
+    };
 
-        function closeModal() {
-          if (hasUnsavedChanges) {
-            const confirmClose = confirm(
-              I18N.unsaved
-            );
-            if (!confirmClose) return;
-          }
-        
-          modal.classList.add("hidden");
-          modal.classList.remove("flex");
-          contentEl.innerHTML = "";
-        
-          hasUnsavedChanges = false;
-          currentMediaId = null;
-          
-          document
-            .getElementById("save-stream-overrides")
-            .classList.add("hidden");
-        
-          document
-            .getElementById("clear-stream-overrides")
-            .classList.add("hidden");
+    let hasUnsavedChanges = false;
+    let currentMediaId = null;
 
-        }
-        
-        function normalizeTagKeys(tags) {
-          const t = tags || {};
-          const normalized = {};
-          Object.keys(t).forEach((k) => {
-            normalized[String(k).toLowerCase()] = t[k];
-          });
-          return normalized;
-        }
-        
-        function mapToIso639_2(lang) {
-          if (!lang) return "und";
-          const v = String(lang).trim().toLowerCase();
-        
-          const mapping = {
-            en: "eng",
-            es: "spa",
-            esp: "spa",
-            fr: "fra",
-            it: "ita",
-            de: "deu",
-            pt: "por",
-            ja: "jpn",
-            zh: "chi",
-            ru: "rus",
-            nl: "nld",
-          };
-        
-          return mapping[v] || v;
-        }
-        
-        function getStreamLanguage(stream) {
-          const tags = normalizeTagKeys(stream.tags);
-          const raw = tags.language || "";
-          const lang = mapToIso639_2(raw);
-        
-          return lang && lang !== "undefined" && lang !== "null" ? lang : "und";
-        }
+    function openModal() {
+      hasUnsavedChanges = false;
+      streamOverrides.audio = {};
+      streamOverrides.subtitle = {};
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+      hasUnsavedChanges = false;
+    }
 
-        function renderStreams(ffprobe) {
-        
-        const LANGUAGE_OPTIONS = [
-          "und",
-          "eng",
-          "spa",
-          "latam",
-          "fra",
-          "deu",
-          "ita",
-          "por",
-          "jpn",
-        ];
-        
-        const container = contentEl;
-        container.innerHTML = "";
-        
-        const streams = ffprobe.streams || [];
-        
-        const video = streams.filter(s => s.codec_type === "video");
-        const audio = streams.filter(s => s.codec_type === "audio");
-        const subs  = streams.filter(s => s.codec_type === "subtitle");
-        
-        function section(title, html) {
-          const div = document.createElement("div");
-          div.className = "space-y-2";
-          div.innerHTML = `
-            <h4 class="text-slate-200 font-bold">${title}</h4>
-            <div class="bg-slate-900 border border-slate-700 rounded p-3">
-              ${html || '<span class="text-slate-500 text-sm">' + I18N.none + '</span>'}
-            </div>
-          `;
-          return div;
-        }
-        
-        // Video
-        if (video.length) {
-          const v = video[0];
-          container.appendChild(
-            section(
-              "🎬 " + I18N.video,
-              `<div class="text-sm text-slate-300">
-                Stream ${v.index} · ${v.codec_name} · ${v.width}x${v.height}
-              </div>`
-            )
-          );
-        }
-        
-        // Audio
-        if (audio.length) {
-            const rows = audio.map((a) => {
-              const hasOverride = streamOverrides.audio[a.index] !== undefined;
-            
-              const lang =
-                streamOverrides.audio[a.index] ??
-                getStreamLanguage(a);
-            
-              return `
-                <tr>
-                  <td>${a.index}</td>
-                  <td>${a.codec_name}</td>
-                  <td>${a.channels || "-"}</td>
-                  <td>
-                    <select
-                      class="
-                        bg-slate-800 border rounded px-1 py-0.5 text-sm text-slate-200
-                        ${hasOverride ? "border-amber-500" : "border-slate-600"}
-                      "
-                      data-stream-index="${a.index}"
-                      data-stream-type="audio"
-                    >
-                      ${LANGUAGE_OPTIONS.map(opt => `
-                        <option value="${opt}" ${opt === lang ? "selected" : ""}>
-                          ${opt}
-                        </option>
-                      `).join("")}
-                    </select>
-                  </td>
-                </tr>
-              `;
-            }).join("");
+    function closeModal() {
+      if (hasUnsavedChanges) {
+        const confirmClose = confirm(I18N.unsaved);
+        if (!confirmClose) return;
+      }
+      modal.classList.add("hidden");
+      modal.classList.remove("flex");
+      contentEl.innerHTML = "";
+      hasUnsavedChanges = false;
+      currentMediaId = null;
+      document.getElementById("save-stream-overrides").classList.add("hidden");
+      document.getElementById("clear-stream-overrides").classList.add("hidden");
+    }
 
-          container.appendChild(
-            section(
-              "🔊 " + I18N.audioStreams,
-              `<table class="w-full text-sm">
-                <thead class="text-slate-400 border-b border-slate-700">
-                  <tr>
-                    <th>${I18N.colIndex}</th><th>${I18N.colCodec}</th><th>${I18N.colChannels}</th><th>${I18N.colLanguage}</th>
-                  </tr>
-                </thead>
-                <tbody class="text-slate-300">${rows}</tbody>
-              </table>`
-            )
-          );
-        }
-        
-        // Subtitles
-        if (subs.length) {
-            const rows = subs.map((s) => {
-              const hasOverride = streamOverrides.subtitle[s.index] !== undefined;
-            
-              const lang =
-                streamOverrides.subtitle[s.index] ??
-                getStreamLanguage(s);
-            
-              return `
-                <tr>
-                  <td>${s.index}</td>
-                  <td>${s.codec_name}</td>
-                  <td>
-                    <select
-                      class="
-                        bg-slate-800 border rounded px-1 py-0.5 text-sm text-slate-200
-                        ${hasOverride ? "border-amber-500" : "border-slate-600"}
-                      "
-                      data-stream-index="${s.index}"
-                      data-stream-type="subtitle"
-                    >
-                      ${LANGUAGE_OPTIONS.map(opt => `
-                        <option value="${opt}" ${opt === lang ? "selected" : ""}>
-                          ${opt}
-                        </option>
-                      `).join("")}
-                    </select>
-                  </td>
-                </tr>
-              `;
-            }).join("");
-
-          container.appendChild(
-            section(
-              "💬 " + I18N.subtitleStreams,
-              `<table class="w-full text-sm">
-                <thead class="text-slate-400 border-b border-slate-700">
-                  <tr>
-                    <th>${I18N.colIndex}</th><th>${I18N.colCodec}</th><th>${I18N.colLanguage}</th>
-                  </tr>
-                </thead>
-                <tbody class="text-slate-300">${rows}</tbody>
-              </table>`
-            )
-          );
-        }
-        }
-    
-        document.addEventListener("click", async (e) => {
-          const btn = e.target.closest(".inspect-streams");
-          if (!btn) return;
-        
-          const mediaId = btn.dataset.mediaId;
-          currentMediaId = mediaId;
-        
-          openModal();
-          
-          // Set filename in modal header
-          const filename = btn.dataset.fileName || I18N.unknownFile;
-          document.getElementById("inspect-streams-filename").textContent =
-            `— ${filename}`;
-
-          // Init both panels
-          document.getElementById("inspect-streams-json").textContent =
-            I18N.loadingJson;
-          contentEl.innerHTML = I18N.loadingStreams;
-        
-          try {
-            const res = await fetch(`/api/media/${mediaId}/ffprobe`);
-            if (!res.ok) {
-              document.getElementById("inspect-streams-json").textContent =
-                I18N.failedJson;
-              contentEl.innerHTML = I18N.failedStreams;
-              return;
-            }
-        
-            const data = await res.json();
-        
-            // LEFT: raw ffprobe
-            document.getElementById("inspect-streams-json").textContent =
-              JSON.stringify(data, null, 2);
-            
-            // Load previously saved overrides
-            try {
-              const ovrRes = await fetch(`/api/media/${mediaId}/stream-overrides`);
-              if (ovrRes.ok) {
-                const savedOverrides = await ovrRes.json();
-            
-                if (savedOverrides.audio) {
-                  streamOverrides.audio = savedOverrides.audio;
-                }
-                if (savedOverrides.subtitle) {
-                  streamOverrides.subtitle = savedOverrides.subtitle;
-                }
-                if (
-                  Object.keys(streamOverrides.audio).length ||
-                  Object.keys(streamOverrides.subtitle).length
-                ) {
-                  document
-                    .getElementById("save-stream-overrides")
-                    .classList.add("hidden");
-                  document
-                    .getElementById("clear-stream-overrides")
-                    .classList.remove("hidden");
-
-                  hasUnsavedChanges = false;
-                }
-              }
-            } catch (err) {
-              console.warn("Failed to load saved overrides", err);
-            }
-            
-            // RIGHT: parsed UI
-            try {
-              renderStreams(data);
-            } catch (renderErr) {
-              console.error("Render error:", renderErr);
-              contentEl.innerHTML = I18N.failedRender;
-            }
-
-          } catch (err) {
-            document.getElementById("inspect-streams-json").textContent =
-              I18N.failedJson;
-            contentEl.innerHTML = I18N.failedStreams;
-            console.error(err);
-          }
-        });
-        
-        document.addEventListener("change", (e) => {
-          const select = e.target;
-          if (!select.matches("select[data-stream-index]")) return;
-        
-          const streamIndex = select.dataset.streamIndex;
-          const streamType = select.dataset.streamType;
-          const lang = select.value;
-        
-          streamOverrides[streamType][streamIndex] = lang;
-        
-          select.classList.add("border-amber-500");
-          hasUnsavedChanges = true;
-        
-          document
-            .getElementById("save-stream-overrides")
-            .classList.remove("hidden");
-          document
-            .getElementById("clear-stream-overrides")
-            .classList.remove("hidden");
-
-          console.log("Stream override updated:", streamOverrides);
-        });
-        
-        document.getElementById("save-stream-overrides").addEventListener("click", async () => {
-          if (!currentMediaId) {
-            alert(I18N.noMediaId);
-            return;
-          }
-        
-          try {
-            const res = await fetch(`/api/media/${currentMediaId}/stream-overrides`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(streamOverrides)
-            });
-        
-            if (!res.ok) {
-              alert(I18N.saveFailed);
-              return;
-            }
-        
-            hasUnsavedChanges = false;
-            // Reload so the row reflects the new blocked/unblocked state
-            location.reload();
-        
-          } catch (err) {
-            console.error(err);
-            alert(I18N.saveError);
-          }
-        });
-        
-        document.getElementById("clear-stream-overrides").addEventListener("click", async () => {
-          if (!currentMediaId) return;
-        
-          // 1. Update DB → NULL
-          await fetch(`/api/media/${currentMediaId}/stream-overrides`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(null)
-          });
-        
-          // 2. Clear overrides in memory 
-          streamOverrides.audio = {};
-          streamOverrides.subtitle = {};
-          hasUnsavedChanges = false;
-        
-          // 3. Re-render streams using raw ffprobe data
-          try {
-            const jsonText = document.getElementById("inspect-streams-json").textContent;
-            const ffprobeData = JSON.parse(jsonText);
-            renderStreams(ffprobeData);
-          } catch (err) {
-            console.error("Failed to re-render after clearing overrides", err);
-          }
-        
-          // 4. UI feedback
-          document.getElementById("save-stream-overrides").classList.add("hidden");
-          document.getElementById("clear-stream-overrides").classList.add("hidden");
-
-          // Reload so the row reflects the new blocked/unblocked state
-          location.reload();
-        });
-
-      closeBtn.addEventListener("click", closeModal);
-    
-      modal.addEventListener("click", (e) => {
-        if (e.target === modal) closeModal();
+    function normalizeTagKeys(tags) {
+      const t = tags || {};
+      const normalized = {};
+      Object.keys(t).forEach((k) => {
+        normalized[String(k).toLowerCase()] = t[k];
       });
-    })();
+      return normalized;
+    }
 
+    function mapToIso639_2(lang) {
+      if (!lang) return "und";
+      const v = String(lang).trim().toLowerCase();
+      const mapping = {
+        en: "eng", es: "spa", esp: "spa", fr: "fra", it: "ita", de: "deu",
+        pt: "por", ja: "jpn", zh: "chi", ru: "rus", nl: "nld",
+      };
+      return mapping[v] || v;
+    }
+
+    function getStreamLanguage(stream) {
+      const tags = normalizeTagKeys(stream.tags);
+      const raw = tags.language || "";
+      const lang = mapToIso639_2(raw);
+      return lang && lang !== "undefined" && lang !== "null" ? lang : "und";
+    }
+
+    function renderStreams(ffprobe) {
+      const LANGUAGE_OPTIONS = [
+        "und", "eng", "spa", "latam", "fra", "deu", "ita", "por", "jpn",
+      ];
+
+      const container = contentEl;
+      container.innerHTML = "";
+
+      const streams = ffprobe.streams || [];
+      const video = streams.filter(s => s.codec_type === "video");
+      const audio = streams.filter(s => s.codec_type === "audio");
+      const subs = streams.filter(s => s.codec_type === "subtitle");
+
+      function section(title, html) {
+        const div = document.createElement("div");
+        div.className = "space-y-2";
+        div.innerHTML = `
+          <h4 class="text-slate-200 font-bold">${title}</h4>
+          <div class="bg-slate-900 border border-slate-700 rounded p-3">
+            ${html || '<span class="text-slate-500 text-sm">' + I18N.none + '</span>'}
+          </div>`;
+        return div;
+      }
+
+      if (video.length) {
+        const v = video[0];
+        container.appendChild(
+          section(
+            "🎬 " + I18N.video,
+            `<div class="text-sm text-slate-300">Stream ${v.index} · ${v.codec_name} · ${v.width}x${v.height}</div>`
+          )
+        );
+      }
+
+      if (audio.length) {
+        const rows = audio.map((a) => {
+          const hasOverride = streamOverrides.audio[a.index] !== undefined;
+          const lang = streamOverrides.audio[a.index] ?? getStreamLanguage(a);
+          return `
+            <tr>
+              <td>${a.index}</td>
+              <td>${a.codec_name}</td>
+              <td>${a.channels || "-"}</td>
+              <td>
+                <select class="bg-slate-800 border rounded px-1 py-0.5 text-sm text-slate-200 ${hasOverride ? "border-amber-500" : "border-slate-600"}"
+                        data-stream-index="${a.index}" data-stream-type="audio">
+                  ${LANGUAGE_OPTIONS.map(opt => `<option value="${opt}" ${opt === lang ? "selected" : ""}>${opt}</option>`).join("")}
+                </select>
+              </td>
+            </tr>`;
+        }).join("");
+
+        container.appendChild(
+          section(
+            "🔊 " + I18N.audioStreams,
+            `<table class="w-full text-sm">
+              <thead class="text-slate-400 border-b border-slate-700">
+                <tr><th>${I18N.colIndex}</th><th>${I18N.colCodec}</th><th>${I18N.colChannels}</th><th>${I18N.colLanguage}</th></tr>
+              </thead>
+              <tbody class="text-slate-300">${rows}</tbody>
+            </table>`
+          )
+        );
+      }
+
+      if (subs.length) {
+        const rows = subs.map((s) => {
+          const hasOverride = streamOverrides.subtitle[s.index] !== undefined;
+          const lang = streamOverrides.subtitle[s.index] ?? getStreamLanguage(s);
+          return `
+            <tr>
+              <td>${s.index}</td>
+              <td>${s.codec_name}</td>
+              <td>
+                <select class="bg-slate-800 border rounded px-1 py-0.5 text-sm text-slate-200 ${hasOverride ? "border-amber-500" : "border-slate-600"}"
+                        data-stream-index="${s.index}" data-stream-type="subtitle">
+                  ${LANGUAGE_OPTIONS.map(opt => `<option value="${opt}" ${opt === lang ? "selected" : ""}>${opt}</option>`).join("")}
+                </select>
+              </td>
+            </tr>`;
+        }).join("");
+
+        container.appendChild(
+          section(
+            "💬 " + I18N.subtitleStreams,
+            `<table class="w-full text-sm">
+              <thead class="text-slate-400 border-b border-slate-700">
+                <tr><th>${I18N.colIndex}</th><th>${I18N.colCodec}</th><th>${I18N.colLanguage}</th></tr>
+              </thead>
+              <tbody class="text-slate-300">${rows}</tbody>
+            </table>`
+          )
+        );
+      }
+    }
+
+    document.addEventListener("click", async (e) => {
+      const btn = e.target.closest(".inspect-streams");
+      if (!btn) return;
+
+      const mediaId = btn.dataset.mediaId;
+      currentMediaId = mediaId;
+
+      openModal();
+
+      const filename = btn.dataset.fileName || I18N.unknownFile;
+      document.getElementById("inspect-streams-filename").textContent = `— ${filename}`;
+
+      document.getElementById("inspect-streams-json").textContent = I18N.loadingJson;
+      contentEl.innerHTML = I18N.loadingStreams;
+
+      try {
+        const res = await fetch(`/api/media/${mediaId}/ffprobe`);
+        if (!res.ok) {
+          document.getElementById("inspect-streams-json").textContent = I18N.failedJson;
+          contentEl.innerHTML = I18N.failedStreams;
+          return;
+        }
+
+        const data = await res.json();
+        document.getElementById("inspect-streams-json").textContent = JSON.stringify(data, null, 2);
+
+        try {
+          const ovrRes = await fetch(`/api/media/${mediaId}/stream-overrides`);
+          if (ovrRes.ok) {
+            const savedOverrides = await ovrRes.json();
+            if (savedOverrides.audio) streamOverrides.audio = savedOverrides.audio;
+            if (savedOverrides.subtitle) streamOverrides.subtitle = savedOverrides.subtitle;
+            if (Object.keys(streamOverrides.audio).length || Object.keys(streamOverrides.subtitle).length) {
+              document.getElementById("save-stream-overrides").classList.add("hidden");
+              document.getElementById("clear-stream-overrides").classList.remove("hidden");
+              hasUnsavedChanges = false;
+            }
+          }
+        } catch (err) {
+          console.warn("Failed to load saved overrides", err);
+        }
+
+        try {
+          renderStreams(data);
+        } catch (renderErr) {
+          console.error("Render error:", renderErr);
+          contentEl.innerHTML = I18N.failedRender;
+        }
+      } catch (err) {
+        document.getElementById("inspect-streams-json").textContent = I18N.failedJson;
+        contentEl.innerHTML = I18N.failedStreams;
+        console.error(err);
+      }
+    });
+
+    document.addEventListener("change", (e) => {
+      const select = e.target;
+      if (!select.matches("select[data-stream-index]")) return;
+      const streamIndex = select.dataset.streamIndex;
+      const streamType = select.dataset.streamType;
+      const lang = select.value;
+      streamOverrides[streamType][streamIndex] = lang;
+      select.classList.add("border-amber-500");
+      hasUnsavedChanges = true;
+      document.getElementById("save-stream-overrides").classList.remove("hidden");
+      document.getElementById("clear-stream-overrides").classList.remove("hidden");
+      console.log("Stream override updated:", streamOverrides);
+    });
+
+    document.getElementById("save-stream-overrides").addEventListener("click", async () => {
+      if (!currentMediaId) {
+        alert(I18N.noMediaId);
+        return;
+      }
+      try {
+        const res = await fetch(`/api/media/${currentMediaId}/stream-overrides`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(streamOverrides)
+        });
+        if (!res.ok) {
+          alert(I18N.saveFailed);
+          return;
+        }
+        hasUnsavedChanges = false;
+        location.reload();
+      } catch (err) {
+        console.error(err);
+        alert(I18N.saveError);
+      }
+    });
+
+    document.getElementById("clear-stream-overrides").addEventListener("click", async () => {
+      if (!currentMediaId) return;
+      await fetch(`/api/media/${currentMediaId}/stream-overrides`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(null)
+      });
+      streamOverrides.audio = {};
+      streamOverrides.subtitle = {};
+      hasUnsavedChanges = false;
+      try {
+        const jsonText = document.getElementById("inspect-streams-json").textContent;
+        const ffprobeData = JSON.parse(jsonText);
+        renderStreams(ffprobeData);
+      } catch (err) {
+        console.error("Failed to re-render after clearing overrides", err);
+      }
+      document.getElementById("save-stream-overrides").classList.add("hidden");
+      document.getElementById("clear-stream-overrides").classList.add("hidden");
+      location.reload();
+    });
+
+    closeBtn.addEventListener("click", closeModal);
+
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) closeModal();
+    });
+  })();
 </script>
 
 {% endblock %}

@@ -348,6 +348,9 @@ app.include_router(api_v1)
 
 # --- LOADING GLOBAL STATISTICS ---
 
+SORT_FIELDS = ("title", "year", "size", "status", "library", "resolution")
+VIEWS = ("table", "posters", "overview")
+
 def compute_global_stats(db: Session) -> dict:
     """
     Compute global storage statistics used by the UI.
@@ -385,19 +388,89 @@ def compute_global_stats(db: Session) -> dict:
 async def dashboard(
     request: Request,
     q: str = "",
+    view: str = "table",
+    sort: str = "title",
+    dir: str = "asc",
+    status: str = "all",
+    library: str = "",
+    quality: str = "",
+    audio: str = "",
+    subs: str = "",
     db: Session = Depends(get_db),
 ):
-    # Global statistics (shared with sidebar)
+    """Monitored media files — Radarr-style: view toggle, sorting, filters."""
     stats = compute_global_stats(db)
 
-    # Optional filter from the topbar global search (?q=)
+    # Sanitize view/sort/dir
+    if view not in VIEWS:
+        view = "table"
+    if sort not in SORT_FIELDS:
+        sort = "title"
+    if dir not in ("asc", "desc"):
+        dir = "asc"
+
     query = db.query(models.MediaFile)
     if q:
         query = query.filter(models.MediaFile.file_name.ilike(f"%{q}%"))
-    media_files = query.order_by(models.MediaFile.id.desc()).all()
+    if status != "all":
+        query = query.filter(models.MediaFile.status == status)
+    if library:
+        query = query.filter(models.MediaFile.library_id == int(library))
+    if quality:
+        query = query.filter(models.MediaFile.resolution == quality)
+    if audio:
+        query = query.filter(models.MediaFile.audio_languages.ilike(f"%{audio}%"))
+    if subs:
+        query = query.filter(models.MediaFile.subtitle_languages.ilike(f"%{subs}%"))
 
+    media_files = query.order_by(models.MediaFile.id.desc()).all()
     for mf in media_files:
         mf.has_stream_overrides = mf.stream_overrides is not None
+        mf.year = naming.extract_year(mf.file_name)
+
+    # Sorting (year is computed in Python, so sort here)
+    def sort_key(f):
+        if sort == "title":
+            return f.file_name.lower()
+        if sort == "year":
+            return f.year or ""
+        if sort == "size":
+            return f.size_original or 0
+        if sort == "status":
+            return f.status
+        if sort == "library":
+            return f.library.name.lower() if f.library else ""
+        if sort == "resolution":
+            return f.resolution or ""
+        return f.file_name.lower()
+
+    media_files.sort(key=sort_key, reverse=(dir == "desc"))
+
+    # Filter options (derived from real data)
+    libraries = db.query(models.Library).order_by(models.Library.name).all()
+    resolutions = sorted(
+        {
+            r[0]
+            for r in db.query(models.MediaFile.resolution).distinct().all()
+            if r[0]
+        }
+    )
+    audio_langs = sorted(
+        {
+            lang.strip()
+            for row in db.query(models.MediaFile.audio_languages).all()
+            if row[0]
+            for lang in row[0].split(",")
+        }
+    )
+    sub_langs = sorted(
+        {
+            lang.strip()
+            for row in db.query(models.MediaFile.subtitle_languages).all()
+            if row[0]
+            for lang in row[0].split(",")
+        }
+    )
 
     return render(
         request=request,
@@ -406,6 +479,18 @@ async def dashboard(
         **stats,
         media_files=media_files,
         q=q,
+        view=view,
+        sort=sort,
+        dir=dir,
+        status=status,
+        library=library,
+        quality=quality,
+        audio=audio,
+        subs=subs,
+        libraries=libraries,
+        resolutions=resolutions,
+        audio_langs=audio_langs,
+        sub_langs=sub_langs,
     )
 
 # --- WORKGIN WITH PROFILES ---
