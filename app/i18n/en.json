@@ -179,5 +179,10 @@
   "settings.ui_language": "UI Language",
   "settings.ui_language_hint": "Changes the interface language instantly. Log messages stay in English.",
   "settings.save": "Save",
+  "settings.media_management": "Media Management",
+  "naming.enabled": "Rename files after processing",
+  "naming.enabled_hint": "Applies the naming template to the final file. Disabled by default — the original name is kept.",
+  "naming.template": "Naming template",
+  "naming.preview": "Preview",
   "settings.log_files_hint": "Log files are stored in {dir} — view them under"
 }

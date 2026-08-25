@@ -179,5 +179,10 @@
   "settings.ui_language": "Idioma de la interfaz",
   "settings.ui_language_hint": "Cambia el idioma de la interfaz al instante. Los mensajes de registro permanecen en inglés.",
   "settings.save": "Guardar",
+  "settings.media_management": "Gestión de medios",
+  "naming.enabled": "Renombrar archivos tras el procesado",
+  "naming.enabled_hint": "Aplica la plantilla de nombres al archivo final. Desactivado por defecto: se conserva el nombre original.",
+  "naming.template": "Plantilla de nombres",
+  "naming.preview": "Vista previa",
   "settings.log_files_hint": "Los archivos de registro se guardan en {dir} — míralos en"
 }

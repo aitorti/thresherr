@@ -11,6 +11,7 @@ from scanner import get_video_metadata
 from scanner import infer_stream_language
 from database import SessionLocal, engine
 from logging_setup import get_logger, setup_logging
+import naming
 
 logger = get_logger("worker")
 
@@ -968,15 +969,20 @@ def verify_result(temp_output_path: str, job_plan: dict) -> str:
 # Safe replace of the original file
 # -------------------------------------------------
 
-def safe_replace_cross_fs(original_path: str, temp_path: str) -> None:
+def safe_replace_cross_fs(
+    original_path: str, temp_path: str, dest_path: str | None = None
+) -> None:
     """
     Safely replace original_path with temp_path when they are on different filesystems
     (e.g. temp on SSD, media on HDD).
 
+    dest_path: optional target name (naming/rename support). Defaults to
+    original_path when not given.
+
     Strategy:
-    1. Copy temp_path to original_path + '.thresherr.new' (on destination filesystem)
+    1. Copy temp_path to dest_path + '.thresherr.new' (on destination filesystem)
     2. fsync the copied file to ensure data is flushed to disk
-    3. Atomically rename '.thresherr.new' -> original_path (same filesystem)
+    3. Atomically rename '.thresherr.new' -> dest_path (same filesystem)
     4. Remove temp_path from temp filesystem
 
     Guarantees:
@@ -990,7 +996,8 @@ def safe_replace_cross_fs(original_path: str, temp_path: str) -> None:
     if os.path.getsize(temp_path) == 0:
         raise RuntimeError("temp output file is empty")
 
-    dst_tmp = original_path + ".thresherr.new"
+    target = dest_path or original_path
+    dst_tmp = target + ".thresherr.new"
 
     try:
         # 1. Copy temp file (SSD) -> destination temp file (HDD)
@@ -1002,7 +1009,7 @@ def safe_replace_cross_fs(original_path: str, temp_path: str) -> None:
             os.fsync(dst.fileno())
 
         # 3. Atomic replace on destination filesystem (HDD)
-        os.replace(dst_tmp, original_path)
+        os.replace(dst_tmp, target)
 
         # 4. Remove temp file from SSD
         os.remove(temp_path)
@@ -1017,6 +1024,81 @@ def safe_replace_cross_fs(original_path: str, temp_path: str) -> None:
 
         # Re-raise so the worker marks the job as failed
         raise
+
+# -------------------------------------------------
+# Naming (*arr style, Settings -> Media Management)
+# -------------------------------------------------
+
+def _naming_config(db) -> tuple[bool, str]:
+    """(enabled, template) from the settings table."""
+    enabled_row = (
+        db.query(models.Setting)
+        .filter(models.Setting.key == "naming_enabled")
+        .first()
+    )
+    template_row = (
+        db.query(models.Setting)
+        .filter(models.Setting.key == "naming_template")
+        .first()
+    )
+    enabled = bool(enabled_row and enabled_row.value == "1")
+    template = template_row.value if template_row and template_row.value else ""
+    return enabled, template
+
+
+def _naming_context(job: models.MediaFile, job_plan: dict, inspection: dict) -> dict:
+    """Build the token values for naming from a job's plan and inspection."""
+    title = os.path.splitext(os.path.basename(job.full_path))[0]
+
+    kept_audio = [
+        s
+        for s in job_plan.get("audio", {}).get("streams", [])
+        if s.get("action") in ("copy", "transcode")
+    ]
+    kept_subs = [
+        s
+        for s in job_plan.get("subtitles", {}).get("streams", [])
+        if s.get("action") in ("copy", "transcode")
+    ]
+
+    audio_codecs: list[str] = []
+    audio_langs: list[str] = []
+    for s in kept_audio:
+        codec = s.get("target_codec") or s.get("codec")
+        if codec and codec not in audio_codecs:
+            audio_codecs.append(codec)
+        lang = naming.short_language(s.get("language"))
+        if lang and lang not in audio_langs:
+            audio_langs.append(lang)
+
+    sub_langs: list[str] = []
+    for s in kept_subs:
+        lang = naming.short_language(s.get("language"))
+        if lang and lang not in sub_langs:
+            sub_langs.append(lang)
+
+    video = inspection.get("video", {}) or {}
+    height = video.get("height")
+
+    return {
+        "title": title,
+        "year": naming.extract_year(title),
+        "quality": f"{height}p" if height else "",
+        "video_codec": video.get("codec") or "",
+        "audio_codecs": "+".join(audio_codecs),
+        "audio_languages": "-".join(audio_langs),
+        "subtitle_languages": "-".join(sub_langs),
+        "container": job_plan.get("container") or "mkv",
+    }
+
+
+def build_output_name_from_job(
+    job: models.MediaFile, job_plan: dict, inspection: dict, template: str
+) -> str | None:
+    """Full output file name for a job, or None to keep the original name."""
+    ctx = _naming_context(job, job_plan, inspection)
+    return naming.build_output_name(template=template, **ctx)
+
 
 # -------------------------------------------------
 # Main worker loop
@@ -1080,11 +1162,27 @@ def run_worker():
             job.verification_result = verification
 
             if verification == "ok":
-                
-                safe_replace_cross_fs(job.full_path, temp_output)
-            
+                # Naming (Settings -> Media Management): rename on the fly
+                final_path = job.full_path
+                naming_enabled, naming_template = _naming_config(db)
+                if naming_enabled:
+                    new_name = build_output_name_from_job(
+                        job, job_plan, inspection, naming_template
+                    )
+                    if new_name and new_name != os.path.basename(job.full_path):
+                        final_path = naming.unique_dest_path(
+                            os.path.dirname(job.full_path), new_name
+                        )
+                        logger.info(
+                            "Renaming output: %s -> %s",
+                            os.path.basename(job.full_path),
+                            os.path.basename(final_path),
+                        )
+
+                safe_replace_cross_fs(job.full_path, temp_output, dest_path=final_path)
+
                 # Re-scan final file for UI metadata
-                final_meta = get_video_metadata(job.full_path)
+                final_meta = get_video_metadata(final_path)
                 job.video_codec = final_meta.get("video_codec")
                 job.resolution = final_meta.get("resolution")
                 job.audio_codec = final_meta.get("audio_codec")
@@ -1092,8 +1190,10 @@ def run_worker():
                 job.subtitle_codec = final_meta.get("subtitle_codec")
                 job.subtitle_languages = final_meta.get("subtitle_languages")
 
+                job.full_path = final_path
+                job.file_name = os.path.basename(final_path)
                 job.status = "completed"
-                job.size_final = os.path.getsize(job.full_path)
+                job.size_final = os.path.getsize(final_path)
             else:
                 job.status = "failed"
                 job.last_error = verification

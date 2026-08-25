@@ -70,6 +70,45 @@
     </p>
   </div>
 
+  {# ------------------------------------------------------------ #}
+  {# Media Management: Naming (*arr style)                       #}
+  {# ------------------------------------------------------------ #}
+  <div class="rounded-lg border border-slate-700 bg-slate-900 p-5 mt-6">
+    <h2 class="text-sm font-bold text-slate-200 mb-1">{{ t('settings.media_management') }}</h2>
+
+    <label class="flex items-center gap-2 cursor-pointer mt-3">
+      <input type="checkbox" name="naming_enabled" value="1"
+             {% if naming_enabled == '1' %}checked{% endif %}
+             class="w-4 h-4 accent-amber-500">
+      <span class="text-sm font-semibold text-slate-200">{{ t('naming.enabled') }}</span>
+    </label>
+    <p class="text-xs text-slate-500 mb-3 ml-6">{{ t('naming.enabled_hint') }}</p>
+
+    <label for="naming_template" class="block text-xs font-bold text-slate-300 mb-1">{{ t('naming.template') }}</label>
+    <input
+      id="naming-template-input"
+      type="text"
+      name="naming_template"
+      value="{{ naming_template }}"
+      placeholder="{Title} [{Quality} {VideoCodec} {AudioLanguages}]"
+      class="w-full font-mono text-xs bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-slate-200 focus:outline-none focus:border-amber-500 mb-2"
+    >
+
+    <div class="flex flex-wrap gap-1 mb-3">
+      {% for token in ['Title', 'Year', 'Quality', 'VideoCodec', 'AudioCodec', 'AudioLanguages', 'SubtitleLanguages', 'Container'] %}
+        <button type="button" data-token="{{ token }}"
+                class="naming-token px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-[10px] font-mono text-amber-300 hover:bg-slate-700 transition-colors">
+          {'{''' }}{{ token }}{{ '}' }}
+        </button>
+      {% endfor %}
+    </div>
+
+    <div class="rounded-md bg-slate-950 border border-slate-800 px-3 py-2 text-xs">
+      <span class="text-slate-500 font-bold uppercase tracking-widest mr-2">{{ t('naming.preview') }}</span>
+      <span id="naming-preview" class="font-mono text-green-400"></span>
+    </div>
+  </div>
+
   <script>
     document.addEventListener("DOMContentLoaded", () => {
       const input = document.getElementById("api-key-input");
@@ -81,6 +120,44 @@
           toggle.textContent = show ? "🙈" : "👁";
         });
       }
+    });
+  </script>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      const input = document.getElementById("naming-template-input");
+      const preview = document.getElementById("naming-preview");
+      if (!input || !preview) return;
+
+      let timer = null;
+      function updatePreview() {
+        clearTimeout(timer);
+        timer = setTimeout(async () => {
+          const template = encodeURIComponent(input.value);
+          try {
+            const res = await fetch(`/settings/naming/preview?template=${template}`);
+            const data = await res.json();
+            preview.textContent = data.name || "—";
+          } catch (err) {
+            preview.textContent = "—";
+          }
+        }, 250);
+      }
+
+      input.addEventListener("input", updatePreview);
+
+      document.querySelectorAll(".naming-token").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const token = btn.dataset.token;
+          const insert = `{${token}}`;
+          const start = input.selectionStart ?? input.value.length;
+          input.value = input.value.slice(0, start) + insert + input.value.slice(input.selectionEnd ?? start);
+          input.focus();
+          updatePreview();
+        });
+      });
+
+      updatePreview();
     });
   </script>
 

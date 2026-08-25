@@ -16,6 +16,7 @@ from logging_setup import (
     set_log_level,
 )
 import i18n
+import naming
 
 import models
 import subprocess
@@ -96,6 +97,25 @@ def render(request: Request, name: str, db: Session, **context) -> HTMLResponse:
     context["lang"] = lang
     context["languages"] = i18n.LANGUAGES
     return templates.TemplateResponse(request=request, name=name, context=context)
+
+
+# -------------------------------------------------
+# Settings helpers (key/value table)
+# -------------------------------------------------
+
+def _get_setting(db: Session, key: str, default: str | None = None) -> str | None:
+    row = db.query(models.Setting).filter(models.Setting.key == key).first()
+    if row and row.value is not None:
+        return row.value
+    return default
+
+
+def _set_setting(db: Session, key: str, value: str) -> None:
+    row = db.query(models.Setting).filter(models.Setting.key == key).first()
+    if row:
+        row.value = value
+    else:
+        db.add(models.Setting(key=key, value=value))
 
 
 # -------------------------------------------------
@@ -1024,12 +1044,61 @@ async def get_settings(request: Request, db: Session = Depends(get_db)):
         log_level=get_log_level(),
         log_dir=LOG_DIR,
         api_key=get_api_key(db),
+        naming_enabled=_get_setting(db, "naming_enabled", "0"),
+        naming_template=_get_setting(db, "naming_template", ""),
     )
 
 
 @app.post("/settings/api-key/reset")
 async def reset_api_key_route(db: Session = Depends(get_db)):
     reset_api_key(db)
+    return RedirectResponse(url="/settings", status_code=303)
+
+
+@app.get("/settings/naming/preview")
+async def naming_preview(template: str = ""):
+    """Live preview for the naming template, using a sample movie."""
+    name = naming.build_output_name(
+        template=template,
+        title="Matrix Revolutions",
+        year="2003",
+        quality="1080p",
+        video_codec="h264",
+        audio_codecs="E-AC3",
+        audio_languages="ES-EN",
+        subtitle_languages="ES",
+        container="mkv",
+    )
+    return {"name": name}
+
+
+@app.post("/settings")
+async def save_settings(
+    log_level: str = Form(...),
+    ui_language: str = Form(None),
+    naming_enabled: str = Form(None),
+    naming_template: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    try:
+        applied = set_log_level(log_level)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid log level")
+    ui_logger.info("Log level changed to %s (runtime, no restart)", applied)
+
+    if ui_language and i18n.is_valid_language(ui_language):
+        _set_setting(db, "ui_language", ui_language)
+        ui_logger.info("UI language changed to %s (runtime, no restart)", ui_language)
+
+    _set_setting(db, "naming_enabled", "1" if naming_enabled else "0")
+    _set_setting(db, "naming_template", naming_template)
+    ui_logger.info(
+        "Naming config saved (enabled=%s, template=%s)",
+        bool(naming_enabled),
+        naming_template,
+    )
+    db.commit()
+
     return RedirectResponse(url="/settings", status_code=303)
 
 
