@@ -192,7 +192,7 @@
                         <form
                             action="/libraries/{{ lib.id }}/delete"
                             method="POST"
-                            onsubmit="return confirm('{{ t('lib.delete_confirm')|escapejs }}');"
+                            onsubmit="return confirm('{{ t('lib.delete_confirm')|e }}');"
                         >
                             <button
                                 type="submit"
