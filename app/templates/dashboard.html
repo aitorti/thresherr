@@ -469,6 +469,13 @@
             if (previousStatus !== "completed" && status === "completed") {
               refreshMediaRow(id);
             }
+          } else if (
+            status === "completed" &&
+            !card.dataset.rowRefreshedAt
+          ) {
+            // Completed but never refreshed in this session (e.g. the tab
+            // was in the background during the transition): sync it now.
+            refreshMediaRow(id);
           }
         });
       } catch (err) {
@@ -551,6 +558,23 @@
         if (inspectBtn && data.file_name) {
           inspectBtn.dataset.fileName = data.file_name;
         }
+
+        // Fresh compliance state: a just-completed file may now match the
+        // profile (green check) even if it did not when the page loaded.
+        if (typeof data.profile_compliant === "boolean") {
+          card.dataset.profileCompliant = data.profile_compliant ? "true" : "false";
+        }
+
+        // Re-render status badge + actions with the fresh state
+        const statusCell = card.querySelector("[data-role='status']");
+        const actionCell = card.querySelector("[data-role='actions']");
+        if (statusCell && actionCell && data.status) {
+          updateStatusBadge(statusCell, data.status);
+          updateActions(actionCell, data.status, mediaId);
+        }
+
+        // Mark as refreshed in this session (see pollStatuses)
+        card.dataset.rowRefreshedAt = String(Date.now());
       } catch (err) {
         console.error("Error refreshing media row:", err);
       }

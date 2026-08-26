@@ -1204,9 +1204,20 @@ async def get_media_row(media_id: int, db: Session = Depends(get_db)):
     if not media:
         return {}
 
+    # Fresh compliance for the refreshed row (a just-completed file that now
+    # matches the profile must show the green check)
+    compliant = (
+        media.status in ("pending", "completed")
+        and media.library is not None
+        and media.library.profile is not None
+        and compliance.compliance_from_summary(media, media.library.profile)
+    )
+
     return {
         "id": media.id,
         "status": media.status,
+        "effective_status": "completed" if compliant else media.status,
+        "profile_compliant": compliant,
         "file_name": media.file_name,
         "year": naming.extract_year(media.file_name),
 
