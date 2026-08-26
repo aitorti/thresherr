@@ -5,6 +5,7 @@ import json
 import unicodedata
 from sqlalchemy.orm import Session
 import models
+import naming
 from logging_setup import get_logger
 
 logger = get_logger("scanner")
@@ -155,19 +156,8 @@ def refine_spanish_language(tags: dict) -> str:
     return infer_stream_language(tags)
 
 def get_resolution_name(height: int | None) -> str:
-    if not height:
-        return "Unknown"
-    if height >= 2160:
-        return "2160p"
-    if height >= 1440:
-        return "1440p"
-    if height >= 1080:
-        return "1080p"
-    if height >= 720:
-        return "720p"
-    if height >= 480:
-        return "480p"
-    return f"{height}p"
+    """Backwards-compatible wrapper (deprecated: height-only)."""
+    return naming.quality_from_dimensions(None, height) or "Unknown"
 
 # -------------------------------------------------
 # Metadata extraction (SUMMARY ONLY)
@@ -212,7 +202,11 @@ def get_video_metadata(file_path: str) -> dict:
 
             if stype == "video" and not video_codec:
                 video_codec = codec
-                resolution = get_resolution_name(stream.get("height"))
+                # Commercial tier from BOTH dimensions (letterbox-safe):
+                # a 1920x800 scope release is 1080p, not 720p.
+                resolution = naming.quality_from_dimensions(
+                    stream.get("width"), stream.get("height")
+                )
 
             elif stype == "audio":
                 audio_codecs.add(codec)

@@ -113,6 +113,8 @@ def quality_from_dimensions(width: int | None, height: int | None) -> str | None
     h = height or 0
     if w >= 3840 or h >= 2160:
         return "2160p"
+    if w >= 2560 or h >= 1440:
+        return "1440p"
     if w >= 1920 or h >= 1080:
         return "1080p"
     if w >= 1280 or h >= 720:
