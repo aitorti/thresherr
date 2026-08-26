@@ -426,10 +426,11 @@
       const container = cell.querySelector(".primary-actions");
       if (!container) return;
 
+      const card = cell.closest("[data-media-id]");
+      const blocked = card && card.dataset.undBlocked === "true";
+      const compliant = card && card.dataset.profileCompliant === "true";
+
       if (status === "pending") {
-        const card = cell.closest("[data-media-id]");
-        const blocked = card && card.dataset.undBlocked === "true";
-        const compliant = card && card.dataset.profileCompliant === "true";
         if (blocked) {
           container.innerHTML = `<span class="text-slate-600 text-sm cursor-not-allowed" title="${I18N.blockedTitle}">⛔</span>`;
         } else if (compliant) {
