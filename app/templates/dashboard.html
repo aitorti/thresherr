@@ -7,6 +7,18 @@
 {# Shared *arr-style macros (buttons, badges, actions) #}
 {% from "_macros.html" import enqueue_btn, dequeue_btn, rescan_btn, inspect_btn, primary_actions, status_badge, poster_placeholder with context %}
 
+{# ------------------------------------------------------------------ #}
+{# Page header: title + Scan for New Media (primary action)           #}
+{# ------------------------------------------------------------------ #}
+<div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+  <h1 class="text-2xl font-extrabold text-slate-100">{{ t('dash.title') }}</h1>
+  <a href="/scan"
+     class="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-amber-600 text-sm text-slate-950 font-bold hover:bg-amber-500 transition-colors">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/><path d="M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+    {{ t('dash.scan_btn') }}
+  </a>
+</div>
+
 {% if q %}
 <div class="mb-4 flex items-center gap-3 rounded-md border border-amber-800/50 bg-amber-900/20 px-3 py-2 text-sm">
   <span class="text-slate-300">{{ t('search.filtered_by') }}: <strong class="text-amber-300">{{ q }}</strong></span>
