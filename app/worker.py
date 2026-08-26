@@ -1290,7 +1290,7 @@ def run_worker():
                         )
 
                 # Recycle bin: park the ORIGINAL file before it gets replaced
-                recycle_enabled, recycle_path, _ = _recycle_config(db)
+                recycle_enabled, recycle_path, _ = tasks.recycle_config(db)
                 if recycle_enabled and recycle_path:
                     try:
                         parked = move_to_recycle_bin(job.full_path, recycle_path)
