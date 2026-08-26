@@ -176,18 +176,18 @@
         <tr class="hover:bg-slate-700/20 transition-colors text-sm" data-media-id="{{ file.id }}"
             data-und-blocked="{% if (file.audio_languages and "und" in file.audio_languages) or (file.subtitle_languages and "und" in file.subtitle_languages) %}{% if not file.stream_overrides %}true{% else %}false{% endif %}{% else %}false{% endif %}"
        data-profile-compliant="{{ 'true' if file.profile_compliant else 'false' }}">
-          <td class="px-4 py-3 font-semibold text-slate-100 truncate max-w-[280px]" title="{{ file.file_name }}">{{ file.file_name }}</td>
+          <td class="px-4 py-3 font-semibold text-slate-100 truncate max-w-[280px]" data-field="file_name" title="{{ file.file_name }}">{{ file.file_name }}</td>
           <td class="px-4 py-3 text-slate-400 font-mono whitespace-nowrap">{{ file.year or '—' }}</td>
           <td class="px-4 py-3 text-slate-500 font-mono italic whitespace-nowrap">{{ file.library.name if file.library else '—' }}</td>
           <td class="px-4 py-3 text-slate-400 font-mono whitespace-nowrap" data-field="resolution">{{ file.resolution or '—' }}</td>
           <td class="px-4 py-3 text-right text-slate-200 font-mono whitespace-nowrap">{{ (file.size_original / 1048576)|round(0)|int if file.size_original is not none else '—' }} MB</td>
           <td class="px-4 py-3">
             <div class="text-blue-400 font-medium uppercase text-xs" data-field="audio_codec">{{ file.audio_codec or '—' }}</div>
-            <div class="text-[10px] text-slate-400 italic mt-0.5">{{ file.audio_languages or '-' }}</div>
+            <div class="text-[10px] text-slate-400 italic mt-0.5" data-field="audio_languages">{{ file.audio_languages or '-' }}</div>
           </td>
           <td class="px-4 py-3">
-            <div class="text-green-400 font-medium uppercase text-xs">{{ file.subtitle_codec or '—' }}</div>
-            <div class="text-[10px] text-slate-400 italic mt-0.5">{{ file.subtitle_languages or '-' }}</div>
+            <div class="text-green-400 font-medium uppercase text-xs" data-field="subtitle_codec">{{ file.subtitle_codec or '—' }}</div>
+            <div class="text-[10px] text-slate-400 italic mt-0.5" data-field="subtitle_languages">{{ file.subtitle_languages or '-' }}</div>
           </td>
           <td class="px-4 py-3 text-right text-slate-300 font-mono whitespace-nowrap" data-field="size_final">
             {% if file.status == 'completed' and file.size_final is not none %}
@@ -218,12 +218,12 @@
        data-profile-compliant="{{ 'true' if file.profile_compliant else 'false' }}">
     {{ poster_placeholder('') }}
     <div class="p-2.5 flex-1 flex flex-col gap-1.5">
-      <div class="text-xs font-semibold text-slate-100 truncate" title="{{ file.file_name }}">{{ file.file_name }}</div>
-      <div class="text-[10px] text-slate-500 font-mono">
+      <div class="text-xs font-semibold text-slate-100 truncate" data-field="file_name" title="{{ file.file_name }}">{{ file.file_name }}</div>
+      <div class="text-[10px] text-slate-500 font-mono" data-field="poster_meta">
         {{ file.year or '—' }} · {{ file.resolution or '—' }} · {{ (file.size_original / 1048576)|round(0)|int if file.size_original is not none else '—' }} MB
       </div>
-      <div class="text-[10px] text-slate-500 truncate" title="{{ file.audio_languages or '' }}">{{ t('dash.col.audio') }}: {{ file.audio_languages or '—' }}</div>
-      <div class="text-[10px] text-slate-500 truncate" title="{{ file.subtitle_languages or '' }}">{{ t('dash.col.subtitles') }}: {{ file.subtitle_languages or '—' }}</div>
+      <div class="text-[10px] text-slate-500 truncate" title="{{ file.audio_languages or '' }}">{{ t('dash.col.audio') }}: <span data-field="audio_languages">{{ file.audio_languages or '—' }}</span></div>
+      <div class="text-[10px] text-slate-500 truncate" title="{{ file.subtitle_languages or '' }}">{{ t('dash.col.subtitles') }}: <span data-field="subtitle_languages">{{ file.subtitle_languages or '—' }}</span></div>
       <div class="mt-auto pt-1 flex items-center justify-between gap-1">
         <div data-role="status" data-current-status="{{ file.status }}">{{ status_badge(file) }}</div>
         <div data-role="actions">{{ primary_actions(file) }}</div>
@@ -248,8 +248,8 @@
        data-profile-compliant="{{ 'true' if file.profile_compliant else 'false' }}">
     <div class="w-16 shrink-0">{{ poster_placeholder('rounded-lg overflow-hidden text-2xl') }}</div>
     <div class="flex-1 min-w-0">
-      <div class="font-semibold text-slate-100 truncate" title="{{ file.file_name }}">{{ file.file_name }}</div>
-      <div class="text-xs text-slate-400 mt-0.5">
+      <div class="font-semibold text-slate-100 truncate" data-field="file_name" title="{{ file.file_name }}">{{ file.file_name }}</div>
+      <div class="text-xs text-slate-400 mt-0.5" data-field="overview_meta">
         {{ file.year or '—' }} · {{ file.resolution or '—' }} · {{ file.video_codec or '—' }} ·
         {{ file.audio_codec or '—' }} ({{ file.audio_languages or '—' }}) ·
         {{ file.subtitle_codec or '—' }} ({{ file.subtitle_languages or '—' }})
@@ -494,6 +494,16 @@
       }
     }
 
+    // Fields refreshed from /api/media/{id}/row when a file completes
+    const ROW_TEXT_FIELDS = {
+      file_name: (d) => d.file_name || "—",
+      resolution: (d) => d.resolution || "—",
+      audio_codec: (d) => d.audio_codec || "—",
+      audio_languages: (d) => d.audio_languages || "-",
+      subtitle_codec: (d) => d.subtitle_codec || "—",
+      subtitle_languages: (d) => d.subtitle_languages || "-",
+    };
+
     async function refreshMediaRow(mediaId) {
       try {
         const response = await fetch(`/api/media/${mediaId}/row`);
@@ -505,18 +515,43 @@
         const card = document.querySelector(`[data-media-id="${mediaId}"]`);
         if (!card) return;
 
-        const resCell = card.querySelector('[data-field="resolution"]');
-        if (resCell) resCell.textContent = data.resolution || "---";
-
+        // Final size (special HTML: green value or placeholder)
         const sizeCell = card.querySelector('[data-field="size_final"]');
         if (sizeCell) {
           sizeCell.innerHTML = data.size_final_mb
             ? `<span class="text-green-400">${data.size_final_mb} MB</span>`
-            : `<span class="text-slate-600">-</span>`;
+            : `<span class="text-slate-600">—</span>`;
         }
 
-        const audioCell = card.querySelector('[data-field="audio_codec"]');
-        if (audioCell) audioCell.textContent = data.audio_codec || "None";
+        // Simple text fields (table + posters)
+        for (const [field, fn] of Object.entries(ROW_TEXT_FIELDS)) {
+          const el = card.querySelector(`[data-field="${field}"]`);
+          if (!el) continue;
+          const value = fn(data);
+          el.textContent = value;
+          if (field === "file_name") el.title = value;
+        }
+
+        // Composite lines (posters / overview)
+        const posterMeta = card.querySelector('[data-field="poster_meta"]');
+        if (posterMeta) {
+          posterMeta.textContent =
+            `${data.year || "—"} · ${data.resolution || "—"} · ` +
+            `${data.size_original_mb ?? "—"} MB`;
+        }
+        const overviewMeta = card.querySelector('[data-field="overview_meta"]');
+        if (overviewMeta) {
+          overviewMeta.textContent =
+            `${data.year || "—"} · ${data.resolution || "—"} · ${data.video_codec || "—"} · ` +
+            `${data.audio_codec || "—"} (${data.audio_languages || "—"}) · ` +
+            `${data.subtitle_codec || "—"} (${data.subtitle_languages || "—"})`;
+        }
+
+        // Inspect button keeps the fresh file name (modal title)
+        const inspectBtn = card.querySelector(".inspect-streams");
+        if (inspectBtn && data.file_name) {
+          inspectBtn.dataset.fileName = data.file_name;
+        }
       } catch (err) {
         console.error("Error refreshing media row:", err);
       }

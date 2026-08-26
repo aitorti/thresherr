@@ -1207,6 +1207,8 @@ async def get_media_row(media_id: int, db: Session = Depends(get_db)):
     return {
         "id": media.id,
         "status": media.status,
+        "file_name": media.file_name,
+        "year": naming.extract_year(media.file_name),
 
         "video_codec": media.video_codec,
         "resolution": media.resolution,
@@ -1221,6 +1223,11 @@ async def get_media_row(media_id: int, db: Session = Depends(get_db)):
         "size_final_mb": (
             round(media.size_final / 1048576)
             if media.size_final is not None
+            else None
+        ),
+        "size_original_mb": (
+            round(media.size_original / 1048576)
+            if media.size_original is not None
             else None
         ),
     }
