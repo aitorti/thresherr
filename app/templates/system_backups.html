@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-5xl">
+  <!-- Breadcrumb, *arr style -->
+  <div class="text-xs text-slate-500 font-semibold mb-1">{{ t('nav.system') }} → {{ t('nav.backups') }}</div>
+
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+    <h1 class="text-2xl font-extrabold text-slate-100">{{ t('backups.title') }}</h1>
+    <form method="post" action="/system/backups/create">
+      <button type="submit"
+              class="px-4 py-2 rounded-md bg-amber-600 text-sm text-slate-950 font-bold hover:bg-amber-500 transition-colors">
+        {{ t('backups.create') }}
+      </button>
+    </form>
+  </div>
+
+  {% if pending_restore %}
+  <div class="rounded-lg border border-amber-700 bg-amber-950/50 px-4 py-3 text-sm text-amber-200 mb-4">
+    ⚠️ {{ t('backups.pending_banner') }}
+  </div>
+  {% endif %}
+
+  <p class="text-xs text-slate-500 mb-3">
+    {{ t('backups.location') }}
+    <code class="font-mono text-slate-300">{{ backup_dir }}</code>
+  </p>
+
+  <!-- Backup list -->
+  <div class="rounded-lg border border-slate-700 bg-slate-900 overflow-hidden mb-6">
+    <table class="w-full text-left">
+      <thead>
+        <tr class="bg-slate-800/80 text-[10px] uppercase tracking-widest text-slate-400">
+          <th class="py-2 px-3 font-bold">{{ t('backups.col.name') }}</th>
+          <th class="py-2 px-3 font-bold">{{ t('backups.col.time') }}</th>
+          <th class="py-2 px-3 font-bold">{{ t('backups.col.size') }}</th>
+          <th class="py-2 px-3 font-bold text-right">{{ t('backups.col.actions') }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in backups %}
+        <tr class="border-t border-slate-800 hover:bg-slate-800/40">
+          <td class="py-2 px-3 font-mono text-xs text-slate-200">{{ b.name }}</td>
+          <td class="py-2 px-3 text-sm text-slate-300">{{ b.time_str }}</td>
+          <td class="py-2 px-3 text-sm text-slate-300">{{ b.size_str }}</td>
+          <td class="py-2 px-3">
+            <div class="flex justify-end gap-1">
+              <form method="post" action="/system/backups/{{ b.name }}/restore" class="inline"
+                    onsubmit="return confirm('{{ t('backups.restore_confirm', name=b.name)|e }}');">
+                <button type="submit"
+                        class="px-2 py-1 rounded bg-slate-800 border border-slate-700 text-[11px] text-amber-300 hover:bg-slate-700 transition-colors">
+                  {{ t('backups.restore') }}
+                </button>
+              </form>
+              <a href="/system/backups/{{ b.name }}/download"
+                 class="px-2 py-1 rounded bg-slate-800 border border-slate-700 text-[11px] text-slate-200 hover:bg-slate-700 transition-colors">
+                {{ t('backups.download') }}
+              </a>
+              <form method="post" action="/system/backups/{{ b.name }}/delete" class="inline"
+                    onsubmit="return confirm('{{ t('backups.delete_confirm', name=b.name)|e }}');">
+                <button type="submit"
+                        class="px-2 py-1 rounded bg-slate-800 border border-slate-700 text-[11px] text-red-400 hover:bg-slate-700 transition-colors">
+                  {{ t('backups.delete') }}
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="4" class="py-6 text-center text-sm text-slate-500">{{ t('backups.empty') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Automatic backups configuration -->
+  <form method="post" action="/system/backups/settings"
+        class="rounded-lg border border-slate-700 bg-slate-900 p-5 space-y-4 max-w-xl">
+    <h2 class="text-sm font-bold text-slate-200">{{ t('backups.auto.title') }}</h2>
+
+    <div>
+      <label for="backup_interval_days" class="block text-xs font-bold text-slate-300 mb-1">{{ t('backups.auto.interval') }}</label>
+      <input
+        type="number"
+        name="backup_interval_days"
+        value="{{ interval_days }}"
+        min="0"
+        max="365"
+        class="w-24 bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-amber-500"
+      >
+      <p class="text-xs text-slate-500 mt-1">{{ t('backups.auto.interval_hint') }}</p>
+    </div>
+
+    <div>
+      <label for="backup_retention" class="block text-xs font-bold text-slate-300 mb-1">{{ t('backups.auto.retention') }}</label>
+      <input
+        type="number"
+        name="backup_retention"
+        value="{{ retention }}"
+        min="1"
+        max="100"
+        class="w-24 bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-amber-500"
+      >
+      <p class="text-xs text-slate-500 mt-1">{{ t('backups.auto.retention_hint') }}</p>
+    </div>
+
+    <button type="submit"
+            class="px-4 py-2 rounded-md bg-amber-600 text-sm text-slate-950 font-bold hover:bg-amber-500 transition-colors">
+      {{ t('settings.save') }}
+    </button>
+  </form>
+</div>
+{% endblock %}

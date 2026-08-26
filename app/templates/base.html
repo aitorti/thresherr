@@ -152,8 +152,9 @@
             {{ t('nav.tasks') }}
           </a>
 
-          <a href="#" class="block px-3 py-2 rounded-md mb-1 text-slate-500 cursor-not-allowed"
-             title="{{ t('nav.coming_soon') }}">
+          <a href="/system/backups"
+             class="block px-3 py-2 rounded-md mb-1 transition-colors
+                    {% if path.startswith('/system/backups') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
             {{ t('nav.backups') }}
           </a>
 
@@ -300,6 +301,24 @@
       const params = new URLSearchParams(window.location.search);
       if (params.get("error") === "und_blocked") {
         showBanner("{{ t('flash.und_blocked') }}", "error");
+      }
+      if (params.get("error") === "backup_failed") {
+        showBanner("{{ t('backups.create_failed') }}", "error");
+      }
+      if (params.get("error") === "restore_failed") {
+        showBanner("{{ t('backups.restore_failed') }}", "error");
+      }
+      if (params.get("backup") === "ok") {
+        showBanner("{{ t('backups.created_ok') }}", "success");
+      }
+      if (params.get("restore") === "ok") {
+        showBanner("{{ t('backups.restore_ok') }}", "info");
+      }
+      if (params.get("delete") === "ok") {
+        showBanner("{{ t('backups.deleted_ok') }}", "success");
+      }
+      if (params.get("saved") === "ok") {
+        showBanner("{{ t('backups.saved_ok') }}", "success");
       }
       const batch = params.get("batch");
       if (batch) {

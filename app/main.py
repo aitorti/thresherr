@@ -4,7 +4,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi import APIRouter
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from database import engine, SessionLocal
+from database import engine, SessionLocal, DB_PATH
 from scanner import scan_libraries, get_video_metadata
 from typing import Optional, Dict
 from logging_setup import (
@@ -17,6 +17,7 @@ from logging_setup import (
 )
 import i18n
 import naming
+import backups
 
 import models
 import subprocess
@@ -342,6 +343,41 @@ async def api_system_status(db: Session = Depends(get_db)):
         "version": APP_VERSION,
         "stats": compute_global_stats(db),
     }
+
+
+@api_v1.get("/system/backups")
+async def api_list_backups():
+    """List available backups (newest first)."""
+    return {"backups": backups.list_backups(backups.BACKUP_DIR)}
+
+
+@api_v1.post("/system/backups")
+async def api_create_backup(db: Session = Depends(get_db)):
+    """Create a backup right now (manual/on-demand, e.g. from a cron)."""
+    try:
+        path = backups.create_backup(DB_PATH, backups.BACKUP_DIR)
+        try:
+            retention = int(_get_setting(db, "backup_retention", "7") or "7")
+        except ValueError:
+            retention = 7
+        removed = backups.enforce_retention(backups.BACKUP_DIR, retention)
+        ui_logger.info(
+            "API backup created: %s (retention removed %s)",
+            os.path.basename(path),
+            removed,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Backup failed: {exc}")
+    return {"id": os.path.basename(path), "path": path}
+
+
+@api_v1.delete("/system/backups/{name}")
+async def api_delete_backup(name: str):
+    """Delete a backup by file name."""
+    if not backups.delete_backup(backups.BACKUP_DIR, name):
+        raise HTTPException(status_code=404, detail="Backup not found")
+    ui_logger.info("API backup deleted: %s", name)
+    return {"deleted": name}
 
 
 app.include_router(api_v1)
@@ -1359,6 +1395,117 @@ async def delete_log_file(file_name: str):
     os.remove(path)
     ui_logger.info("Log file deleted: %s", name)
     return RedirectResponse(url="/system/logfiles", status_code=303)
+
+
+# -------------------------------------------------
+# SYSTEM: BACKUPS (*arr-style, System -> Backups)
+# -------------------------------------------------
+# Backups are consistent SQLite snapshots (Online Backup API) packed as
+# timestamped ZIPs in /data/backups. Restore is STAGED: the validated
+# database is left as thresherr.db.pending_restore and applied on the next
+# startup (see database._apply_pending_restore), so a stack restart is
+# required to complete a restore. This avoids replacing a live WAL database
+# behind running processes.
+
+@app.get("/system/backups", response_class=HTMLResponse)
+async def system_backups(request: Request, db: Session = Depends(get_db)):
+    stats = compute_global_stats(db)
+    fmt_dt = _make_fmt_dt(db)
+    backup_list = backups.list_backups(backups.BACKUP_DIR)
+    for b in backup_list:
+        b["time_str"] = fmt_dt(datetime.fromtimestamp(b["mtime"]))
+        b["size_str"] = backups.format_size(b["size"])
+    return render(
+        request=request,
+        name="system_backups.html",
+        db=db,
+        **stats,
+        backups=backup_list,
+        backup_dir=backups.BACKUP_DIR,
+        pending_restore=backups.pending_restore_exists(DB_PATH),
+        interval_days=_get_setting(db, "backup_interval_days", "7"),
+        retention=_get_setting(db, "backup_retention", "7"),
+    )
+
+
+@app.post("/system/backups/create")
+async def create_backup_route(db: Session = Depends(get_db)):
+    try:
+        path = backups.create_backup(DB_PATH, backups.BACKUP_DIR)
+        try:
+            retention = int(_get_setting(db, "backup_retention", "7") or "7")
+        except ValueError:
+            retention = 7
+        removed = backups.enforce_retention(backups.BACKUP_DIR, retention)
+        ui_logger.info(
+            "Backup created: %s (retention removed %s)",
+            os.path.basename(path),
+            removed,
+        )
+        return RedirectResponse(url="/system/backups?backup=ok", status_code=303)
+    except Exception as exc:
+        ui_logger.error("Backup creation failed: %s", exc)
+        return RedirectResponse(
+            url="/system/backups?error=backup_failed", status_code=303
+        )
+
+
+@app.post("/system/backups/settings")
+async def save_backup_settings(
+    backup_interval_days: str = Form("7"),
+    backup_retention: str = Form("7"),
+    db: Session = Depends(get_db),
+):
+    try:
+        interval = max(0, int(backup_interval_days))
+    except ValueError:
+        interval = 7
+    try:
+        retention = max(1, int(backup_retention))
+    except ValueError:
+        retention = 7
+    _set_setting(db, "backup_interval_days", str(interval))
+    _set_setting(db, "backup_retention", str(retention))
+    db.commit()
+    ui_logger.info(
+        "Backup settings saved (interval=%s days, retention=%s)",
+        interval,
+        retention,
+    )
+    return RedirectResponse(url="/system/backups?saved=ok", status_code=303)
+
+
+@app.get("/system/backups/{name}/download")
+async def download_backup_route(name: str):
+    path = backups.safe_backup_path(backups.BACKUP_DIR, name)
+    if not path:
+        raise HTTPException(status_code=404, detail="Backup not found")
+    return FileResponse(path, media_type="application/zip", filename=name)
+
+
+@app.post("/system/backups/{name}/restore")
+async def restore_backup_route(name: str):
+    try:
+        pending = backups.stage_restore(backups.BACKUP_DIR, name, DB_PATH)
+    except ValueError as exc:
+        ui_logger.error("Restore rejected for %s: %s", name, exc)
+        return RedirectResponse(
+            url="/system/backups?error=restore_failed", status_code=303
+        )
+    ui_logger.warning(
+        "Restore staged from %s -> %s (stack restart required)",
+        name,
+        pending,
+    )
+    return RedirectResponse(url="/system/backups?restore=ok", status_code=303)
+
+
+@app.post("/system/backups/{name}/delete")
+async def delete_backup_route(name: str):
+    if not backups.delete_backup(backups.BACKUP_DIR, name):
+        raise HTTPException(status_code=404, detail="Backup not found")
+    ui_logger.info("Backup deleted: %s", name)
+    return RedirectResponse(url="/system/backups?delete=ok", status_code=303)
 
 
 # -------------------------------------------------

@@ -9,9 +9,10 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from scanner import get_video_metadata
 from scanner import infer_stream_language
-from database import SessionLocal, engine
+from database import SessionLocal, engine, DB_PATH
 from logging_setup import get_logger, setup_logging
 import naming
+import backups
 
 logger = get_logger("worker")
 
@@ -1154,6 +1155,42 @@ def cleanup_recycle_bin(recycle_dir: str, days: int) -> int:
 
 
 # -------------------------------------------------
+# Automatic backups (*arr style, System -> Backups)
+# -------------------------------------------------
+
+def maybe_automatic_backup(db) -> str | None:
+    """
+    Create a backup when the configured interval (days) has elapsed since
+    the last one. Returns the created backup file name, or None when not
+    due or disabled (interval 0).
+    """
+    def val(key: str, default: str | None = None) -> str | None:
+        row = db.query(models.Setting).filter(models.Setting.key == key).first()
+        return row.value if row and row.value is not None else default
+
+    try:
+        interval = int(val("backup_interval_days", "7") or "7")
+    except ValueError:
+        interval = 7
+    if interval <= 0:
+        return None
+
+    existing = backups.list_backups(backups.BACKUP_DIR)
+    if existing and (time.time() - existing[0]["mtime"]) < interval * 86400:
+        return None  # not due yet
+
+    path = backups.create_backup(DB_PATH, backups.BACKUP_DIR)
+    try:
+        retention = int(val("backup_retention", "7") or "7")
+    except ValueError:
+        retention = 7
+    removed = backups.enforce_retention(backups.BACKUP_DIR, retention)
+    if removed:
+        logger.info("Backup retention removed %s old backup(s)", removed)
+    return os.path.basename(path)
+
+
+# -------------------------------------------------
 # Main worker loop
 # -------------------------------------------------
 
@@ -1308,6 +1345,16 @@ def run_worker():
                         logger.info(
                             "Recycle bin cleanup: removed %s file(s)", removed
                         )
+
+                    # Automatic backups (System -> Backups)
+                    try:
+                        created = maybe_automatic_backup(_cleanup_db)
+                        if created:
+                            logger.info(
+                                "Automatic backup created: %s", created
+                            )
+                    except Exception as exc:
+                        logger.error("Automatic backup failed: %s", exc)
                 finally:
                     _cleanup_db.close()
 
