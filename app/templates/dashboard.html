@@ -451,7 +451,6 @@
       try {
         const response = await fetch("/api/media/status");
         const data = await response.json();
-
         data.forEach(({ id, status }) => {
           const card = document.querySelector(`[data-media-id="${id}"]`);
           if (!card) return;
@@ -558,6 +557,18 @@
     }
 
     setInterval(() => { pollStatuses(); updateGlobalStats(); }, POLL_INTERVAL_MS);
+
+    // Refresh already-completed rows on load: corrects stale data from
+    // previous sessions (e.g. files that completed before this page was
+    // loaded) without needing a manual reload.
+    document.querySelectorAll('[data-role="status"]').forEach((cell) => {
+      if (cell.dataset.currentStatus === "completed") {
+        const card = cell.closest("[data-media-id]");
+        if (card && card.dataset.mediaId) {
+          refreshMediaRow(card.dataset.mediaId);
+        }
+      }
+    });
   });
 </script>
 
