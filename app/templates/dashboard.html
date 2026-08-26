@@ -15,6 +15,58 @@
 {% endif %}
 
 {# ------------------------------------------------------------------ #}
+{# Savings summary cards (*arr style, updated by polling)             #}
+{# ------------------------------------------------------------------ #}
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+  {# Total monitored #}
+  <div class="rounded-xl border border-slate-700 bg-slate-900 p-4 flex items-center gap-3">
+    <div class="w-10 h-10 shrink-0 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400">
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="17" x2="22" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/></svg>
+    </div>
+    <div class="min-w-0">
+      <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 truncate">{{ t('stats.total_monitored') }}</div>
+      <div class="text-xl font-extrabold text-slate-100" id="stats-total-gb">{{ total_gb }} GB</div>
+    </div>
+  </div>
+
+  {# Before processing #}
+  <div class="rounded-xl border border-slate-700 bg-slate-900 p-4 flex items-center gap-3">
+    <div class="w-10 h-10 shrink-0 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400">
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="12" x2="2" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" y1="16" x2="6.01" y2="16"/><line x1="10" y1="16" x2="10.01" y2="16"/></svg>
+    </div>
+    <div class="min-w-0">
+      <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 truncate">{{ t('stats.before') }}</div>
+      <div class="text-xl font-extrabold text-slate-100" id="stats-processed-orig">{{ processed_orig_gb }} GB</div>
+    </div>
+  </div>
+
+  {# After processing #}
+  <div class="rounded-xl border border-slate-700 bg-slate-900 p-4 flex items-center gap-3">
+    <div class="w-10 h-10 shrink-0 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center text-green-400">
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+    </div>
+    <div class="min-w-0">
+      <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 truncate">{{ t('stats.after') }}</div>
+      <div class="text-xl font-extrabold text-slate-100" id="stats-processed-final">{{ processed_final_gb }} GB</div>
+    </div>
+  </div>
+
+  {# Total savings — the hero card #}
+  <div class="rounded-xl border border-green-700/60 bg-green-950/30 p-4 flex items-center gap-3">
+    <div class="w-10 h-10 shrink-0 rounded-lg bg-green-900/60 border border-green-700/60 flex items-center justify-center text-green-400">
+      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/></svg>
+    </div>
+    <div class="min-w-0">
+      <div class="text-[10px] font-bold uppercase tracking-widest text-green-500/80 truncate">{{ t('stats.total_savings') }}</div>
+      <div class="flex items-baseline gap-2">
+        <span class="text-xl font-extrabold text-green-400" id="stats-savings-gb">{{ savings_gb }} GB</span>
+        <span class="text-xs font-bold text-green-500/80" id="stats-savings-pct">({{ savings_pct }}%)</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ------------------------------------------------------------------ #}
 {# Toolbar: view toggle + sorting + filters                            #}
 {# ------------------------------------------------------------------ #}
 <form method="get" action="/" class="flex flex-wrap items-center gap-3 mb-4">
