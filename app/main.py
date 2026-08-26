@@ -1423,28 +1423,38 @@ async def get_media_ffprobe(media_id: int, db: Session = Depends(get_db)):
 WHISPER_DEFAULT_URL = "http://whisper:8000/v1"
 
 
-def _detect_audio_language_whisper(file_path: str, stream_index: int, base_url: str) -> str | None:
-    """
-    Extract a 30s sample from the stream and ask the local Whisper
-    service for its language (last-resort detection, on demand).
-    """
-    if not base_url:
-        return None
-    sample = f"/tmp/thresherr_lang_{os.getpid()}_{stream_index}.mp3"
+def _probe_audio_duration(file_path: str) -> float | None:
+    """Best-effort media duration (seconds), for sample placement."""
     try:
         result = subprocess.run(
-            [
-                "ffmpeg", "-y", "-v", "error", "-i", file_path,
-                "-map", f"0:{stream_index}", "-t", "30", "-vn",
-                "-ac", "1", "-ar", "16000", "-f", "mp3", sample,
-            ],
+            ["ffprobe", "-v", "error", "-print_format", "json", "-show_format", file_path],
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=30,
         )
-        if result.returncode != 0 or not os.path.exists(sample) or os.path.getsize(sample) == 0:
-            return None
+        return float(json.loads(result.stdout)["format"]["duration"])
+    except Exception:
+        return None
 
+
+def _extract_audio_sample(file_path: str, stream_index: int, offset: float, out: str) -> bool:
+    """Extract up to 60s of mono 16k mp3 from the stream at offset. True if usable."""
+    result = subprocess.run(
+        [
+            "ffmpeg", "-y", "-v", "error", "-ss", str(offset),
+            "-i", file_path, "-map", f"0:{stream_index}", "-t", "60", "-vn",
+            "-ac", "1", "-ar", "16000", "-f", "mp3", out,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=90,
+    )
+    return result.returncode == 0 and os.path.exists(out) and os.path.getsize(out) > 0
+
+
+def _whisper_transcribe(sample: str, base_url: str) -> dict | None:
+    """POST the sample to the local Whisper service (verbose_json)."""
+    try:
         boundary = "----thresherr" + secrets.token_hex(8)
         with open(sample, "rb") as fh:
             audio = fh.read()
@@ -1469,10 +1479,45 @@ def _detect_audio_language_whisper(file_path: str, stream_index: int, base_url: 
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=180) as resp:
-            data = json.loads(resp.read())
-        return language_detect._normalize_lang(data.get("language"))
+            return json.loads(resp.read())
     except Exception as exc:
-        ui_logger.warning("Whisper language detection failed: %s", exc)
+        ui_logger.warning("Whisper transcription failed: %s", exc)
+        return None
+
+
+def _detect_audio_language_whisper(file_path: str, stream_index: int, base_url: str) -> str | None:
+    """
+    Sample the stream where there is likely dialogue (20% in, fallback start)
+    and ask the local Whisper service for its language (last-resort detection,
+    on demand).
+
+    Only trusts the language when Whisper actually transcribed text: an empty
+    transcript means no audible speech (studio logos, music-only passages,
+    damaged audio) and Whisper would just return its language prior (usually
+    'en') — assigning that would be a false positive.
+    """
+    if not base_url:
+        return None
+    sample = f"/tmp/thresherr_lang_{os.getpid()}_{stream_index}.mp3"
+    try:
+        duration = _probe_audio_duration(file_path)
+        offsets: list[float] = []
+        if duration and duration > 600:
+            # Long content: sample at 20% (dialogue), fall back to the start.
+            offsets.append(0.2 * duration)
+        offsets.append(0.0)
+
+        for offset in offsets:
+            if not _extract_audio_sample(file_path, stream_index, offset, sample):
+                continue
+            data = _whisper_transcribe(sample, base_url)
+            if not data:
+                continue
+            text = (data.get("text") or "").strip()
+            if not text:
+                # No speech captured -> the language would be the model prior.
+                continue
+            return language_detect._normalize_lang(data.get("language"))
         return None
     finally:
         try:

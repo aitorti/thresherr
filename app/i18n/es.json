@@ -1,6 +1,5 @@
 {
   "brand.title": "Thresherr 🌾 - Conversor de medios",
-
   "nav.media_files": "Archivos de medios supervisados",
   "nav.activities": "Actividades",
   "nav.history": "Historial",
@@ -18,17 +17,13 @@
   "nav.tasks": "Tareas",
   "nav.backups": "Copias de seguridad",
   "nav.coming_soon": "Próximamente",
-
   "stats.total_monitored": "Total supervisado",
   "stats.before": "Antes del procesado",
   "stats.after": "Después del procesado",
   "stats.total_savings": "Ahorro total",
-
   "flash.und_blocked": "⚠️ Bloqueado: pistas con idioma desconocido (und). Usa 🛠️ para asignar idiomas y desbloquear.",
   "flash.profile_ok": "Este archivo ya cumple el perfil — no necesita procesarse.",
-
   "profile.compliant_title": "No necesita procesarse",
-
   "dash.title": "Archivos de medios supervisados",
   "dash.scan_title": "Escanear bibliotecas en busca de archivos nuevos",
   "dash.scan_btn": "Escanear medios nuevos",
@@ -55,14 +50,12 @@
   "dash.inspect_title": "Inspeccionar metadatos de pistas",
   "dash.und_badge_title": "Pistas con idioma desconocido (und): requiere revisión manual con 🛠️",
   "dash.override_title": "Idioma asignado manualmente",
-
   "status.completed": "Completado",
   "status.processing": "Procesando",
   "status.scanning": "Trabajando",
   "status.failed": "Fallido",
   "status.queued": "En cola",
   "status.pending": "Pendiente",
-
   "dash.modal.title": "Inspección de pistas (ffprobe)",
   "dash.modal.raw": "Salida ffprobe en bruto",
   "dash.modal.parsed": "Vista de pistas analizada",
@@ -89,7 +82,7 @@
   "dash.modal.none": "Ninguna",
   "dash.modal.auto_detect": "Detectar idioma",
   "dash.modal.detect_running": "Detectando…",
-  "dash.modal.detect_failed": "No se pudo detectar el idioma. ¿Está configurado el servicio Whisper (Ajustes → General)?",
+  "dash.modal.detect_failed": "No se pudo determinar el idioma: el audio no tiene voz clara en las muestras (intros, música o audio dañado). Puedes asignar los idiomas manualmente en este modal.",
   "dash.modal.detect_ok": "Idioma detectado y guardado.",
   "view.table": "Tabla",
   "view.posters": "Pósters",
@@ -109,7 +102,6 @@
   "filter.subs": "Subtítulos",
   "dash.empty": "Ningún archivo coincide con los filtros.",
   "dash.count": "{count} archivos",
-
   "queue.title": "Cola de procesado",
   "queue.filter_all": "Todos",
   "queue.col.file": "Archivo",
@@ -118,7 +110,6 @@
   "queue.queued": "En cola ({count})",
   "queue.in_progress": "En curso ({count})",
   "queue.completed": "Completados ({count})",
-
   "lib.new": "Nueva biblioteca",
   "lib.name": "Nombre de la biblioteca",
   "lib.name_ph": "p. ej. Películas 1080p",
@@ -151,7 +142,6 @@
   "lib.modal.action_dequeue": "quitar {count} archivos de la cola",
   "lib.modal.action_rescan": "volver a escanear {count} archivos",
   "lib.modal.will": "Esta acción <strong>{action}</strong> de la biblioteca <strong>\"{name}\"</strong>.<br><br>¿Quieres continuar?",
-
   "prof.new": "Nueva configuración de perfil",
   "prof.name": "Nombre del perfil",
   "prof.name_ph": "p. ej. Alta calidad 4K",
@@ -170,7 +160,6 @@
   "prof.delete_confirm": "¿Eliminar perfil? Todas las bibliotecas asociadas también se eliminarán.",
   "prof.delete_title": "Eliminar perfil",
   "prof.empty": "Aún no hay perfiles.",
-
   "logs.title": "Registros",
   "logs.filter_all": "Todos",
   "logs.filter_info": "Info",
@@ -185,10 +174,8 @@
   "logs.load_more": "Cargar más",
   "logs.hint_level": "El nivel de registro se puede cambiar en",
   "logs.hint_files": "Los archivos completos están disponibles en",
-
   "settings.general_link": "Ajustes → General",
   "logfiles.link": "Sistema → Archivos de registro",
-
   "logfiles.title": "Archivos de registro",
   "logfiles.filename": "Nombre de archivo",
   "logfiles.last_write": "Última modificación",
@@ -201,12 +188,10 @@
   "logfiles.no_files": "No se encontraron archivos de registro.",
   "logfiles.rotate_hint": "Los archivos de registro rotan a 1 MB cada uno (5 copias), siguiendo la convención de la familia *arr.",
   "logfiles.location": "Ubicación:",
-
   "logview.back": "Volver",
   "logview.refresh": "Actualizar",
   "logview.download": "Descargar",
   "logview.truncated": "Mostrando solo los últimos 256 KB de este archivo. Usa Descargar para obtener el archivo completo.",
-
   "settings.general": "General",
   "settings.interfaz": "Interfaz",
   "settings.security": "Seguridad",
@@ -270,7 +255,6 @@
   "naming.template": "Plantilla de nombres",
   "naming.preview": "Vista previa",
   "settings.log_files_hint": "Los archivos de registro se guardan en {dir} — míralos en",
-
   "backups.title": "Copias de seguridad",
   "backups.location": "Carpeta de copias:",
   "backups.create": "Hacer copia ahora",
@@ -296,7 +280,6 @@
   "backups.saved_ok": "Ajustes de copias guardados.",
   "backups.create_failed": "La copia falló. Revisa los registros para más detalles.",
   "backups.restore_failed": "La restauración falló. Revisa los registros para más detalles.",
-
   "status.title": "Estado",
   "status.refresh": "Actualizar",
   "status.general": "General",
@@ -336,7 +319,6 @@
   "health.recycle_path_empty": "La papelera está activada pero la ruta está vacía",
   "health.auth_disabled": "La autenticación de la interfaz está desactivada",
   "health.library_missing": "Biblioteca \"{name}\": la ruta no existe — {path}",
-
   "tasks.title": "Tareas",
   "tasks.col.name": "Nombre",
   "tasks.col.interval": "Intervalo",

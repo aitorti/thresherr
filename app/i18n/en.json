@@ -1,6 +1,5 @@
 {
   "brand.title": "Thresherr 🌾 - Media Converter",
-
   "nav.media_files": "Monitored Media Files",
   "nav.activities": "Activities",
   "nav.history": "History",
@@ -18,17 +17,13 @@
   "nav.tasks": "Tasks",
   "nav.backups": "Backups",
   "nav.coming_soon": "Coming soon",
-
   "stats.total_monitored": "Total Monitored",
   "stats.before": "Before Processing",
   "stats.after": "After Processing",
   "stats.total_savings": "Total Savings",
-
   "flash.und_blocked": "⚠️ Blocked: streams with unknown language (und). Use 🛠️ to assign languages and unblock.",
   "flash.profile_ok": "This file already matches the profile — no processing needed.",
-
   "profile.compliant_title": "No processing needed",
-
   "dash.title": "Monitored Media Files",
   "dash.scan_title": "Scan libraries for new media files",
   "dash.scan_btn": "Scan for New Media",
@@ -55,14 +50,12 @@
   "dash.inspect_title": "Inspect streams metadata",
   "dash.und_badge_title": "Streams with unknown language (und) — requires manual review with 🛠️",
   "dash.override_title": "Manually assigned language",
-
   "status.completed": "Completed",
   "status.processing": "Processing",
   "status.scanning": "Working",
   "status.failed": "Failed",
   "status.queued": "Queued",
   "status.pending": "Pending",
-
   "dash.modal.title": "Stream Inspection (ffprobe)",
   "dash.modal.raw": "Raw ffprobe output",
   "dash.modal.parsed": "Parsed stream view",
@@ -89,7 +82,7 @@
   "dash.modal.none": "None",
   "dash.modal.auto_detect": "Language auto-detect",
   "dash.modal.detect_running": "Detecting…",
-  "dash.modal.detect_failed": "Could not detect the language. Is the Whisper service configured (Settings → General)?",
+  "dash.modal.detect_failed": "Could not determine the language: no clear speech in the samples (intros, music-only passages or damaged audio). You can assign the languages manually in this modal.",
   "dash.modal.detect_ok": "Language detected and saved.",
   "view.table": "Table",
   "view.posters": "Posters",
@@ -109,7 +102,6 @@
   "filter.subs": "Subtitles",
   "dash.empty": "No media files match your filters.",
   "dash.count": "{count} files",
-
   "queue.title": "Processing Queue",
   "queue.filter_all": "All",
   "queue.col.file": "File",
@@ -118,7 +110,6 @@
   "queue.queued": "Queued ({count})",
   "queue.in_progress": "In Progress ({count})",
   "queue.completed": "Completed ({count})",
-
   "lib.new": "New Library",
   "lib.name": "Library Name",
   "lib.name_ph": "e.g. Movies 1080p",
@@ -151,7 +142,6 @@
   "lib.modal.action_dequeue": "remove {count} files from the queue",
   "lib.modal.action_rescan": "re-scan {count} files",
   "lib.modal.will": "This action will <strong>{action}</strong> from library <strong>\"{name}\"</strong>.<br><br>Do you want to continue?",
-
   "prof.new": "New Profile Configuration",
   "prof.name": "Profile Name",
   "prof.name_ph": "e.g. High Quality 4K",
@@ -170,7 +160,6 @@
   "prof.delete_confirm": "Delete profile? All related libraries will also be deleted.",
   "prof.delete_title": "Delete Profile",
   "prof.empty": "No profiles created yet.",
-
   "logs.title": "Logs",
   "logs.filter_all": "All",
   "logs.filter_info": "Info",
@@ -185,10 +174,8 @@
   "logs.load_more": "Load more",
   "logs.hint_level": "Log level can be changed in",
   "logs.hint_files": "Full files are available under",
-
   "settings.general_link": "Settings → General",
   "logfiles.link": "System → Log Files",
-
   "logfiles.title": "Log Files",
   "logfiles.filename": "Filename",
   "logfiles.last_write": "Last Write Time",
@@ -201,12 +188,10 @@
   "logfiles.no_files": "No log files found.",
   "logfiles.rotate_hint": "Log files rotate at 1 MB each (5 backups), following the *arr family convention.",
   "logfiles.location": "Location:",
-
   "logview.back": "Back",
   "logview.refresh": "Refresh",
   "logview.download": "Download",
   "logview.truncated": "Showing only the last 256 KB of this file. Use Download to get the full file.",
-
   "settings.general": "General",
   "settings.interfaz": "Interface",
   "settings.security": "Security",
@@ -270,7 +255,6 @@
   "naming.template": "Naming template",
   "naming.preview": "Preview",
   "settings.log_files_hint": "Log files are stored in {dir} — view them under",
-
   "backups.title": "Backups",
   "backups.location": "Backup folder:",
   "backups.create": "Backup Now",
@@ -296,7 +280,6 @@
   "backups.saved_ok": "Backup settings saved.",
   "backups.create_failed": "Backup failed. Check the logs for details.",
   "backups.restore_failed": "Restore failed. Check the logs for details.",
-
   "status.title": "Status",
   "status.refresh": "Refresh",
   "status.general": "General",
@@ -336,7 +319,6 @@
   "health.recycle_path_empty": "Recycle bin is enabled but the path is empty",
   "health.auth_disabled": "UI authentication is disabled",
   "health.library_missing": "Library \"{name}\": path does not exist — {path}",
-
   "tasks.title": "Tasks",
   "tasks.col.name": "Name",
   "tasks.col.interval": "Interval",
