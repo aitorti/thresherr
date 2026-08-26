@@ -25,6 +25,10 @@
   "stats.total_savings": "Total Savings",
 
   "flash.und_blocked": "⚠️ Blocked: streams with unknown language (und). Use 🛠️ to assign languages and unblock.",
+  "flash.profile_ok": "This file already matches the profile — no processing needed.",
+
+  "profile.compliant": "Perfil OK",
+  "profile.compliant_title": "Already matches the profile — no processing needed",
 
   "dash.title": "Monitored Media Files",
   "dash.scan_title": "Scan libraries for new media files",

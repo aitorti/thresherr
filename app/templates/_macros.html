@@ -48,6 +48,10 @@
       {% else %}
         {{ enqueue_btn(file) }}
       {% endif %}
+    {% elif file.profile_compliant %}
+      <span class="text-green-500 text-sm" title="{{ t('profile.compliant_title') }}">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      </span>
     {% else %}
       {{ enqueue_btn(file) }}
     {% endif %}
@@ -66,6 +70,10 @@
 {% endmacro %}
 
 {% macro status_badge(file) %}
+{% if file.status == 'pending' and file.profile_compliant %}
+  <span class="px-2 py-0.5 rounded bg-green-900/40 text-green-400 text-[10px] font-bold uppercase border border-green-800/50 align-middle"
+        title="{{ t('profile.compliant_title') }}">{{ t('profile.compliant') }}</span>
+{% endif %}
 {% if (file.audio_languages and "und" in file.audio_languages) or (file.subtitle_languages and "und" in file.subtitle_languages) %}
   {% if not file.stream_overrides %}
     <span class="px-2 py-0.5 rounded bg-amber-900/40 text-amber-400 text-[10px] font-bold uppercase border border-amber-800/50 align-middle"

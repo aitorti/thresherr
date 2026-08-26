@@ -162,7 +162,8 @@
       <tbody class="divide-y divide-slate-700/50">
         {% for file in media_files %}
         <tr class="hover:bg-slate-700/20 transition-colors text-sm" data-media-id="{{ file.id }}"
-            data-und-blocked="{% if (file.audio_languages and "und" in file.audio_languages) or (file.subtitle_languages and "und" in file.subtitle_languages) %}{% if not file.stream_overrides %}true{% else %}false{% endif %}{% else %}false{% endif %}">
+            data-und-blocked="{% if (file.audio_languages and "und" in file.audio_languages) or (file.subtitle_languages and "und" in file.subtitle_languages) %}{% if not file.stream_overrides %}true{% else %}false{% endif %}{% else %}false{% endif %}"
+       data-profile-compliant="{{ 'true' if file.profile_compliant else 'false' }}">
           <td class="px-4 py-3 font-semibold text-slate-100 truncate max-w-[280px]" title="{{ file.file_name }}">{{ file.file_name }}</td>
           <td class="px-4 py-3 text-slate-400 font-mono whitespace-nowrap">{{ file.year or '—' }}</td>
           <td class="px-4 py-3 text-slate-500 font-mono italic whitespace-nowrap">{{ file.library.name if file.library else '—' }}</td>
@@ -201,7 +202,8 @@
   {% for file in media_files %}
   <div class="bg-slate-900 rounded-xl border border-slate-700 overflow-hidden hover:border-slate-500 transition-colors flex flex-col"
        data-media-id="{{ file.id }}"
-       data-und-blocked="{% if (file.audio_languages and "und" in file.audio_languages) or (file.subtitle_languages and "und" in file.subtitle_languages) %}{% if not file.stream_overrides %}true{% else %}false{% endif %}{% else %}false{% endif %}">
+       data-und-blocked="{% if (file.audio_languages and "und" in file.audio_languages) or (file.subtitle_languages and "und" in file.subtitle_languages) %}{% if not file.stream_overrides %}true{% else %}false{% endif %}{% else %}false{% endif %}"
+       data-profile-compliant="{{ 'true' if file.profile_compliant else 'false' }}">
     {{ poster_placeholder('') }}
     <div class="p-2.5 flex-1 flex flex-col gap-1.5">
       <div class="text-xs font-semibold text-slate-100 truncate" title="{{ file.file_name }}">{{ file.file_name }}</div>
@@ -230,7 +232,8 @@
   {% for file in media_files %}
   <div class="flex gap-4 bg-slate-900 rounded-xl border border-slate-700 p-3 hover:border-slate-500 transition-colors"
        data-media-id="{{ file.id }}"
-       data-und-blocked="{% if (file.audio_languages and "und" in file.audio_languages) or (file.subtitle_languages and "und" in file.subtitle_languages) %}{% if not file.stream_overrides %}true{% else %}false{% endif %}{% else %}false{% endif %}">
+       data-und-blocked="{% if (file.audio_languages and "und" in file.audio_languages) or (file.subtitle_languages and "und" in file.subtitle_languages) %}{% if not file.stream_overrides %}true{% else %}false{% endif %}{% else %}false{% endif %}"
+       data-profile-compliant="{{ 'true' if file.profile_compliant else 'false' }}">
     <div class="w-16 shrink-0">{{ poster_placeholder('rounded-lg overflow-hidden text-2xl') }}</div>
     <div class="flex-1 min-w-0">
       <div class="font-semibold text-slate-100 truncate" title="{{ file.file_name }}">{{ file.file_name }}</div>
@@ -358,6 +361,7 @@
       queued: {{ t('status.queued')|tojson }},
       pending: {{ t('status.pending')|tojson }},
       blockedTitle: {{ t('dash.und_blocked_title')|tojson }},
+      compliantTitle: {{ t('profile.compliant_title')|tojson }},
       queueTitle: {{ t('dash.queue_title')|tojson }},
       dequeueTitle: {{ t('dash.dequeue_title')|tojson }},
       retryTitle: {{ t('dash.retry_title')|tojson }},
@@ -368,6 +372,7 @@
       play: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
       stop: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>',
       refresh: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/><path d="M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>',
+      check: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
     };
 
     function statusBadgeHtml(status) {
@@ -393,8 +398,11 @@
       if (status === "pending") {
         const card = cell.closest("[data-media-id]");
         const blocked = card && card.dataset.undBlocked === "true";
+        const compliant = card && card.dataset.profileCompliant === "true";
         if (blocked) {
           container.innerHTML = `<span class="text-slate-600 text-sm cursor-not-allowed" title="${I18N.blockedTitle}">⛔</span>`;
+        } else if (compliant) {
+          container.innerHTML = `<span class="text-green-500" title="${I18N.compliantTitle}">${SVG.check}</span>`;
         } else {
           container.innerHTML = `
             <form method="post" action="/queue/${mediaId}/enqueue" class="inline">

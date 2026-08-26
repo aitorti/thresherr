@@ -312,6 +312,9 @@
       if (params.get("error") === "und_blocked") {
         showBanner("{{ t('flash.und_blocked') }}", "error");
       }
+      if (params.get("error") === "profile_ok") {
+        showBanner("{{ t('flash.profile_ok') }}", "info");
+      }
       if (params.get("error") === "backup_failed") {
         showBanner("{{ t('backups.create_failed') }}", "error");
       }

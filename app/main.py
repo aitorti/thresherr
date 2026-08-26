@@ -20,6 +20,8 @@ import naming
 import backups
 import health
 import tasks
+import compliance
+import worker
 
 import models
 import subprocess
@@ -513,6 +515,12 @@ async def dashboard(
     for mf in media_files:
         mf.has_stream_overrides = mf.stream_overrides is not None
         mf.year = naming.extract_year(mf.file_name)
+        mf.profile_compliant = (
+            mf.status == "pending"
+            and mf.library is not None
+            and mf.library.profile is not None
+            and compliance.compliance_from_summary(mf, mf.library.profile)
+        )
 
     # Sorting (year is computed in Python, so sort here)
     def sort_key(f):
@@ -708,6 +716,13 @@ async def get_queue(
         query = query.filter(models.MediaFile.status == status)
 
     entries = query.order_by(models.MediaFile.id.desc()).limit(100).all()
+    for mf in entries:
+        mf.profile_compliant = (
+            mf.status == "pending"
+            and mf.library is not None
+            and mf.library.profile is not None
+            and compliance.compliance_from_summary(mf, mf.library.profile)
+        )
 
     return render(
         request=request,
@@ -793,6 +808,19 @@ async def delete_library(library_id: int, db: Session = Depends(get_db)):
 
 # --- WORKING WITH JOB QUEUE ---
 
+def _compliant_with_fresh_probe(media) -> bool:
+    """True when the file already matches the profile (fresh ffprobe)."""
+    try:
+        inspection = worker.inspect_file(media)
+    except Exception:
+        return False
+    if not inspection:
+        return False
+    return compliance.compliance_from_inspection(
+        media, inspection, media.library.profile
+    )
+
+
 @app.post("/queue/{media_id}/enqueue")
 async def enqueue_media(media_id: int, request: Request, db: Session = Depends(get_db)):
     media = db.query(models.MediaFile).filter(models.MediaFile.id == media_id).first()
@@ -811,6 +839,20 @@ async def enqueue_media(media_id: int, request: Request, db: Session = Depends(g
         sep = "&" if "?" in referer else "?"
         return RedirectResponse(
             url=f"{referer}{sep}error=und_blocked",
+            status_code=303,
+        )
+
+    # SAFETY: block when the file already matches the profile (fresh probe)
+    if _compliant_with_fresh_probe(media):
+        ui_logger.info(
+            "Enqueue blocked for media_file id=%s (%s): profile already compliant",
+            media.id,
+            media.file_name,
+        )
+        referer = request.headers.get("referer", "/")
+        sep = "&" if "?" in referer else "?"
+        return RedirectResponse(
+            url=f"{referer}{sep}error=profile_ok",
             status_code=303,
         )
 
@@ -833,6 +875,20 @@ async def dequeue_media(media_id: int, request: Request, db: Session = Depends(g
 async def rescan_media(media_id: int, request: Request, db: Session = Depends(get_db)):
     media = (db.query(models.MediaFile).filter(models.MediaFile.id == media_id).first())
     if media and media.status in ("completed", "failed"):
+        # A completed file that already matches the profile is NOT
+        # reprocessed (perfil OK). Failed files can always retry.
+        if media.status == "completed" and _compliant_with_fresh_probe(media):
+            ui_logger.info(
+                "Rescan blocked for media_file id=%s (%s): profile already compliant",
+                media.id,
+                media.file_name,
+            )
+            referer = request.headers.get("referer", "/")
+            sep = "&" if "?" in referer else "?"
+            return RedirectResponse(
+                url=f"{referer}{sep}error=profile_ok",
+                status_code=303,
+            )
         # Allow re-processing of completed files AND retry of failed files.
         # Failed files go back to 'pending' so the user can review (e.g.
         # last_error) before enqueueing again.
@@ -853,16 +909,20 @@ async def rescan_media(media_id: int, request: Request, db: Session = Depends(ge
 # --- COUNTING FILES ---
 @app.get("/libraries/{library_id}/enqueue/preview")
 async def preview_enqueue_library(library_id: int, db: Session = Depends(get_db)):
-    count = (
-        db.query(func.count(models.MediaFile.id))
+    media_files = (
+        db.query(models.MediaFile)
         .filter(
             models.MediaFile.library_id == library_id,
             models.MediaFile.status == "pending",
         )
-        .scalar()
+        .all()
     )
-
-    return {"affected_files": count}
+    affected = sum(
+        1
+        for m in media_files
+        if not compliance.compliance_from_summary(m, m.library.profile)
+    )
+    return {"affected_files": affected}
 
 @app.get("/libraries/{library_id}/dequeue/preview")
 async def preview_dequeue_library(library_id: int, db: Session = Depends(get_db)):
@@ -879,16 +939,23 @@ async def preview_dequeue_library(library_id: int, db: Session = Depends(get_db)
 
 @app.get("/libraries/{library_id}/rescan/preview")
 async def preview_rescan_library(library_id: int, db: Session = Depends(get_db)):
-    count = (
-        db.query(func.count(models.MediaFile.id))
+    media_files = (
+        db.query(models.MediaFile)
         .filter(
             models.MediaFile.library_id == library_id,
             models.MediaFile.status.in_(("completed", "failed")),
         )
-        .scalar()
+        .all()
     )
-
-    return {"affected_files": count}
+    affected = sum(
+        1
+        for m in media_files
+        if not (
+            m.status == "completed"
+            and compliance.compliance_from_summary(m, m.library.profile)
+        )
+    )
+    return {"affected_files": affected}
 
 # --- BATCH UPDATES ---
 
@@ -909,6 +976,7 @@ async def enqueue_library(
 
     enqueued = 0
     blocked = 0
+    compliant = 0
     for media in media_files:
         # SAFETY: skip files with 'und' (human must decide).
         # Fresh probe only when the stored summary is missing (failed scan).
@@ -919,21 +987,28 @@ async def enqueue_library(
             blocked += 1
             continue
 
+        # Skip files that already match the profile (perfil OK)
+        if compliance.compliance_from_summary(media, media.library.profile):
+            compliant += 1
+            continue
+
         media.status = "queued"
         enqueued += 1
 
     db.commit()
     ui_logger.info(
-        "Batch enqueue library id=%s: %s enqueued, %s blocked (und)",
+        "Batch enqueue library id=%s: %s enqueued, %s compliant (skipped), %s blocked (und)",
         library_id,
         enqueued,
+        compliant,
         blocked,
     )
 
     referer = request.headers.get("referer", "/")
     sep = "&" if "?" in referer else "?"
     batch_msg = quote(
-        f"Enqueued: {enqueued} | Blocked by unknown language (und): {blocked}"
+        f"Enqueued: {enqueued} | Already compliant: {compliant} | "
+        f"Blocked by unknown language (und): {blocked}"
     )
     return RedirectResponse(
         url=f"{referer}{sep}batch={batch_msg}",
@@ -968,30 +1043,48 @@ async def rescan_library(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    (
+    media_files = (
         db.query(models.MediaFile)
         .filter(
             models.MediaFile.library_id == library_id,
             models.MediaFile.status.in_(("completed", "failed")),
         )
-        .update(
-            {
-                models.MediaFile.status: "pending",
-                models.MediaFile.started_at: None,
-                models.MediaFile.finished_at: None,
-                models.MediaFile.job_plan: None,
-                models.MediaFile.verification_result: None,
-                models.MediaFile.last_error: None,
-                models.MediaFile.warnings: None,
-            },
-            synchronize_session=False,
-        )
+        .all()
     )
-    db.commit()
-    ui_logger.info("Batch rescan library id=%s -> pending", library_id)
 
+    reset = 0
+    skipped = 0
+    for media in media_files:
+        # Completed files that already match the profile stay as they are
+        if (
+            media.status == "completed"
+            and compliance.compliance_from_summary(media, media.library.profile)
+        ):
+            skipped += 1
+            continue
+
+        media.status = "pending"
+        media.started_at = None
+        media.finished_at = None
+        media.job_plan = None
+        media.verification_result = None
+        media.last_error = None
+        media.warnings = None
+        reset += 1
+
+    db.commit()
+    ui_logger.info(
+        "Batch rescan library id=%s: %s reset, %s skipped (compliant)",
+        library_id,
+        reset,
+        skipped,
+    )
+
+    referer = request.headers.get("referer", "/")
+    sep = "&" if "?" in referer else "?"
+    batch_msg = quote(f"Rescanned: {reset} | Already compliant (skipped): {skipped}")
     return RedirectResponse(
-        url=request.headers.get("referer", "/"),
+        url=f"{referer}{sep}batch={batch_msg}",
         status_code=303,
     )
 
