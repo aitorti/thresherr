@@ -1065,6 +1065,10 @@ def safe_replace_cross_fs(
 # Naming (*arr style, Settings -> Media Management)
 # -------------------------------------------------
 
+# Default naming template (*arr standard). Used when the setting is unset.
+DEFAULT_NAMING_TEMPLATE = "{Title} ({Year}) [{Quality} {VideoCodec} {AudioLanguages}]"
+
+
 def _naming_config(db) -> tuple[bool, str]:
     """(enabled, template) from the settings table."""
     enabled_row = (
@@ -1078,7 +1082,11 @@ def _naming_config(db) -> tuple[bool, str]:
         .first()
     )
     enabled = bool(enabled_row and enabled_row.value == "1")
-    template = template_row.value if template_row and template_row.value else ""
+    template = (
+        template_row.value
+        if template_row and template_row.value
+        else DEFAULT_NAMING_TEMPLATE
+    )
     return enabled, template
 
 

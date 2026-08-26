@@ -1861,6 +1861,9 @@ async def reset_api_key_route(db: Session = Depends(get_db)):
 # Settings: MEDIA MANAGEMENT (naming + recycle bin)
 # -------------------------------------------------
 
+DEFAULT_NAMING_TEMPLATE = "{Title} ({Year}) [{Quality} {VideoCodec} {AudioLanguages}]"
+
+
 @app.get("/settings/media-management", response_class=HTMLResponse)
 async def get_settings_media_management(
     request: Request, db: Session = Depends(get_db)
@@ -1873,7 +1876,7 @@ async def get_settings_media_management(
         db=db,
         **stats,
         naming_enabled=_get_setting(db, "naming_enabled", "0"),
-        naming_template=_get_setting(db, "naming_template", ""),
+        naming_template=_get_setting(db, "naming_template", DEFAULT_NAMING_TEMPLATE),
         recycle_enabled=_get_setting(db, "recycle_bin_enabled", "0"),
         recycle_path=recycle_path,
         recycle_days=_get_setting(db, "recycle_bin_days", "7"),
