@@ -1320,6 +1320,11 @@ def run_worker():
                 job.file_name = os.path.basename(final_path)
                 job.status = "completed"
                 job.size_final = os.path.getsize(final_path)
+                # Manual language overrides are processing instructions:
+                # once applied, they are consumed. The final file carries
+                # its real languages, so stale overrides would block the
+                # profile-compliance check (and the amber highlight).
+                job.stream_overrides = None
             else:
                 job.status = "failed"
                 job.last_error = verification
