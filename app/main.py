@@ -1456,6 +1456,9 @@ def _detect_audio_language_whisper(file_path: str, stream_index: int, base_url: 
             f"\r\n--{boundary}\r\n"
             f'Content-Disposition: form-data; name="model"\r\n\r\n'
             f"Systran/faster-whisper-small\r\n"
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="response_format"\r\n\r\n'
+            f"verbose_json\r\n"
             f"--{boundary}--\r\n"
         ).encode()
 

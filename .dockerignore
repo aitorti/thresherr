@@ -1,0 +1,11 @@
+# El contexto de build no debe incluir datos ni metadatos de git
+.git
+data
+__pycache__
+*.pyc
+*.db
+*.db-wal
+*.db-shm
+*.bak
+docs
+_backup

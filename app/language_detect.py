@@ -39,10 +39,12 @@ _TRACK_NAME_HINTS = {
     "nld": ["dutch", "holandes", "holandés", "nl"],
 }
 
-# Common 2-letter codes -> ISO-639-2 (resumen format)
+# Common 2-letter codes -> ISO-639-2 (resumen format), plus the
+# bibliographic forms MKVToolNix writes (fre/ger/dut...) -> terminological
 _LANG_MAP = {
     "en": "eng", "es": "spa", "fr": "fra", "de": "deu", "it": "ita",
     "pt": "por", "ja": "jpn", "zh": "chi", "ru": "rus", "nl": "nld",
+    "fre": "fra", "ger": "deu", "dut": "nld",
 }
 
 _UND_CODES = {"und", "unk", "unknown", "undefined", "", "none", "null", "-"}
