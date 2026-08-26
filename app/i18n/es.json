@@ -27,8 +27,7 @@
   "flash.und_blocked": "⚠️ Bloqueado: pistas con idioma desconocido (und). Usa 🛠️ para asignar idiomas y desbloquear.",
   "flash.profile_ok": "Este archivo ya cumple el perfil — no necesita procesarse.",
 
-  "profile.compliant": "Perfil OK",
-  "profile.compliant_title": "Ya cumple el perfil — no necesita procesarse",
+  "profile.compliant_title": "No necesita procesarse",
 
   "dash.title": "Archivos de medios supervisados",
   "dash.scan_title": "Escanear bibliotecas en busca de archivos nuevos",

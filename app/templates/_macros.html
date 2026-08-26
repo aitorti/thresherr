@@ -76,23 +76,15 @@
           title="{{ t('dash.und_badge_title') }}">⚠️ und</span>
   {% endif %}
 {% endif %}
-{% if file.status == 'pending' and file.profile_compliant %}
-  {# Already matches the profile: it will never be processed — the green
-     badge REPLACES the Pending one (state visual = Perfil OK). #}
-  <span class="px-2 py-0.5 rounded bg-green-900/40 text-green-400 text-[10px] font-bold uppercase border border-green-800/50 align-middle"
-        title="{{ t('profile.compliant_title') }}">{{ t('profile.compliant') }}</span>
-{% elif file.status == 'completed' %}
+{# COMPLETED means profile-compliant (processed or not): the effective state #}
+{% if file.effective_status == 'completed' %}
   <span class="px-2 py-0.5 rounded bg-green-900/40 text-green-400 text-[10px] font-bold uppercase border border-green-800/50">{{ t('status.completed') }}</span>
-  {% if file.profile_compliant %}
-    <span class="px-2 py-0.5 rounded bg-green-900/40 text-green-400 text-[10px] font-bold uppercase border border-green-800/50 align-middle"
-          title="{{ t('profile.compliant_title') }}">{{ t('profile.compliant') }}</span>
-  {% endif %}
-{% elif file.status == 'processing' %}
+{% elif file.effective_status == 'processing' %}
   <span class="px-2 py-0.5 rounded bg-blue-900/40 text-blue-400 text-[10px] font-bold uppercase border border-blue-800 animate-pulse">{{ t('status.processing') }}</span>
-{% elif file.status == 'failed' %}
+{% elif file.effective_status == 'failed' %}
   <span class="px-2 py-0.5 rounded bg-red-900/40 text-red-400 text-[10px] font-bold uppercase border border-red-800/50"
         title="{% if file.last_error %}{{ file.last_error }}{% else %}{{ t('status.failed') }}{% endif %}">{{ t('status.failed') }}</span>
-{% elif file.status == 'queued' %}
+{% elif file.effective_status == 'queued' %}
   <span class="px-2 py-0.5 rounded bg-red-900/40 text-red-400 text-[10px] font-bold uppercase border border-red-800/50">{{ t('status.queued') }}</span>
 {% else %}
   <span class="px-2 py-0.5 rounded bg-slate-700/60 text-slate-400 text-[10px] font-bold uppercase border border-slate-600/50">{{ t('status.pending') }}</span>

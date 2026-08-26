@@ -500,8 +500,6 @@ async def dashboard(
     query = db.query(models.MediaFile)
     if q:
         query = query.filter(models.MediaFile.file_name.ilike(f"%{q}%"))
-    if status != "all":
-        query = query.filter(models.MediaFile.status == status)
     if library:
         query = query.filter(models.MediaFile.library_id == int(library))
     if quality:
@@ -515,12 +513,20 @@ async def dashboard(
     for mf in media_files:
         mf.has_stream_overrides = mf.stream_overrides is not None
         mf.year = naming.extract_year(mf.file_name)
+        # Effective state: a file that already matches the profile (processed
+        # or not) IS 'completed' — COMPLETED means profile-compliant.
         mf.profile_compliant = (
             mf.status in ("pending", "completed")
             and mf.library is not None
             and mf.library.profile is not None
             and compliance.compliance_from_summary(mf, mf.library.profile)
         )
+        mf.effective_status = "completed" if mf.profile_compliant else mf.status
+
+    # Status filter uses the EFFECTIVE state (compliant pending files show
+    # up under Completed, not Pending)
+    if status != "all":
+        media_files = [mf for mf in media_files if mf.effective_status == status]
 
     # Sorting (year is computed in Python, so sort here)
     def sort_key(f):
@@ -531,7 +537,7 @@ async def dashboard(
         if sort == "size":
             return f.size_original or 0
         if sort == "status":
-            return f.status
+            return f.effective_status
         if sort == "library":
             return f.library.name.lower() if f.library else ""
         if sort == "resolution":
@@ -707,15 +713,18 @@ async def get_queue(
     if status not in valid:
         status = "all"
 
-    query = db.query(models.MediaFile)
-    if status == "all":
-        query = query.filter(
+    # Load the active states and compute the EFFECTIVE state (a file that
+    # already matches the profile counts as completed)
+    entries = (
+        db.query(models.MediaFile)
+        .filter(
             models.MediaFile.status.in_(("pending", "queued", "processing", "completed"))
         )
-    else:
-        query = query.filter(models.MediaFile.status == status)
-
-    entries = query.order_by(models.MediaFile.id.desc()).limit(100).all()
+        .order_by(models.MediaFile.id.desc())
+        .limit(500)
+        .all()
+    )
+    counts = {"pending": 0, "queued": 0, "processing": 0, "completed": 0}
     for mf in entries:
         mf.profile_compliant = (
             mf.status in ("pending", "completed")
@@ -723,6 +732,12 @@ async def get_queue(
             and mf.library.profile is not None
             and compliance.compliance_from_summary(mf, mf.library.profile)
         )
+        mf.effective_status = "completed" if mf.profile_compliant else mf.status
+        if mf.effective_status in counts:
+            counts[mf.effective_status] += 1
+
+    if status != "all":
+        entries = [mf for mf in entries if mf.effective_status == status]
 
     return render(
         request=request,
