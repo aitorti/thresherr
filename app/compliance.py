@@ -71,20 +71,23 @@ def compliance_from_summary(media, profile) -> bool:
                 return False
 
     # --- Subtitles ---
-    sub_codecs = {profile.subtitle_codec} if profile.subtitle_codec else set()
-    if sub_codecs and (media.subtitle_codec or "").lower() not in sub_codecs:
-        return False
-
-    sub_allowed = _allowed_languages(profile.subtitle_languages)
-    if sub_allowed:
-        sub_langs = _lang_list(media.subtitle_languages)
-        if not sub_langs:
+    # The profile whitelist is "allowed", not "required": a file WITHOUT
+    # subtitles is fully compliant (nothing to clean). If subtitles exist
+    # they must be in allowed languages/codecs — otherwise the plan would
+    # remove them and the file is "not compliant until processed".
+    sub_langs = _lang_list(media.subtitle_languages)
+    if sub_langs:
+        sub_codecs = {profile.subtitle_codec} if profile.subtitle_codec else set()
+        if sub_codecs and (media.subtitle_codec or "").lower() not in sub_codecs:
             return False
-        for lang in sub_langs:
-            if lang == "und":
-                return False
-            if lang not in sub_allowed:
-                return False
+
+        sub_allowed = _allowed_languages(profile.subtitle_languages)
+        if sub_allowed:
+            for lang in sub_langs:
+                if lang == "und":
+                    return False
+                if lang not in sub_allowed:
+                    return False
 
     # --- Container (phase 1: worker always outputs mkv) ---
     if not _is_mkv(media):
