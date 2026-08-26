@@ -360,6 +360,7 @@
       failed: {{ t('status.failed')|tojson }},
       queued: {{ t('status.queued')|tojson }},
       pending: {{ t('status.pending')|tojson }},
+      compliant: {{ t('profile.compliant')|tojson }},
       blockedTitle: {{ t('dash.und_blocked_title')|tojson }},
       compliantTitle: {{ t('profile.compliant_title')|tojson }},
       queueTitle: {{ t('dash.queue_title')|tojson }},
@@ -388,7 +389,17 @@
     }
 
     function updateStatusBadge(cell, status) {
-      cell.innerHTML = statusBadgeHtml(status);
+      const card = cell.closest("[data-media-id]");
+      const compliant = card && card.dataset.profileCompliant === "true";
+      let html = statusBadgeHtml(status);
+      // Perfil OK coherence: pending+compliant shows only the green badge;
+      // completed+compliant shows Completed + Perfil OK.
+      if (status === "pending" && compliant) {
+        html = `<span class="px-2 py-0.5 rounded bg-green-900/40 text-green-400 text-[10px] font-bold uppercase border border-green-800/50" title="${I18N.compliantTitle}">${I18N.compliant}</span>`;
+      } else if (status === "completed" && compliant) {
+        html += ` <span class="px-2 py-0.5 rounded bg-green-900/40 text-green-400 text-[10px] font-bold uppercase border border-green-800/50" title="${I18N.compliantTitle}">${I18N.compliant}</span>`;
+      }
+      cell.innerHTML = html;
     }
 
     function updateActions(cell, status, mediaId) {

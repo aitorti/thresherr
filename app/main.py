@@ -516,7 +516,7 @@ async def dashboard(
         mf.has_stream_overrides = mf.stream_overrides is not None
         mf.year = naming.extract_year(mf.file_name)
         mf.profile_compliant = (
-            mf.status == "pending"
+            mf.status in ("pending", "completed")
             and mf.library is not None
             and mf.library.profile is not None
             and compliance.compliance_from_summary(mf, mf.library.profile)
@@ -718,7 +718,7 @@ async def get_queue(
     entries = query.order_by(models.MediaFile.id.desc()).limit(100).all()
     for mf in entries:
         mf.profile_compliant = (
-            mf.status == "pending"
+            mf.status in ("pending", "completed")
             and mf.library is not None
             and mf.library.profile is not None
             and compliance.compliance_from_summary(mf, mf.library.profile)

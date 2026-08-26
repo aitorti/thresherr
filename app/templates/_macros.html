@@ -70,18 +70,23 @@
 {% endmacro %}
 
 {% macro status_badge(file) %}
-{% if file.status == 'pending' and file.profile_compliant %}
-  <span class="px-2 py-0.5 rounded bg-green-900/40 text-green-400 text-[10px] font-bold uppercase border border-green-800/50 align-middle"
-        title="{{ t('profile.compliant_title') }}">{{ t('profile.compliant') }}</span>
-{% endif %}
 {% if (file.audio_languages and "und" in file.audio_languages) or (file.subtitle_languages and "und" in file.subtitle_languages) %}
   {% if not file.stream_overrides %}
     <span class="px-2 py-0.5 rounded bg-amber-900/40 text-amber-400 text-[10px] font-bold uppercase border border-amber-800/50 align-middle"
           title="{{ t('dash.und_badge_title') }}">⚠️ und</span>
   {% endif %}
 {% endif %}
-{% if file.status == 'completed' %}
+{% if file.status == 'pending' and file.profile_compliant %}
+  {# Already matches the profile: it will never be processed — the green
+     badge REPLACES the Pending one (state visual = Perfil OK). #}
+  <span class="px-2 py-0.5 rounded bg-green-900/40 text-green-400 text-[10px] font-bold uppercase border border-green-800/50 align-middle"
+        title="{{ t('profile.compliant_title') }}">{{ t('profile.compliant') }}</span>
+{% elif file.status == 'completed' %}
   <span class="px-2 py-0.5 rounded bg-green-900/40 text-green-400 text-[10px] font-bold uppercase border border-green-800/50">{{ t('status.completed') }}</span>
+  {% if file.profile_compliant %}
+    <span class="px-2 py-0.5 rounded bg-green-900/40 text-green-400 text-[10px] font-bold uppercase border border-green-800/50 align-middle"
+          title="{{ t('profile.compliant_title') }}">{{ t('profile.compliant') }}</span>
+  {% endif %}
 {% elif file.status == 'processing' %}
   <span class="px-2 py-0.5 rounded bg-blue-900/40 text-blue-400 text-[10px] font-bold uppercase border border-blue-800 animate-pulse">{{ t('status.processing') }}</span>
 {% elif file.status == 'failed' %}
