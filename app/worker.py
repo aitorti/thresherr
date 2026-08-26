@@ -14,6 +14,7 @@ from logging_setup import get_logger, setup_logging
 import naming
 import backups
 import tasks
+import settings
 
 logger = get_logger("worker")
 
@@ -51,15 +52,7 @@ def _utcnow() -> datetime:
 # -------------------------------------------------
 
 def _set_worker_setting(db, key: str, value: str) -> None:
-    row = db.query(models.Setting).filter(models.Setting.key == key).first()
-    if row:
-        row.value = value
-    else:
-        db.add(models.Setting(key=key, value=value))
-
-
-def _get_setting_row(db, key: str):
-    return db.query(models.Setting).filter(models.Setting.key == key).first()
+    settings.set_setting(db, key, value)
 
 
 def write_heartbeat(db, force: bool = False) -> None:
@@ -1139,7 +1132,10 @@ def _naming_context(job: models.MediaFile, job_plan: dict, inspection: dict) -> 
         "audio_codecs": "+".join(audio_codecs),
         "audio_languages": "-".join(audio_langs),
         "subtitle_languages": "-".join(sub_langs),
-        "container": job_plan.get("container") or "mkv",
+        # Phase 1: the worker ALWAYS outputs mkv (the job plan has no
+        # container key) — explicit here so the naming never changes by
+        # accident if the plan grows a container field.
+        "container": "mkv",
     }
 
 
@@ -1182,14 +1178,7 @@ def maybe_automatic_backup(db) -> str | None:
     the last one. Returns the created backup file name, or None when not
     due or disabled (interval 0).
     """
-    def val(key: str, default: str | None = None) -> str | None:
-        row = db.query(models.Setting).filter(models.Setting.key == key).first()
-        return row.value if row and row.value is not None else default
-
-    try:
-        interval = int(val("backup_interval_days", "7") or "7")
-    except ValueError:
-        interval = 7
+    interval = settings.get_int(db, "backup_interval_days", 7)
     if interval <= 0:
         return None
 
@@ -1198,10 +1187,7 @@ def maybe_automatic_backup(db) -> str | None:
         return None  # not due yet
 
     path = backups.create_backup(DB_PATH, backups.BACKUP_DIR)
-    try:
-        retention = int(val("backup_retention", "7") or "7")
-    except ValueError:
-        retention = 7
+    retention = settings.get_int(db, "backup_retention", 7)
     removed = backups.enforce_retention(backups.BACKUP_DIR, retention)
     if removed:
         logger.info("Backup retention removed %s old backup(s)", removed)
@@ -1219,7 +1205,7 @@ def run_worker():
     # First heartbeat + worker start time (kept on restarts)
     _boot_db = SessionLocal()
     try:
-        if _get_setting_row(_boot_db, "worker_started_at") is None:
+        if settings.get_setting(_boot_db, "worker_started_at") is None:
             _set_worker_setting(_boot_db, "worker_started_at", _utcnow().isoformat())
         write_heartbeat(_boot_db, force=True)
     finally:

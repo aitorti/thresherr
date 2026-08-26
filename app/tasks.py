@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 import models
 from scanner import scan_libraries
 import backups
+import settings
 
 # Task identifiers, in UI order
 TASK_SCAN = "scan"
@@ -31,18 +32,9 @@ def _utcnow_naive() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-def _get_setting(db, key: str, default: str | None = None) -> str | None:
-    row = db.query(models.Setting).filter(models.Setting.key == key).first()
-    return row.value if row and row.value is not None else default
-
-
-def _set_setting(db, key: str, value: str) -> None:
-    row = db.query(models.Setting).filter(models.Setting.key == key).first()
-    if row:
-        row.value = value
-    else:
-        db.add(models.Setting(key=key, value=value))
-    db.commit()
+# Settings helpers come from the shared settings module
+_get_setting = settings.get_setting
+_set_setting = settings.set_setting
 
 
 def parse_ts(value: str | None) -> datetime | None:
@@ -79,13 +71,16 @@ def run_scan(db) -> dict:
         _set_setting(db, "scan_last_run", _utcnow_naive().isoformat())
         _set_setting(db, "scan_last_duration", str(duration))
         _set_setting(db, "scan_last_result", result)
+        db.commit()
         return {"ok": True, "new_count": new_count, "duration": duration, "result": result}
     except Exception as exc:
+        db.rollback()
         duration = round(time.monotonic() - start, 1)
         result = f"error: {exc}"
         _set_setting(db, "scan_last_run", _utcnow_naive().isoformat())
         _set_setting(db, "scan_last_duration", str(duration))
         _set_setting(db, "scan_last_result", result)
+        db.commit()
         return {"ok": False, "error": str(exc), "duration": duration, "result": result}
 
 
@@ -159,13 +154,16 @@ def run_recycle_cleanup(db) -> dict:
         _set_setting(db, "recycle_last_run", _utcnow_naive().isoformat())
         _set_setting(db, "recycle_last_duration", str(duration))
         _set_setting(db, "recycle_last_result", result)
+        db.commit()
         return {"ok": True, "removed": removed, "duration": duration, "result": result}
     except Exception as exc:
+        db.rollback()
         duration = round(time.monotonic() - start, 1)
         result = f"error: {exc}"
         _set_setting(db, "recycle_last_run", _utcnow_naive().isoformat())
         _set_setting(db, "recycle_last_duration", str(duration))
         _set_setting(db, "recycle_last_result", result)
+        db.commit()
         return {"ok": False, "error": str(exc), "duration": duration, "result": result}
 
 

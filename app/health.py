@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 
 import models
 import backups
+import settings
 
 # Worker liveness thresholds (see worker.py heartbeat)
 WORKER_STALE_SECONDS = 120
@@ -144,8 +145,7 @@ def storage_info(paths: tuple[str, ...] = STORAGE_PATHS) -> list[dict]:
 # -------------------------------------------------
 
 def _get_setting(db, key: str) -> str | None:
-    row = db.query(models.Setting).filter(models.Setting.key == key).first()
-    return row.value if row else None
+    return settings.get_setting(db, key)
 
 
 def worker_state(db) -> dict:

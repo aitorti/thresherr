@@ -149,16 +149,6 @@ def infer_stream_language(tags: dict) -> str:
 
     return inferred
 
-def refine_spanish_language(tags: dict) -> str:
-    """
-    Backwards-compatible wrapper.
-    """
-    return infer_stream_language(tags)
-
-def get_resolution_name(height: int | None) -> str:
-    """Backwards-compatible wrapper (deprecated: height-only)."""
-    return naming.quality_from_dimensions(None, height) or "Unknown"
-
 # -------------------------------------------------
 # Metadata extraction (SUMMARY ONLY)
 # -------------------------------------------------
@@ -260,7 +250,16 @@ def scan_libraries(db: Session) -> int:
 
     for library in libraries:
         if not os.path.exists(library.media_path):
+            logger.warning("Library media path missing: %s", library.media_path)
             continue
+
+        # Load existing paths once (no N+1 per file)
+        existing = {
+            row[0]
+            for row in db.query(models.MediaFile.full_path)
+            .filter(models.MediaFile.library_id == library.id)
+            .all()
+        }
 
         for root, _, files in os.walk(library.media_path):
             for file in files:
@@ -268,28 +267,28 @@ def scan_libraries(db: Session) -> int:
                     continue
 
                 full_path = os.path.join(root, file)
-
-                exists = (
-                    db.query(models.MediaFile)
-                    .filter(models.MediaFile.full_path == full_path)
-                    .first()
-                )
-
-                if exists:
+                if full_path in existing:
                     continue
 
-                meta = get_video_metadata(full_path)
+                try:
+                    meta = get_video_metadata(full_path)
+                    size = os.path.getsize(full_path)
+                except OSError as exc:
+                    # A single unreadable file must not break the whole scan
+                    logger.warning("Skipping unreadable file %s: %s", full_path, exc)
+                    continue
 
                 media = models.MediaFile(
                     file_name=file,
                     full_path=full_path,
                     library_id=library.id,
                     status="pending",
-                    size_original=os.path.getsize(full_path),
+                    size_original=size,
                     **meta,
                 )
 
                 db.add(media)
+                existing.add(full_path)
                 new_files_count += 1
 
         db.commit()
