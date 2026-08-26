@@ -102,10 +102,13 @@
   "dash.count": "{count} archivos",
 
   "queue.title": "Cola de procesado",
+  "queue.filter_all": "Todos",
+  "queue.col.file": "Archivo",
+  "queue.empty": "No hay archivos en la cola.",
   "queue.pending": "Pendientes ({count})",
   "queue.queued": "En cola ({count})",
   "queue.in_progress": "En curso ({count})",
-  "queue.completed": "Completados recientemente",
+  "queue.completed": "Completados ({count})",
 
   "lib.new": "Nueva biblioteca",
   "lib.name": "Nombre de la biblioteca",

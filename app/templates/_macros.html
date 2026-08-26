@@ -1,0 +1,93 @@
+{# ------------------------------------------------------------------ #}
+{# Shared macros (*arr style) — used by dashboard, queue, libraries,   #}
+{# profiles... Import with: {% from "_macros.html" import ... with context %} #}
+{# ------------------------------------------------------------------ #}
+
+{# Action buttons (SVG icons, *arr style) #}
+{% macro enqueue_btn(file) %}
+<form method="post" action="/queue/{{ file.id }}/enqueue" class="inline">
+  <button type="submit" title="{{ t('dash.queue_title') }}"
+          class="action-btn text-slate-400 hover:text-green-400 transition-colors">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+  </button>
+</form>
+{% endmacro %}
+
+{% macro dequeue_btn(file) %}
+<form method="post" action="/queue/{{ file.id }}/dequeue" class="inline">
+  <button type="submit" title="{{ t('dash.dequeue_title') }}"
+          class="action-btn text-slate-400 hover:text-red-400 transition-colors">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+  </button>
+</form>
+{% endmacro %}
+
+{% macro rescan_btn(file) %}
+<form method="post" action="/queue/{{ file.id }}/rescan" class="inline">
+  <button type="submit" title="{% if file.status == 'failed' %}{{ t('dash.retry_title') }}{% else %}{{ t('dash.rescan_title') }}{% endif %}"
+          class="action-btn text-slate-400 hover:text-amber-300 transition-colors">
+    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/><path d="M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+  </button>
+</form>
+{% endmacro %}
+
+{% macro inspect_btn(file) %}
+<button type="button" class="inspect-streams action-btn text-amber-400 hover:text-amber-300 transition-colors"
+        title="{{ t('dash.inspect_title') }}"
+        data-media-id="{{ file.id }}" data-file-name="{{ file.file_name }}">
+  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+</button>
+{% endmacro %}
+
+{% macro primary_actions(file) %}
+<div class="primary-actions flex items-center justify-center gap-2">
+  {% if file.status == 'pending' %}
+    {% if (file.audio_languages and "und" in file.audio_languages) or (file.subtitle_languages and "und" in file.subtitle_languages) %}
+      {% if not file.stream_overrides %}
+        <span class="text-slate-600 text-sm cursor-not-allowed" title="{{ t('dash.und_blocked_title') }}">⛔</span>
+      {% else %}
+        {{ enqueue_btn(file) }}
+      {% endif %}
+    {% else %}
+      {{ enqueue_btn(file) }}
+    {% endif %}
+  {% elif file.status == 'queued' %}
+    {{ dequeue_btn(file) }}
+  {% elif file.status == 'completed' or file.status == 'failed' %}
+    {{ rescan_btn(file) }}
+  {% else %}
+    <span class="text-slate-600 text-sm">—</span>
+  {% endif %}
+
+  {% if (file.audio_languages and "und" in file.audio_languages) or (file.subtitle_languages and "und" in file.subtitle_languages) %}
+    {{ inspect_btn(file) }}
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% macro status_badge(file) %}
+{% if (file.audio_languages and "und" in file.audio_languages) or (file.subtitle_languages and "und" in file.subtitle_languages) %}
+  {% if not file.stream_overrides %}
+    <span class="px-2 py-0.5 rounded bg-amber-900/40 text-amber-400 text-[10px] font-bold uppercase border border-amber-800/50 align-middle"
+          title="{{ t('dash.und_badge_title') }}">⚠️ und</span>
+  {% endif %}
+{% endif %}
+{% if file.status == 'completed' %}
+  <span class="px-2 py-0.5 rounded bg-green-900/40 text-green-400 text-[10px] font-bold uppercase border border-green-800/50">{{ t('status.completed') }}</span>
+{% elif file.status == 'processing' %}
+  <span class="px-2 py-0.5 rounded bg-blue-900/40 text-blue-400 text-[10px] font-bold uppercase border border-blue-800 animate-pulse">{{ t('status.processing') }}</span>
+{% elif file.status == 'failed' %}
+  <span class="px-2 py-0.5 rounded bg-red-900/40 text-red-400 text-[10px] font-bold uppercase border border-red-800/50"
+        title="{% if file.last_error %}{{ file.last_error }}{% else %}{{ t('status.failed') }}{% endif %}">{{ t('status.failed') }}</span>
+{% elif file.status == 'queued' %}
+  <span class="px-2 py-0.5 rounded bg-red-900/40 text-red-400 text-[10px] font-bold uppercase border border-red-800/50">{{ t('status.queued') }}</span>
+{% else %}
+  <span class="px-2 py-0.5 rounded bg-slate-700/60 text-slate-400 text-[10px] font-bold uppercase border border-slate-600/50">{{ t('status.pending') }}</span>
+{% endif %}
+{% endmacro %}
+
+{% macro poster_placeholder(extra) %}
+<div class="aspect-[2/3] bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 flex items-center justify-center {{ extra }}">
+  <span class="text-5xl opacity-40">🎬</span>
+</div>
+{% endmacro %}

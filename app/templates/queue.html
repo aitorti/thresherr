@@ -1,194 +1,68 @@
 {% extends "base.html" %}
-{# 
-    This template extends the base layout.
-    It displays the current processing queue, split into:
-    - Pending files
-    - Queued files
-    - Files currently being processed
-    - Recently completed files
-#}
+
+{% from "_macros.html" import primary_actions, status_badge with context %}
 
 {% block content %}
-<!-- <meta http-equiv="refresh" content="5"> -->
+<div class="max-w-6xl">
+  <!-- Breadcrumb, *arr style -->
+  <div class="text-xs text-slate-500 font-semibold mb-1">{{ t('nav.activities') }} → {{ t('nav.queue') }}</div>
 
-<!-- ========================= -->
-<!-- PAGE HEADER -->
-<!-- ========================= -->
-<div class="flex justify-between items-center mb-8">
-
-    <!-- Page title -->
-    <h1 class="text-2xl font-bold text-slate-200">
-        {{ t('queue.title') }}
-    </h1>
-
-    {# 
-        Button that triggers a media scan.
-        Typically used to detect new files and enqueue them.
-    #}
-    <a 
-        href="/scan"
-        class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors"
-    >
-        🔄 {{ t('dash.scan_btn') }}
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+    <h1 class="text-2xl font-extrabold text-slate-100">{{ t('queue.title') }}</h1>
+    <a href="/scan"
+       class="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-amber-600 text-sm text-slate-950 font-bold hover:bg-amber-500 transition-colors">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/><path d="M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+      {{ t('dash.scan_btn') }}
     </a>
-</div>
+  </div>
 
-<!-- ========================= -->
-<!-- QUEUE COLUMNS -->
-<!-- ========================= -->
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+  <!-- Status tabs -->
+  <div class="flex flex-wrap items-center gap-3 mb-4">
+    <div class="flex rounded-md overflow-hidden border border-slate-700">
+      {% for key, label in [('all', 'queue.filter_all'), ('pending', 'queue.pending'), ('queued', 'queue.queued'), ('processing', 'queue.in_progress'), ('completed', 'queue.completed')] %}
+        {% if status == key %}
+          <a href="/activities/queue?status={{ key }}"
+             class="px-4 py-1.5 text-sm font-semibold bg-slate-700 text-amber-300 whitespace-nowrap">
+            {{ t(label, count=counts[key] if key != 'all' else entries|length) }}
+          </a>
+        {% else %}
+          <a href="/activities/queue?status={{ key }}"
+             class="px-4 py-1.5 text-sm font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 transition-colors whitespace-nowrap">
+            {{ t(label, count=counts[key] if key != 'all' else entries|length) }}
+          </a>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </div>
 
-    <!-- ========================= -->
-    <!-- PENDING FILES -->
-    <!-- ========================= -->
-    <section class="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
-
-        <!-- Section header with count -->
-        <h2 class="text-amber-400 font-bold mb-4 flex items-center">
-            <span class="mr-2">⏳</span>
-            {{ t('queue.pending', count=pending|length) }}
-        </h2>
-
-        <!-- List of pending files -->
-		<div class="space-y-3">
-			{% for file in pending %}
-				{# Single pending file card #}
-				<div class="bg-slate-900 p-3 rounded border border-slate-700 flex justify-between items-center">
-
-					<!-- File info -->
-					<div class="min-w-0">
-						<!-- File name -->
-						<p class="text-sm text-slate-200 font-medium truncate">
-							{{ file.file_name }}
-						</p>
-						<!-- Library name (source of the file) -->
-						<p class="text-[10px] text-slate-500 italic truncate">
-							{{ file.library.name }}
-						</p>
-					</div>
-
-					<!-- Actions -->
-					<div class="flex items-center space-x-2 ml-4">
-
-						<!-- PLAY: pending -> queued -->
-						<form method="post" action="/queue/{{ file.id }}/enqueue">
-							<button
-								type="submit"
-								class="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded"
-								title="{{ t('dash.queue_title') }}"
-							>
-								▶️
-							</button>
-						</form>
-					</div>
-				</div>
-			{% endfor %}
-		</div>
-    </section>
-
-    <!-- ========================= -->
-    <!-- FILES QUEUED -->
-    <!-- ========================= -->
-    <section class="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
-        <h2 class="text-yellow-400 font-bold mb-4">
-            {{ t('queue.queued', count=queued|length) }}
-        </h2>
-        
-        {% for file in queued %}
-            {# Single queued file card #}
-            <div class="bg-slate-900 p-3 rounded border border-yellow-700 flex justify-between items-center">
-                <p class="text-sm text-yellow-200 truncate">
-                    {{ file.file_name }}
-                </p>
-            
-                <form method="post" action="/queue/{{ file.id }}/dequeue">
-                    <button
-                        type="submit"
-                        class="bg-red-600 hover:bg-red-700 text-white text-xs px-2 py-1 rounded"
-                        title="{{ t('dash.dequeue_title') }}"
-                    >
-                        ⏹
-                    </button>
-                </form>
-            </div>
+  <!-- Queue table -->
+  <div class="rounded-lg border border-slate-700 bg-slate-900 overflow-hidden">
+    <table class="w-full text-left">
+      <thead>
+        <tr class="bg-slate-800/80 text-[10px] uppercase tracking-widest text-slate-400">
+          <th class="py-2 px-3 font-bold">{{ t('queue.col.file') }}</th>
+          <th class="py-2 px-3 font-bold">{{ t('dash.col.library') }}</th>
+          <th class="py-2 px-3 font-bold text-center">{{ t('dash.col.status') }}</th>
+          <th class="py-2 px-3 font-bold text-center">{{ t('dash.col.actions') }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for file in entries %}
+        <tr class="border-b border-slate-800 hover:bg-slate-800/40">
+          <td class="py-2 px-3 text-sm text-slate-200 break-words max-w-[420px] truncate" title="{{ file.file_name }}">
+            {{ file.file_name }}
+          </td>
+          <td class="py-2 px-3 text-xs text-slate-500 whitespace-nowrap">{{ file.library.name if file.library else '—' }}</td>
+          <td class="py-2 px-3 text-center whitespace-nowrap">{{ status_badge(file) }}</td>
+          <td class="py-2 px-3 text-center whitespace-nowrap">{{ primary_actions(file) }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="4" class="py-10 text-center text-sm text-slate-500">{{ t('queue.empty') }}</td>
+        </tr>
         {% endfor %}
-    </section>
-
-    <!-- ========================= -->
-    <!-- FILES IN PROGRESS -->
-    <!-- ========================= -->
-    <section class="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
-
-        <!-- Section header with count -->
-        <h2 class="text-blue-400 font-bold mb-4 flex items-center">
-            <span class="mr-2">⚙️</span>
-            {{ t('queue.in_progress', count=processing|length) }}
-        </h2>
-
-        <!-- List of files currently being processed -->
-        <div class="space-y-3">
-            {% for file in processing %}
-                {# Single processing file card #}
-                <div class="bg-slate-900 p-3 rounded border border-blue-900 animate-pulse">
-                    
-                    <!-- File name -->
-                    <p class="text-sm text-blue-200 font-medium">
-                        {{ file.file_name }}
-                    </p>
-
-                    {# 
-                        Visual progress bar.
-                        Width is static here (50%) and acts as a placeholder.
-                        Can be made dynamic later if real progress data exists.
-                    #}
-                    <div class="w-full bg-slate-800 h-1.5 mt-2 rounded-full overflow-hidden">
-                        <div class="bg-blue-500 h-full w-1/2"></div>
-                    </div>
-                </div>
-            {% endfor %}
-        </div>
-    </section>
-
-    <!-- ========================= -->
-    <!-- RECENTLY COMPLETED FILES -->
-    <!-- ========================= -->
-    <section class="bg-slate-800/50 p-4 rounded-xl border border-slate-700 lg:col-span-3">
-
-        <!-- Section header -->
-        <h2 class="text-green-400 font-bold mb-4 flex items-center">
-            <span class="mr-2">✅</span>
-            {{ t('queue.completed') }}
-        </h2>
-
-        <!-- List of completed files -->
-        <div class="space-y-3">
-            {% for file in completed %}
-                {# Single completed file card #}
-                <div class="bg-slate-900 p-3 rounded border border-green-900/30 opacity-75 flex justify-between items-center">
-                    <div class="min-w-0">
-                        <!-- File name -->
-                        <p class="text-sm text-green-200 font-medium truncate">
-                            {{ file.file_name }}
-                        </p>
-                    </div>
-                    
-                    <!-- Actions -->
-					<div class="flex items-center space-x-2 ml-4">
-					    <!-- RE-SCAN: completed -> pending -->
-                        <form method="post" action="/queue/{{ file.id }}/rescan">
-                            <button
-                                type="submit"
-                                class="bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs px-2 py-1 rounded"
-                                title="{{ t('dash.rescan_title') }}"
-                            >
-                                🔄
-                            </button>
-                        </form>
-                    </div>
-                </div>
-            {% endfor %}
-        </div>
-    </section>
+      </tbody>
+    </table>
+  </div>
 </div>
-
 {% endblock %}

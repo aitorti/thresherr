@@ -664,27 +664,59 @@ async def queue_redirect():
 
 
 @app.get("/activities/queue", response_class=HTMLResponse)
-async def get_queue(request: Request, db: Session = Depends(get_db)):
+async def get_queue(
+    request: Request,
+    status: str = "all",
+    db: Session = Depends(get_db),
+):
+    """Activity -> Queue: one table with status tabs, *arr style."""
     stats = compute_global_stats(db)
-    pending = db.query(models.MediaFile).filter(models.MediaFile.status == "pending").all()
-    queued = db.query(models.MediaFile).filter(models.MediaFile.status == "queued").all()
-    processing = db.query(models.MediaFile).filter(models.MediaFile.status == "processing").all()
-    completed = (
-        db.query(models.MediaFile)
-        .filter(models.MediaFile.status == "completed")
-        .order_by(models.MediaFile.id.desc())
-        .limit(10)
-        .all()
-    )
+
+    counts = {
+        "pending": (
+            db.query(models.MediaFile)
+            .filter(models.MediaFile.status == "pending")
+            .count()
+        ),
+        "queued": (
+            db.query(models.MediaFile)
+            .filter(models.MediaFile.status == "queued")
+            .count()
+        ),
+        "processing": (
+            db.query(models.MediaFile)
+            .filter(models.MediaFile.status == "processing")
+            .count()
+        ),
+        "completed": (
+            db.query(models.MediaFile)
+            .filter(models.MediaFile.status == "completed")
+            .count()
+        ),
+    }
+
+    valid = {"all", "pending", "queued", "processing", "completed"}
+    if status not in valid:
+        status = "all"
+
+    query = db.query(models.MediaFile)
+    if status == "all":
+        query = query.filter(
+            models.MediaFile.status.in_(("pending", "queued", "processing", "completed"))
+        )
+    else:
+        query = query.filter(models.MediaFile.status == status)
+
+    entries = query.order_by(models.MediaFile.id.desc()).limit(100).all()
+
     return render(
         request=request,
         name="queue.html",
         db=db,
         **stats,
-        pending=pending,
-        queued=queued,
-        processing=processing,
-        completed=completed,
+        entries=entries,
+        counts=counts,
+        status=status,
     )
 
 

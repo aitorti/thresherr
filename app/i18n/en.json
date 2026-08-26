@@ -102,10 +102,13 @@
   "dash.count": "{count} files",
 
   "queue.title": "Processing Queue",
+  "queue.filter_all": "All",
+  "queue.col.file": "File",
+  "queue.empty": "No files in the queue.",
   "queue.pending": "Pending ({count})",
   "queue.queued": "Queued ({count})",
   "queue.in_progress": "In Progress ({count})",
-  "queue.completed": "Recently Completed",
+  "queue.completed": "Completed ({count})",
 
   "lib.new": "New Library",
   "lib.name": "Library Name",
