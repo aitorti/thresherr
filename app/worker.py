@@ -29,6 +29,13 @@ WORKER_SLEEP_SECONDS = 5
 # (crashed/killed worker) and are automatically re-queued.
 STALE_PROCESSING_TIMEOUT_MINUTES = 60
 
+# Heartbeat throttle: the worker writes its liveness to the settings table
+# at most once every N seconds (System -> Status reads it). While a job is
+# being processed the heartbeat may go stale for the job duration; the
+# status page treats a recent 'processing' job as a live worker.
+HEARTBEAT_EVERY_SECONDS = 30
+_last_heartbeat_write = 0.0
+
 
 def _utcnow() -> datetime:
     """
@@ -36,6 +43,33 @@ def _utcnow() -> datetime:
     Replacement for deprecated datetime.utcnow().
     """
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+# -------------------------------------------------
+# Worker heartbeat (System -> Status)
+# -------------------------------------------------
+
+def _set_worker_setting(db, key: str, value: str) -> None:
+    row = db.query(models.Setting).filter(models.Setting.key == key).first()
+    if row:
+        row.value = value
+    else:
+        db.add(models.Setting(key=key, value=value))
+
+
+def _get_setting_row(db, key: str):
+    return db.query(models.Setting).filter(models.Setting.key == key).first()
+
+
+def write_heartbeat(db, force: bool = False) -> None:
+    """Persist worker liveness; throttled to one write per 30s (idle loop)."""
+    global _last_heartbeat_write
+    now = time.time()
+    if not force and now - _last_heartbeat_write < HEARTBEAT_EVERY_SECONDS:
+        return
+    _last_heartbeat_write = now
+    _set_worker_setting(db, "worker_heartbeat", _utcnow().isoformat())
+    db.commit()
 
 # -------------------------------------------------
 # Temp output path & cleanup helpers
@@ -1198,6 +1232,15 @@ def run_worker():
     setup_logging()
     logger.info("Worker starting")
 
+    # First heartbeat + worker start time (kept on restarts)
+    _boot_db = SessionLocal()
+    try:
+        if _get_setting_row(_boot_db, "worker_started_at") is None:
+            _set_worker_setting(_boot_db, "worker_started_at", _utcnow().isoformat())
+        write_heartbeat(_boot_db, force=True)
+    finally:
+        _boot_db.close()
+
     # Periodic recycle bin cleanup (~every hour with 5s sleep)
     RECYCLE_CLEANUP_EVERY = 720
     cycle_count = 0
@@ -1207,6 +1250,9 @@ def run_worker():
         job = None
         cycle_count += 1
         try:
+            # Liveness heartbeat (throttled)
+            write_heartbeat(db)
+
             # Recover jobs stuck in 'processing' (crashed/killed worker)
             requeue_stale_processing(db)
 

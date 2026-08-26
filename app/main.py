@@ -18,6 +18,7 @@ from logging_setup import (
 import i18n
 import naming
 import backups
+import health
 
 import models
 import subprocess
@@ -33,6 +34,9 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
 APP_VERSION = "0.1.0"
+
+# Process start time (naive UTC) for the System -> Status uptime display
+APP_START_TIME = datetime.now(timezone.utc).replace(tzinfo=None)
 
 # 1. Database setup
 models.Base.metadata.create_all(bind=engine)
@@ -337,12 +341,28 @@ api_v1 = APIRouter(prefix="/api/v1", dependencies=[Depends(require_api_key)])
 
 @api_v1.get("/system/status")
 async def api_system_status(db: Session = Depends(get_db)):
-    """Lightweight status endpoint, the first piece of the public API."""
+    """Full status: versions, uptime, DB, worker, storage and health."""
+    uptime_seconds = (
+        datetime.now(timezone.utc).replace(tzinfo=None) - APP_START_TIME
+    ).total_seconds()
     return {
         "app": "thresherr",
         "version": APP_VERSION,
+        "python": health.python_version(),
+        "sqlite": health.sqlite_version(),
+        "uptime_seconds": round(uptime_seconds),
+        "db": health.db_info(DB_PATH),
+        "worker": health.worker_state(db),
+        "storage": health.storage_info(),
+        "health": health.run_health_checks(db, DB_PATH),
         "stats": compute_global_stats(db),
     }
+
+
+@api_v1.get("/health")
+async def api_health(db: Session = Depends(get_db)):
+    """Health checks (problems only, *arr style). Empty = all good."""
+    return {"health": health.run_health_checks(db, DB_PATH)}
 
 
 @api_v1.get("/system/backups")
@@ -1395,6 +1415,40 @@ async def delete_log_file(file_name: str):
     os.remove(path)
     ui_logger.info("Log file deleted: %s", name)
     return RedirectResponse(url="/system/logfiles", status_code=303)
+
+
+# -------------------------------------------------
+# SYSTEM: STATUS & HEALTH (*arr-style, System -> Status)
+# -------------------------------------------------
+# General info (versions/uptime/DB/worker) + storage usage + health checks.
+# Health checks report PROBLEMS only; an empty list means everything is fine
+# (same philosophy as Radarr/Sonarr System -> Status).
+
+@app.get("/system/status", response_class=HTMLResponse)
+async def system_status(request: Request, db: Session = Depends(get_db)):
+    stats = compute_global_stats(db)
+    fmt_dt = _make_fmt_dt(db)
+    ws = health.worker_state(db)
+    uptime_seconds = (
+        datetime.now(timezone.utc).replace(tzinfo=None) - APP_START_TIME
+    ).total_seconds()
+    return render(
+        request=request,
+        name="system_status.html",
+        db=db,
+        **stats,
+        app_version=APP_VERSION,
+        python_version=health.python_version(),
+        sqlite_version=health.sqlite_version(),
+        db_info=health.db_info(DB_PATH),
+        uptime=health.format_duration(uptime_seconds),
+        worker=ws,
+        worker_last_seen=fmt_dt(ws["last_seen"]) if ws["last_seen"] else None,
+        worker_started=fmt_dt(ws["started_at"]) if ws["started_at"] else None,
+        storage=health.storage_info(),
+        health_issues=health.run_health_checks(db, DB_PATH),
+        fmt_bytes=health.format_bytes,
+    )
 
 
 # -------------------------------------------------

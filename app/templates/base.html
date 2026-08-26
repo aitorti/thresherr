@@ -142,8 +142,9 @@
           {# System section — *arr family convention #}
           <div class="text-xs font-bold uppercase tracking-widest text-slate-500 mt-5 mb-1 px-3">{{ t('nav.system') }}</div>
 
-          <a href="#" class="block px-3 py-2 rounded-md mb-1 text-slate-500 cursor-not-allowed"
-             title="{{ t('nav.coming_soon') }}">
+          <a href="/system/status"
+             class="block px-3 py-2 rounded-md mb-1 transition-colors
+                    {% if path.startswith('/system/status') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
             {{ t('nav.status') }}
           </a>
 

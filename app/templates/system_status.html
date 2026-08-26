@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-5xl">
+  <!-- Breadcrumb, *arr style -->
+  <div class="text-xs text-slate-500 font-semibold mb-1">{{ t('nav.system') }} → {{ t('status.title') }}</div>
+
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+    <h1 class="text-2xl font-extrabold text-slate-100">{{ t('status.title') }}</h1>
+    <a href="/system/status"
+       class="px-4 py-2 rounded-md bg-amber-600 text-sm text-slate-950 font-bold hover:bg-amber-500 transition-colors">
+      {{ t('status.refresh') }}
+    </a>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+    {# ------------------------------------------------------------ #}
+    {# GENERAL                                                     #}
+    {# ------------------------------------------------------------ #}
+    <div class="rounded-lg border border-slate-700 bg-slate-900 p-5">
+      <h2 class="text-sm font-bold text-slate-200 mb-3">{{ t('status.general') }}</h2>
+      <dl class="space-y-2 text-sm">
+        <div class="flex justify-between gap-4">
+          <dt class="text-slate-500">{{ t('status.app_version') }}</dt>
+          <dd class="text-slate-200 font-semibold">{{ app_version }}</dd>
+        </div>
+        <div class="flex justify-between gap-4">
+          <dt class="text-slate-500">{{ t('status.python') }}</dt>
+          <dd class="text-slate-200 font-mono text-xs pt-0.5">{{ python_version }}</dd>
+        </div>
+        <div class="flex justify-between gap-4">
+          <dt class="text-slate-500">{{ t('status.sqlite') }}</dt>
+          <dd class="text-slate-200 font-mono text-xs pt-0.5">{{ sqlite_version }}</dd>
+        </div>
+        <div class="flex justify-between gap-4">
+          <dt class="text-slate-500">{{ t('status.database') }}</dt>
+          <dd class="text-slate-200 font-mono text-xs pt-0.5">{{ db_info.path }}</dd>
+        </div>
+        <div class="flex justify-between gap-4">
+          <dt class="text-slate-500">{{ t('status.db_size') }}</dt>
+          <dd class="text-slate-200">{{ fmt_bytes(db_info.size) }}</dd>
+        </div>
+        <div class="flex justify-between gap-4">
+          <dt class="text-slate-500">{{ t('status.uptime') }}</dt>
+          <dd class="text-slate-200">{{ uptime }}</dd>
+        </div>
+        <div class="flex justify-between gap-4">
+          <dt class="text-slate-500">{{ t('status.worker') }}</dt>
+          <dd>
+            {% if worker.state == 'running' %}
+              <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-bold bg-green-900/60 text-green-300 border border-green-700">
+                <span class="w-1.5 h-1.5 rounded-full bg-green-400"></span>{{ t('status.worker.running') }}
+              </span>
+            {% elif worker.state == 'processing' %}
+              <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-bold bg-blue-900/60 text-blue-300 border border-blue-700">
+                <span class="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"></span>{{ t('status.worker.processing') }}
+              </span>
+            {% elif worker.state == 'stopped' %}
+              <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-bold bg-red-900/60 text-red-300 border border-red-700">
+                <span class="w-1.5 h-1.5 rounded-full bg-red-400"></span>{{ t('status.worker.stopped') }}
+              </span>
+            {% else %}
+              <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-bold bg-slate-800 text-slate-400 border border-slate-700">
+                <span class="w-1.5 h-1.5 rounded-full bg-slate-500"></span>{{ t('status.worker.never') }}
+              </span>
+            {% endif %}
+          </dd>
+        </div>
+        <div class="flex justify-between gap-4">
+          <dt class="text-slate-500">{{ t('status.worker.started') }}</dt>
+          <dd class="text-slate-200">{{ worker_started or '—' }}</dd>
+        </div>
+        <div class="flex justify-between gap-4">
+          <dt class="text-slate-500">{{ t('status.worker.last_seen') }}</dt>
+          <dd class="text-slate-200">{{ worker_last_seen or '—' }}</dd>
+        </div>
+        {% if worker.busy_file %}
+        <div class="flex justify-between gap-4">
+          <dt class="text-slate-500">{{ t('status.worker.busy') }}</dt>
+          <dd class="text-slate-200 truncate max-w-[60%] text-right" title="{{ worker.busy_file }}">{{ worker.busy_file }}</dd>
+        </div>
+        {% endif %}
+      </dl>
+    </div>
+
+    {# ------------------------------------------------------------ #}
+    {# STORAGE                                                     #}
+    {# ------------------------------------------------------------ #}
+    <div class="rounded-lg border border-slate-700 bg-slate-900 p-5">
+      <h2 class="text-sm font-bold text-slate-200 mb-3">{{ t('status.storage') }}</h2>
+      {% for s in storage %}
+      <div class="mb-4 last:mb-0">
+        <div class="flex justify-between text-xs mb-1">
+          <span class="font-mono text-slate-300">{{ s.path }}</span>
+          <span class="text-slate-400">
+            {{ fmt_bytes(s.free) }} {{ t('status.storage.free') }} / {{ fmt_bytes(s.total) }}
+          </span>
+        </div>
+        {% if s.exists %}
+          {% set pct = (s.used * 100 / s.total) if s.total else 0 %}
+          <div class="h-2 rounded bg-slate-800 overflow-hidden">
+            <div class="h-full {% if pct > 90 %}bg-red-500{% elif pct > 75 %}bg-amber-500{% else %}bg-green-500{% endif %}"
+                 style="width: {{ pct }}%"></div>
+          </div>
+          <div class="text-[10px] text-slate-500 mt-0.5">
+            {{ fmt_bytes(s.used) }} {{ t('status.storage.used') }} · {{ pct|round(0)|int }}%
+          </div>
+        {% else %}
+          <div class="text-xs text-red-400">{{ t('status.storage.missing') }}</div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  {# ------------------------------------------------------------ #}
+  {# HEALTH (problems only, *arr style)                          #}
+  {# ------------------------------------------------------------ #}
+  <div class="rounded-lg border border-slate-700 bg-slate-900 p-5">
+    <h2 class="text-sm font-bold text-slate-200 mb-3">{{ t('status.health') }}</h2>
+    {% if health_issues %}
+      <ul class="space-y-2">
+        {% for issue in health_issues %}
+        <li class="flex items-start gap-3 rounded-md px-3 py-2 border
+                   {% if issue.level == 'error' %}border-red-800 bg-red-950/40{% else %}border-amber-700 bg-amber-950/40{% endif %}">
+          <span class="text-sm leading-5 {% if issue.level == 'error' %}text-red-400{% else %}text-amber-400{% endif %}">
+            {% if issue.level == 'error' %}✗{% else %}⚠{% endif %}
+          </span>
+          <div>
+            <div class="text-[10px] font-bold uppercase tracking-widest text-slate-400">{{ issue.source }}</div>
+            <div class="text-sm text-slate-200">{{ t(issue.key, **issue.args) }}</div>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="rounded-md border border-green-800 bg-green-950/40 px-4 py-3 text-sm text-green-300">
+        ✓ {{ t('health.no_issues') }}
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
