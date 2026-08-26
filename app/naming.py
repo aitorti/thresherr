@@ -43,6 +43,16 @@ _YEAR_RE = re.compile(r"(?<!\d)(19|20)\d{2}(?!\d)")
 _INVALID_FS_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _MAX_NAME_LENGTH = 180
 
+# Release-name noise removed from titles (source, resolution, codecs...)
+_RELEASE_NOISE_RE = re.compile(
+    r"(?i)\b(?:"
+    r"hdtv|hdtvrip|pdtv|sdtv|dvdrip|bdrip|brrip|bluray|blu-ray|webrip|web-dl|webdl|"
+    r"hdr10|hdr|dv|dovi|uhd|x264|x265|h264|h265|hevc|avc|av1|vp9|mpeg4|mpeg-4|divx|xvid|"
+    r"aac|ac3|eac3|dts|truehd|flac|mp3|atmos|multi|proper|repack|remux|extended|remastered|"
+    r"\d{3,4}p"
+    r")\b\.?"
+)
+
 
 def short_language(lang: str | None) -> str | None:
     """spa -> ES, eng -> EN; unknown codes uppercased as-is; und -> None."""
@@ -58,6 +68,58 @@ def extract_year(title: str) -> str:
     """First 19xx/20xx year found in the original title, if any."""
     match = _YEAR_RE.search(title or "")
     return match.group(0) if match else ""
+
+
+def clean_title(file_name: str) -> str:
+    """
+    Extract a clean movie title from a release file name.
+
+    '300 (2007) HDTV-1080p.mkv'                -> '300'
+    'The Dark Knight 2008 1080p BluRay x264.mkv' -> 'The Dark Knight'
+    'Underworld - Rise of the Lycans (2009).mkv' -> 'Underworld - Rise of the Lycans'
+
+    The year is removed so the {Year} token is the single source of truth
+    (no duplicated info). Falls back to the raw name when nothing is left.
+    """
+    raw = os.path.splitext(os.path.basename(file_name or ""))[0]
+
+    name = re.sub(r"[._]", " ", raw)
+    name = _YEAR_RE.sub(" ", name)
+    name = name.replace("(", " ").replace(")", " ")
+    # Bracketed blocks are release noise (thresherr's own [Quality Codec
+    # Langs] or group tags) — drop them entirely.
+    name = re.sub(r"\[[^\]]*\]", " ", name)
+    name = _RELEASE_NOISE_RE.sub(" ", name)
+    name = re.sub(r"\s*[-–]\s*", " - ", name)
+    name = re.sub(r"\s+", " ", name).strip(" -")
+
+    if not name:
+        # e.g. '1984 (1984)' -> everything removed; keep the raw name
+        return re.sub(r"[._]", " ", raw).strip()
+    return name
+
+
+def quality_from_dimensions(width: int | None, height: int | None) -> str | None:
+    """
+    Commercial resolution tier from stream dimensions.
+
+    Uses BOTH width and height so letterboxed scope releases (1920x800,
+    which are sold as 1080p) and 4:3 masters (1440x1080, sold as 1080p)
+    map to the right tier instead of the raw pixel height.
+    """
+    if not width and not height:
+        return None
+    w = width or 0
+    h = height or 0
+    if w >= 3840 or h >= 2160:
+        return "2160p"
+    if w >= 1920 or h >= 1080:
+        return "1080p"
+    if w >= 1280 or h >= 720:
+        return "720p"
+    if w >= 720 or h >= 576:
+        return "480p"
+    return f"{h}p" if h else None
 
 
 def _collapse(text: str) -> str:

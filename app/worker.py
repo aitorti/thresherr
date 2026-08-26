@@ -1084,7 +1084,11 @@ def _naming_config(db) -> tuple[bool, str]:
 
 def _naming_context(job: models.MediaFile, job_plan: dict, inspection: dict) -> dict:
     """Build the token values for naming from a job's plan and inspection."""
-    title = os.path.splitext(os.path.basename(job.full_path))[0]
+    # Clean title: release noise (year/quality/source/codecs) is removed so
+    # the {Title}/{Year} tokens never duplicate info from the original name.
+    raw_title = os.path.splitext(os.path.basename(job.full_path))[0]
+    title = naming.clean_title(job.full_path)
+    year = naming.extract_year(raw_title)
 
     kept_audio = [
         s
@@ -1118,8 +1122,11 @@ def _naming_context(job: models.MediaFile, job_plan: dict, inspection: dict) -> 
 
     return {
         "title": title,
-        "year": naming.extract_year(title),
-        "quality": f"{height}p" if height else "",
+        "year": year,
+        "quality": naming.quality_from_dimensions(
+            video.get("width"), height
+        )
+        or "",
         "video_codec": video.get("codec") or "",
         "audio_codecs": "+".join(audio_codecs),
         "audio_languages": "-".join(audio_langs),
