@@ -505,6 +505,7 @@ async def dashboard(
     for mf in media_files:
         mf.has_stream_overrides = mf.stream_overrides is not None
         mf.year = naming.extract_year(mf.file_name)
+        _set_display_languages(mf)
         # Effective state: a file that already matches the profile (processed
         # or not) IS 'completed' — COMPLETED means profile-compliant.
         mf.profile_compliant = (
@@ -721,6 +722,7 @@ async def get_queue(
     )
     counts = {"pending": 0, "queued": 0, "processing": 0, "completed": 0}
     for mf in entries:
+        _set_display_languages(mf)
         mf.profile_compliant = (
             mf.status in ("pending", "completed")
             and mf.library is not None
@@ -1167,6 +1169,51 @@ async def global_search(
 
 
 # --- DASHBOARD POLLING API ---
+
+def _set_display_languages(mf) -> None:
+    """
+    Apply stream overrides to the displayed language summary.
+
+    A language assigned manually in the inspect modal replaces 'und' in the
+    summary, and the overridden languages are exposed so the UI can paint
+    them amber (visual hint: "edited by hand").
+    """
+    def split(raw):
+        return [l.strip() for l in (raw or "").split(",") if l.strip()]
+
+    mf.audio_override_langs = set()
+    mf.subtitle_override_langs = set()
+    audio_list = split(mf.audio_languages)
+    sub_list = split(mf.subtitle_languages)
+
+    if mf.stream_overrides:
+        try:
+            ovr = json.loads(mf.stream_overrides)
+        except Exception:
+            ovr = {}
+        audio_ovr = [v for v in (ovr.get("audio") or {}).values() if v]
+        sub_ovr = [v for v in (ovr.get("subtitle") or {}).values() if v]
+        mf.audio_override_langs = set(audio_ovr)
+        mf.subtitle_override_langs = set(sub_ovr)
+
+        def apply(values, overrides):
+            items = list(values)
+            oi = 0
+            for i, v in enumerate(items):
+                if v == "und" and oi < len(overrides):
+                    items[i] = overrides[oi]
+                    oi += 1
+            for extra in overrides[oi:]:
+                if extra not in items:
+                    items.append(extra)
+            return items
+
+        audio_list = apply(audio_list, audio_ovr)
+        sub_list = apply(sub_list, sub_ovr)
+
+    mf.audio_languages_list = audio_list or ["-"]
+    mf.subtitle_languages_list = sub_list or ["-"]
+
 
 @app.get("/api/media/status")
 async def get_media_status(db: Session = Depends(get_db)):

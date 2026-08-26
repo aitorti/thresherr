@@ -54,6 +54,7 @@
   "dash.rescan_title": "Re-scan file",
   "dash.inspect_title": "Inspect streams metadata",
   "dash.und_badge_title": "Streams with unknown language (und) — requires manual review with 🛠️",
+  "dash.override_title": "Manually assigned language",
 
   "status.completed": "Completed",
   "status.processing": "Processing",

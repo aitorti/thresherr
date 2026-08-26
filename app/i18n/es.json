@@ -54,6 +54,7 @@
   "dash.rescan_title": "Volver a escanear archivo",
   "dash.inspect_title": "Inspeccionar metadatos de pistas",
   "dash.und_badge_title": "Pistas con idioma desconocido (und): requiere revisión manual con 🛠️",
+  "dash.override_title": "Idioma asignado manualmente",
 
   "status.completed": "Completado",
   "status.processing": "Procesando",

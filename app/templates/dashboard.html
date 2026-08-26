@@ -183,11 +183,19 @@
           <td class="px-4 py-3 text-right text-slate-200 font-mono whitespace-nowrap">{{ (file.size_original / 1048576)|round(0)|int if file.size_original is not none else '—' }} MB</td>
           <td class="px-4 py-3">
             <div class="text-blue-400 font-medium uppercase text-xs" data-field="audio_codec">{{ file.audio_codec or '—' }}</div>
-            <div class="text-[10px] text-slate-400 italic mt-0.5" data-field="audio_languages">{{ file.audio_languages or '-' }}</div>
+            <div class="text-[10px] text-slate-400 italic mt-0.5" data-field="audio_languages">
+              {%- for lang in file.audio_languages_list -%}
+                <span{% if lang in file.audio_override_langs %} class="text-amber-400 font-bold" title="{{ t('dash.override_title') }}"{% endif %}>{{ lang }}</span>{% if not loop.last %}, {% endif %}
+              {%- endfor -%}
+            </div>
           </td>
           <td class="px-4 py-3">
             <div class="text-green-400 font-medium uppercase text-xs" data-field="subtitle_codec">{{ file.subtitle_codec or '—' }}</div>
-            <div class="text-[10px] text-slate-400 italic mt-0.5" data-field="subtitle_languages">{{ file.subtitle_languages or '-' }}</div>
+            <div class="text-[10px] text-slate-400 italic mt-0.5" data-field="subtitle_languages">
+              {%- for lang in file.subtitle_languages_list -%}
+                <span{% if lang in file.subtitle_override_langs %} class="text-amber-400 font-bold" title="{{ t('dash.override_title') }}"{% endif %}>{{ lang }}</span>{% if not loop.last %}, {% endif %}
+              {%- endfor -%}
+            </div>
           </td>
           <td class="px-4 py-3 text-right text-slate-300 font-mono whitespace-nowrap" data-field="size_final">
             {% if file.status == 'completed' and file.size_final is not none %}
@@ -222,8 +230,12 @@
       <div class="text-[10px] text-slate-500 font-mono" data-field="poster_meta">
         {{ file.year or '—' }} · {{ file.resolution or '—' }} · {{ (file.size_original / 1048576)|round(0)|int if file.size_original is not none else '—' }} MB
       </div>
-      <div class="text-[10px] text-slate-500 truncate" title="{{ file.audio_languages or '' }}">{{ t('dash.col.audio') }}: <span data-field="audio_languages">{{ file.audio_languages or '—' }}</span></div>
-      <div class="text-[10px] text-slate-500 truncate" title="{{ file.subtitle_languages or '' }}">{{ t('dash.col.subtitles') }}: <span data-field="subtitle_languages">{{ file.subtitle_languages or '—' }}</span></div>
+      <div class="text-[10px] text-slate-500 truncate" title="{{ file.audio_languages or '' }}">{{ t('dash.col.audio') }}: <span data-field="audio_languages">
+        {%- for lang in file.audio_languages_list -%}<span{% if lang in file.audio_override_langs %} class="text-amber-400 font-bold" title="{{ t('dash.override_title') }}"{% endif %}>{{ lang }}</span>{% if not loop.last %}, {% endif %}{%- endfor -%}
+      </span></div>
+      <div class="text-[10px] text-slate-500 truncate" title="{{ file.subtitle_languages or '' }}">{{ t('dash.col.subtitles') }}: <span data-field="subtitle_languages">
+        {%- for lang in file.subtitle_languages_list -%}<span{% if lang in file.subtitle_override_langs %} class="text-amber-400 font-bold" title="{{ t('dash.override_title') }}"{% endif %}>{{ lang }}</span>{% if not loop.last %}, {% endif %}{%- endfor -%}
+      </span></div>
       <div class="mt-auto pt-1 flex items-center justify-between gap-1">
         <div data-role="status" data-current-status="{{ file.status }}">{{ status_badge(file) }}</div>
         <div data-role="actions">{{ primary_actions(file) }}</div>
@@ -251,8 +263,8 @@
       <div class="font-semibold text-slate-100 truncate" data-field="file_name" title="{{ file.file_name }}">{{ file.file_name }}</div>
       <div class="text-xs text-slate-400 mt-0.5" data-field="overview_meta">
         {{ file.year or '—' }} · {{ file.resolution or '—' }} · {{ file.video_codec or '—' }} ·
-        {{ file.audio_codec or '—' }} ({{ file.audio_languages or '—' }}) ·
-        {{ file.subtitle_codec or '—' }} ({{ file.subtitle_languages or '—' }})
+        {{ file.audio_codec or '—' }} ({% for lang in file.audio_languages_list %}{{ lang }}{% if not loop.last %}, {% endif %}{% endfor %}) ·
+        {{ file.subtitle_codec or '—' }} ({% for lang in file.subtitle_languages_list %}{{ lang }}{% if not loop.last %}, {% endif %}{% endfor %})
       </div>
       <div class="text-[10px] text-slate-500 mt-0.5 font-mono">
         {{ file.library.name if file.library else '—' }} · {{ (file.size_original / 1048576)|round(0)|int if file.size_original is not none else '—' }} MB
