@@ -320,5 +320,27 @@
   "health.no_backups": "Automatic backups are enabled but no backup has been created yet",
   "health.recycle_path_empty": "Recycle bin is enabled but the path is empty",
   "health.auth_disabled": "UI authentication is disabled",
-  "health.library_missing": "Library \"{name}\": path does not exist — {path}"
+  "health.library_missing": "Library \"{name}\": path does not exist — {path}",
+
+  "tasks.title": "Tasks",
+  "tasks.col.name": "Name",
+  "tasks.col.interval": "Interval",
+  "tasks.col.last": "Last Execution",
+  "tasks.col.duration": "Duration",
+  "tasks.col.result": "Result",
+  "tasks.col.actions": "Actions",
+  "tasks.scan": "Scan Libraries",
+  "tasks.scan_hint": "Finds new media files in all libraries",
+  "tasks.scan_interval_hint": "Hours between automatic scans. 0 disables.",
+  "tasks.hours": "h",
+  "tasks.never": "Never",
+  "tasks.execute_title": "Execute now",
+  "tasks.recycle": "Recycle Bin Cleanup",
+  "tasks.recycle_hint": "Deletes parked originals older than the retention period",
+  "tasks.hourly": "Hourly",
+  "tasks.backup": "Backups",
+  "tasks.backup_hint": "Consistent database snapshots (see System → Backups)",
+  "tasks.every_days": "Every {days} day(s)",
+  "tasks.disabled": "Disabled",
+  "tasks.saved_ok": "Task settings saved."
 }

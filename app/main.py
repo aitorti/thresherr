@@ -19,6 +19,7 @@ import i18n
 import naming
 import backups
 import health
+import tasks
 
 import models
 import subprocess
@@ -365,6 +366,35 @@ async def api_health(db: Session = Depends(get_db)):
     return {"health": health.run_health_checks(db, DB_PATH)}
 
 
+@api_v1.get("/system/tasks")
+async def api_list_tasks(db: Session = Depends(get_db)):
+    """Scheduled tasks state (interval, last run, result)."""
+    return {
+        "tasks": {
+            tasks.TASK_SCAN: tasks.scan_state(db),
+            tasks.TASK_RECYCLE: tasks.recycle_state(db),
+            tasks.TASK_BACKUP: tasks.backup_state(db),
+        }
+    }
+
+
+@api_v1.post("/system/tasks/{task}/execute")
+async def api_execute_task(task: str, db: Session = Depends(get_db)):
+    """Execute a task right now (scan | recycle | backup)."""
+    if task == tasks.TASK_SCAN:
+        return tasks.run_scan(db)
+    if task == tasks.TASK_RECYCLE:
+        return tasks.run_recycle_cleanup(db)
+    if task == tasks.TASK_BACKUP:
+        try:
+            out = _run_backup_now(db)
+            out["result"] = f"backup created: {os.path.basename(out['path'])}"
+            return out
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Backup failed: {exc}")
+    raise HTTPException(status_code=404, detail="Unknown task")
+
+
 @api_v1.get("/system/backups")
 async def api_list_backups():
     """List available backups (newest first)."""
@@ -705,8 +735,8 @@ async def activity_history(
 
 @app.get("/scan")
 async def manual_scan(request: Request, db: Session = Depends(get_db)):
-    new_count = scan_libraries(db)
-    ui_logger.info("Manual scan completed: %s new media file(s)", new_count)
+    out = tasks.run_scan(db)
+    ui_logger.info("Manual scan completed: %s", out["result"])
     return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303,)
 
 # --- DELETE PROFILES & LIBRARIES ---
@@ -1452,6 +1482,78 @@ async def system_status(request: Request, db: Session = Depends(get_db)):
 
 
 # -------------------------------------------------
+# SYSTEM: TASKS (*arr-style, System -> Tasks)
+# -------------------------------------------------
+# Scheduled tasks: Scan Libraries (interval configurable), Recycle Bin
+# Cleanup and Backups. The worker runs them in its ~hourly housekeeping
+# block; the Execute buttons (and the API) run them immediately. Every run
+# records its outcome in the settings table for the Tasks page.
+
+@app.get("/system/tasks", response_class=HTMLResponse)
+async def system_tasks(request: Request, db: Session = Depends(get_db)):
+    stats = compute_global_stats(db)
+    fmt_dt = _make_fmt_dt(db)
+    return render(
+        request=request,
+        name="system_tasks.html",
+        db=db,
+        **stats,
+        scan_state=tasks.scan_state(db),
+        recycle_state=tasks.recycle_state(db),
+        backup_state=tasks.backup_state(db),
+        worker=health.worker_state(db),
+        fmt_dt=fmt_dt,
+    )
+
+
+@app.post("/system/tasks/scan/execute")
+async def execute_scan_task(db: Session = Depends(get_db)):
+    out = tasks.run_scan(db)
+    ui_logger.info("Task scan executed: %s", out["result"])
+    return RedirectResponse(
+        url=f"/system/tasks?batch={quote(out['result'])}", status_code=303
+    )
+
+
+@app.post("/system/tasks/recycle/execute")
+async def execute_recycle_task(db: Session = Depends(get_db)):
+    out = tasks.run_recycle_cleanup(db)
+    ui_logger.info("Task recycle executed: %s", out["result"])
+    return RedirectResponse(
+        url=f"/system/tasks?batch={quote(out['result'])}", status_code=303
+    )
+
+
+@app.post("/system/tasks/backup/execute")
+async def execute_backup_task(db: Session = Depends(get_db)):
+    try:
+        out = _run_backup_now(db)
+        result = f"backup created: {os.path.basename(out['path'])}"
+    except Exception as exc:
+        ui_logger.error("Task backup failed: %s", exc)
+        result = f"error: {exc}"
+    ui_logger.info("Task backup executed: %s", result)
+    return RedirectResponse(
+        url=f"/system/tasks?batch={quote(result)}", status_code=303
+    )
+
+
+@app.post("/system/tasks/scan/config")
+async def save_scan_config(
+    scan_interval_hours: str = Form("0"),
+    db: Session = Depends(get_db),
+):
+    try:
+        interval = max(0, int(scan_interval_hours))
+    except ValueError:
+        interval = 0
+    _set_setting(db, "scan_interval_hours", str(interval))
+    db.commit()
+    ui_logger.info("Scan interval set to %s hour(s)", interval)
+    return RedirectResponse(url="/system/tasks?saved=1", status_code=303)
+
+
+# -------------------------------------------------
 # SYSTEM: BACKUPS (*arr-style, System -> Backups)
 # -------------------------------------------------
 # Backups are consistent SQLite snapshots (Online Backup API) packed as
@@ -1485,23 +1587,29 @@ async def system_backups(request: Request, db: Session = Depends(get_db)):
 @app.post("/system/backups/create")
 async def create_backup_route(db: Session = Depends(get_db)):
     try:
-        path = backups.create_backup(DB_PATH, backups.BACKUP_DIR)
-        try:
-            retention = int(_get_setting(db, "backup_retention", "7") or "7")
-        except ValueError:
-            retention = 7
-        removed = backups.enforce_retention(backups.BACKUP_DIR, retention)
-        ui_logger.info(
-            "Backup created: %s (retention removed %s)",
-            os.path.basename(path),
-            removed,
-        )
+        _run_backup_now(db)
         return RedirectResponse(url="/system/backups?backup=ok", status_code=303)
     except Exception as exc:
         ui_logger.error("Backup creation failed: %s", exc)
         return RedirectResponse(
             url="/system/backups?error=backup_failed", status_code=303
         )
+
+
+def _run_backup_now(db: Session) -> dict:
+    """Create a backup and enforce retention; shared by UI and API."""
+    path = backups.create_backup(DB_PATH, backups.BACKUP_DIR)
+    try:
+        retention = int(_get_setting(db, "backup_retention", "7") or "7")
+    except ValueError:
+        retention = 7
+    removed = backups.enforce_retention(backups.BACKUP_DIR, retention)
+    ui_logger.info(
+        "Backup created: %s (retention removed %s)",
+        os.path.basename(path),
+        removed,
+    )
+    return {"path": path, "removed": removed}
 
 
 @app.post("/system/backups/settings")

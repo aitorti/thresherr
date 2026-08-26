@@ -13,6 +13,7 @@ from database import SessionLocal, engine, DB_PATH
 from logging_setup import get_logger, setup_logging
 import naming
 import backups
+import tasks
 
 logger = get_logger("worker")
 
@@ -1138,21 +1139,8 @@ def build_output_name_from_job(
 # -------------------------------------------------
 # Recycle bin (*arr style, Settings -> Media Management)
 # -------------------------------------------------
-
-def _recycle_config(db) -> tuple[bool, str, int]:
-    """(enabled, path, cleanup_days) from the settings table."""
-    def val(key: str, default: str | None = None) -> str | None:
-        row = db.query(models.Setting).filter(models.Setting.key == key).first()
-        return row.value if row and row.value is not None else default
-
-    enabled = val("recycle_bin_enabled", "0") == "1"
-    path = (val("recycle_bin_path") or "").strip()
-    try:
-        days = int(val("recycle_bin_days", "7") or "7")
-    except ValueError:
-        days = 7
-    return enabled, path, days
-
+# Config + cleanup logic moved to tasks.py (System -> Tasks also uses them).
+# move_to_recycle_bin stays here: it is part of the job replace flow.
 
 def move_to_recycle_bin(source_path: str, recycle_dir: str) -> str:
     """
@@ -1167,25 +1155,6 @@ def move_to_recycle_bin(source_path: str, recycle_dir: str) -> str:
     now = time.time()
     os.utime(dest, (now, now))
     return dest
-
-
-def cleanup_recycle_bin(recycle_dir: str, days: int) -> int:
-    """Delete files older than `days` days; returns the number removed."""
-    if not recycle_dir or not os.path.isdir(recycle_dir):
-        return 0
-    cutoff = time.time() - days * 86400
-    removed = 0
-    for entry in os.listdir(recycle_dir):
-        full = os.path.join(recycle_dir, entry)
-        if not os.path.isfile(full):
-            continue
-        try:
-            if os.path.getmtime(full) < cutoff:
-                os.remove(full)
-                removed += 1
-        except OSError:
-            pass
-    return removed
 
 
 # -------------------------------------------------
@@ -1381,18 +1350,21 @@ def run_worker():
         finally:
             db.close()
 
-            # Recycle bin cleanup (cheap, once per hour)
+            # Housekeeping (cheap, once per hour): recycle cleanup,
+            # automatic backups and the scheduled scan (System -> Tasks)
             if cycle_count % RECYCLE_CLEANUP_EVERY == 0:
                 _cleanup_db = SessionLocal()
                 try:
-                    _, recycle_path, recycle_days = _recycle_config(_cleanup_db)
-                    removed = cleanup_recycle_bin(recycle_path, recycle_days)
-                    if removed:
-                        logger.info(
-                            "Recycle bin cleanup: removed %s file(s)", removed
-                        )
+                    try:
+                        out = tasks.run_recycle_cleanup(_cleanup_db)
+                        if out.get("removed"):
+                            logger.info(
+                                "Recycle bin cleanup: removed %s file(s)",
+                                out["removed"],
+                            )
+                    except Exception as exc:
+                        logger.error("Recycle bin cleanup failed: %s", exc)
 
-                    # Automatic backups (System -> Backups)
                     try:
                         created = maybe_automatic_backup(_cleanup_db)
                         if created:
@@ -1401,6 +1373,13 @@ def run_worker():
                             )
                     except Exception as exc:
                         logger.error("Automatic backup failed: %s", exc)
+
+                    try:
+                        result = tasks.maybe_scheduled_scan(_cleanup_db)
+                        if result:
+                            logger.info("Scheduled scan: %s", result)
+                    except Exception as exc:
+                        logger.error("Scheduled scan failed: %s", exc)
                 finally:
                     _cleanup_db.close()
 

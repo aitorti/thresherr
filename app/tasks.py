@@ -1,0 +1,199 @@
+"""
+Scheduled tasks (*arr-style, System -> Tasks).
+
+The worker runs scheduled tasks in its ~hourly housekeeping block (scan +
+recycle bin cleanup + automatic backups); the UI can also execute them on
+demand (Execute button). Every execution records its outcome in the
+settings table (last run / duration / result) so the Tasks page shows the
+same information the *arr family shows: interval, last execution, duration,
+result.
+
+Imports are kept cycle-free: tasks.py imports scanner/models/backups, and
+worker.py imports tasks.
+"""
+
+import os
+import time
+from datetime import datetime, timezone
+
+import models
+from scanner import scan_libraries
+import backups
+
+# Task identifiers, in UI order
+TASK_SCAN = "scan"
+TASK_RECYCLE = "recycle"
+TASK_BACKUP = "backup"
+ALL_TASKS = (TASK_SCAN, TASK_RECYCLE, TASK_BACKUP)
+
+
+def _utcnow_naive() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _get_setting(db, key: str, default: str | None = None) -> str | None:
+    row = db.query(models.Setting).filter(models.Setting.key == key).first()
+    return row.value if row and row.value is not None else default
+
+
+def _set_setting(db, key: str, value: str) -> None:
+    row = db.query(models.Setting).filter(models.Setting.key == key).first()
+    if row:
+        row.value = value
+    else:
+        db.add(models.Setting(key=key, value=value))
+    db.commit()
+
+
+def parse_ts(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+# -------------------------------------------------
+# SCAN LIBRARIES
+# -------------------------------------------------
+
+def scan_interval_hours(db) -> int:
+    """Hours between automatic scans; 0 = disabled."""
+    try:
+        return max(0, int(_get_setting(db, "scan_interval_hours", "0") or "0"))
+    except ValueError:
+        return 0
+
+
+def run_scan(db) -> dict:
+    """
+    Run a library scan right now and record the outcome.
+    Returns {"ok": bool, "new_count"|"error": ..., "duration": seconds}.
+    """
+    start = time.monotonic()
+    try:
+        new_count = scan_libraries(db)
+        duration = round(time.monotonic() - start, 1)
+        result = f"{new_count} new file(s)"
+        _set_setting(db, "scan_last_run", _utcnow_naive().isoformat())
+        _set_setting(db, "scan_last_duration", str(duration))
+        _set_setting(db, "scan_last_result", result)
+        return {"ok": True, "new_count": new_count, "duration": duration, "result": result}
+    except Exception as exc:
+        duration = round(time.monotonic() - start, 1)
+        result = f"error: {exc}"
+        _set_setting(db, "scan_last_run", _utcnow_naive().isoformat())
+        _set_setting(db, "scan_last_duration", str(duration))
+        _set_setting(db, "scan_last_result", result)
+        return {"ok": False, "error": str(exc), "duration": duration, "result": result}
+
+
+def maybe_scheduled_scan(db) -> str | None:
+    """
+    Run the scan when its interval has elapsed (worker housekeeping).
+    Returns the result string when a scan ran, None otherwise.
+    """
+    interval = scan_interval_hours(db)
+    if interval <= 0:
+        return None
+    last = parse_ts(_get_setting(db, "scan_last_run"))
+    if last is not None:
+        if (_utcnow_naive() - last).total_seconds() < interval * 3600:
+            return None
+    out = run_scan(db)
+    return out.get("result")
+
+
+def scan_state(db) -> dict:
+    return {
+        "interval_hours": scan_interval_hours(db),
+        "last_run": parse_ts(_get_setting(db, "scan_last_run")),
+        "last_duration": _get_setting(db, "scan_last_duration"),
+        "last_result": _get_setting(db, "scan_last_result"),
+    }
+
+
+# -------------------------------------------------
+# RECYCLE BIN CLEANUP (moved here from worker.py)
+# -------------------------------------------------
+
+def recycle_config(db) -> tuple[bool, str, int]:
+    """(enabled, path, cleanup_days) from the settings table."""
+    enabled = _get_setting(db, "recycle_bin_enabled", "0") == "1"
+    path = (_get_setting(db, "recycle_bin_path") or "").strip()
+    try:
+        days = int(_get_setting(db, "recycle_bin_days", "7") or "7")
+    except ValueError:
+        days = 7
+    return enabled, path, days
+
+
+def cleanup_recycle_bin(recycle_dir: str, days: int) -> int:
+    """Delete files older than `days` days; returns the number removed."""
+    if not recycle_dir or not os.path.isdir(recycle_dir):
+        return 0
+    cutoff = time.time() - days * 86400
+    removed = 0
+    for entry in os.listdir(recycle_dir):
+        full = os.path.join(recycle_dir, entry)
+        if not os.path.isfile(full):
+            continue
+        try:
+            if os.path.getmtime(full) < cutoff:
+                os.remove(full)
+                removed += 1
+        except OSError:
+            pass
+    return removed
+
+
+def run_recycle_cleanup(db) -> dict:
+    """Run the recycle bin cleanup right now and record the outcome."""
+    start = time.monotonic()
+    try:
+        enabled, path, days = recycle_config(db)
+        removed = cleanup_recycle_bin(path, days) if (enabled and path) else 0
+        duration = round(time.monotonic() - start, 1)
+        result = f"removed {removed} file(s)" if removed else "nothing to clean"
+        _set_setting(db, "recycle_last_run", _utcnow_naive().isoformat())
+        _set_setting(db, "recycle_last_duration", str(duration))
+        _set_setting(db, "recycle_last_result", result)
+        return {"ok": True, "removed": removed, "duration": duration, "result": result}
+    except Exception as exc:
+        duration = round(time.monotonic() - start, 1)
+        result = f"error: {exc}"
+        _set_setting(db, "recycle_last_run", _utcnow_naive().isoformat())
+        _set_setting(db, "recycle_last_duration", str(duration))
+        _set_setting(db, "recycle_last_result", result)
+        return {"ok": False, "error": str(exc), "duration": duration, "result": result}
+
+
+def recycle_state(db) -> dict:
+    return {
+        "last_run": parse_ts(_get_setting(db, "recycle_last_run")),
+        "last_duration": _get_setting(db, "recycle_last_duration"),
+        "last_result": _get_setting(db, "recycle_last_result"),
+    }
+
+
+# -------------------------------------------------
+# BACKUP (state derived from backups.py; execution lives in main.py)
+# -------------------------------------------------
+
+def backup_state(db) -> dict:
+    try:
+        interval = max(0, int(_get_setting(db, "backup_interval_days", "0") or "0"))
+    except ValueError:
+        interval = 0
+    latest = backups.list_backups(backups.BACKUP_DIR)[:1]
+    last_run = None
+    last_name = None
+    if latest:
+        last_run = datetime.fromtimestamp(latest[0]["mtime"], tz=timezone.utc).replace(tzinfo=None)
+        last_name = latest[0]["name"]
+    return {
+        "interval_days": interval,
+        "last_run": last_run,
+        "last_name": last_name,
+    }

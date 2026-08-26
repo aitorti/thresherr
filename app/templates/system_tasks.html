@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="max-w-5xl">
+  <!-- Breadcrumb, *arr style -->
+  <div class="text-xs text-slate-500 font-semibold mb-1">{{ t('nav.system') }} → {{ t('tasks.title') }}</div>
+  <h1 class="text-2xl font-extrabold text-slate-100 mb-4">{{ t('tasks.title') }}</h1>
+
+  {# Worker state banner (compact, same source as System -> Status) #}
+  <div class="flex items-center gap-2 mb-4 text-sm">
+    <span class="text-slate-400">{{ t('status.worker') }}:</span>
+    {% if worker.state == 'running' %}
+      <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-bold bg-green-900/60 text-green-300 border border-green-700">
+        <span class="w-1.5 h-1.5 rounded-full bg-green-400"></span>{{ t('status.worker.running') }}
+      </span>
+    {% elif worker.state == 'processing' %}
+      <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-bold bg-blue-900/60 text-blue-300 border border-blue-700">
+        <span class="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"></span>{{ t('status.worker.processing') }}
+      </span>
+    {% elif worker.state == 'stopped' %}
+      <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-bold bg-red-900/60 text-red-300 border border-red-700">
+        <span class="w-1.5 h-1.5 rounded-full bg-red-400"></span>{{ t('status.worker.stopped') }}
+      </span>
+    {% else %}
+      <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-bold bg-slate-800 text-slate-400 border border-slate-700">
+        <span class="w-1.5 h-1.5 rounded-full bg-slate-500"></span>{{ t('status.worker.never') }}
+      </span>
+    {% endif %}
+    {% if worker.busy_file %}
+      <span class="text-xs text-slate-500 truncate" title="{{ worker.busy_file }}">· {{ worker.busy_file }}</span>
+    {% endif %}
+  </div>
+
+  <div class="rounded-lg border border-slate-700 bg-slate-900 overflow-hidden">
+    <table class="w-full text-left">
+      <thead>
+        <tr class="bg-slate-800/80 text-[10px] uppercase tracking-widest text-slate-400">
+          <th class="py-2 px-3 font-bold">{{ t('tasks.col.name') }}</th>
+          <th class="py-2 px-3 font-bold">{{ t('tasks.col.interval') }}</th>
+          <th class="py-2 px-3 font-bold">{{ t('tasks.col.last') }}</th>
+          <th class="py-2 px-3 font-bold">{{ t('tasks.col.duration') }}</th>
+          <th class="py-2 px-3 font-bold">{{ t('tasks.col.result') }}</th>
+          <th class="py-2 px-3 font-bold text-right">{{ t('tasks.col.actions') }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {# ---------------- Scan Libraries ---------------- #}
+        <tr class="border-t border-slate-800 hover:bg-slate-800/40 align-top">
+          <td class="py-3 px-3">
+            <div class="text-sm font-semibold text-slate-200">{{ t('tasks.scan') }}</div>
+            <div class="text-[10px] text-slate-500 mt-0.5">{{ t('tasks.scan_hint') }}</div>
+          </td>
+          <td class="py-3 px-3">
+            <form method="post" action="/system/tasks/scan/config" class="flex items-center gap-1.5">
+              <input type="number" name="scan_interval_hours" value="{{ scan_state.interval_hours }}"
+                     min="0" max="168" title="{{ t('tasks.scan_interval_hint') }}"
+                     class="w-16 bg-slate-800 border border-slate-700 rounded-md px-2 py-1 text-sm text-slate-200 focus:outline-none focus:border-amber-500">
+              <span class="text-xs text-slate-500">{{ t('tasks.hours') }}</span>
+              <button type="submit"
+                      class="px-2 py-1 rounded bg-slate-800 border border-slate-700 text-[11px] text-slate-200 hover:bg-slate-700 transition-colors">
+                {{ t('settings.save') }}
+              </button>
+            </form>
+          </td>
+          <td class="py-3 px-3 text-sm text-slate-300">{{ fmt_dt(scan_state.last_run) if scan_state.last_run else t('tasks.never') }}</td>
+          <td class="py-3 px-3 text-sm text-slate-300">{% if scan_state.last_duration %}{{ scan_state.last_duration }}s{% else %}—{% endif %}</td>
+          <td class="py-3 px-3 text-xs text-slate-400 max-w-[220px] truncate" title="{{ scan_state.last_result or '' }}">{{ scan_state.last_result or '—' }}</td>
+          <td class="py-3 px-3">
+            <form method="post" action="/system/tasks/scan/execute" class="flex justify-end">
+              <button type="submit" title="{{ t('tasks.execute_title') }}"
+                      class="px-2 py-1 rounded bg-amber-600 text-[11px] font-bold text-slate-950 hover:bg-amber-500 transition-colors">▶</button>
+            </form>
+          </td>
+        </tr>
+
+        {# ---------------- Recycle Bin Cleanup ---------------- #}
+        <tr class="border-t border-slate-800 hover:bg-slate-800/40 align-top">
+          <td class="py-3 px-3">
+            <div class="text-sm font-semibold text-slate-200">{{ t('tasks.recycle') }}</div>
+            <div class="text-[10px] text-slate-500 mt-0.5">{{ t('tasks.recycle_hint') }}</div>
+          </td>
+          <td class="py-3 px-3 text-sm text-slate-300">{{ t('tasks.hourly') }}</td>
+          <td class="py-3 px-3 text-sm text-slate-300">{{ fmt_dt(recycle_state.last_run) if recycle_state.last_run else t('tasks.never') }}</td>
+          <td class="py-3 px-3 text-sm text-slate-300">{% if recycle_state.last_duration %}{{ recycle_state.last_duration }}s{% else %}—{% endif %}</td>
+          <td class="py-3 px-3 text-xs text-slate-400 max-w-[220px] truncate" title="{{ recycle_state.last_result or '' }}">{{ recycle_state.last_result or '—' }}</td>
+          <td class="py-3 px-3">
+            <form method="post" action="/system/tasks/recycle/execute" class="flex justify-end">
+              <button type="submit" title="{{ t('tasks.execute_title') }}"
+                      class="px-2 py-1 rounded bg-amber-600 text-[11px] font-bold text-slate-950 hover:bg-amber-500 transition-colors">▶</button>
+            </form>
+          </td>
+        </tr>
+
+        {# ---------------- Backup ---------------- #}
+        <tr class="border-t border-slate-800 hover:bg-slate-800/40 align-top">
+          <td class="py-3 px-3">
+            <div class="text-sm font-semibold text-slate-200">{{ t('tasks.backup') }}</div>
+            <div class="text-[10px] text-slate-500 mt-0.5">{{ t('tasks.backup_hint') }}</div>
+          </td>
+          <td class="py-3 px-3 text-sm text-slate-300">
+            {% if backup_state.interval_days > 0 %}
+              {{ t('tasks.every_days', days=backup_state.interval_days) }}
+            {% else %}
+              <span class="text-slate-500">{{ t('tasks.disabled') }}</span>
+            {% endif %}
+          </td>
+          <td class="py-3 px-3 text-sm text-slate-300">{{ fmt_dt(backup_state.last_run) if backup_state.last_run else t('tasks.never') }}</td>
+          <td class="py-3 px-3 text-sm text-slate-300">—</td>
+          <td class="py-3 px-3 text-xs text-slate-400 max-w-[220px] truncate" title="{{ backup_state.last_name or '' }}">{{ backup_state.last_name or '—' }}</td>
+          <td class="py-3 px-3">
+            <form method="post" action="/system/tasks/backup/execute" class="flex justify-end">
+              <button type="submit" title="{{ t('tasks.execute_title') }}"
+                      class="px-2 py-1 rounded bg-amber-600 text-[11px] font-bold text-slate-950 hover:bg-amber-500 transition-colors">▶</button>
+            </form>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

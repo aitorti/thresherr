@@ -320,5 +320,27 @@
   "health.no_backups": "Las copias automáticas están activadas pero aún no se ha creado ninguna",
   "health.recycle_path_empty": "La papelera está activada pero la ruta está vacía",
   "health.auth_disabled": "La autenticación de la interfaz está desactivada",
-  "health.library_missing": "Biblioteca \"{name}\": la ruta no existe — {path}"
+  "health.library_missing": "Biblioteca \"{name}\": la ruta no existe — {path}",
+
+  "tasks.title": "Tareas",
+  "tasks.col.name": "Nombre",
+  "tasks.col.interval": "Intervalo",
+  "tasks.col.last": "Última ejecución",
+  "tasks.col.duration": "Duración",
+  "tasks.col.result": "Resultado",
+  "tasks.col.actions": "Acciones",
+  "tasks.scan": "Escanear bibliotecas",
+  "tasks.scan_hint": "Detecta archivos de medios nuevos en todas las bibliotecas",
+  "tasks.scan_interval_hint": "Horas entre escaneos automáticos. 0 desactiva.",
+  "tasks.hours": "h",
+  "tasks.never": "Nunca",
+  "tasks.execute_title": "Ejecutar ahora",
+  "tasks.recycle": "Limpieza de papelera",
+  "tasks.recycle_hint": "Elimina los originales aparcados con más de la retención configurada",
+  "tasks.hourly": "Cada hora",
+  "tasks.backup": "Copias de seguridad",
+  "tasks.backup_hint": "Instantáneas consistentes de la BD (ver Sistema → Copias de seguridad)",
+  "tasks.every_days": "Cada {days} día(s)",
+  "tasks.disabled": "Desactivado",
+  "tasks.saved_ok": "Ajustes de tareas guardados."
 }
