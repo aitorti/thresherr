@@ -2,10 +2,10 @@ from fastapi import FastAPI, Request, Form, Depends, HTTPException, Query, Body
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi import APIRouter
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from database import engine, SessionLocal, DB_PATH
-from scanner import scan_libraries, get_video_metadata
+from scanner import get_video_metadata
 from typing import Optional, Dict
 from logging_setup import (
     TRACE,
@@ -22,6 +22,8 @@ import health
 import tasks
 import compliance
 import worker
+
+from settings import get_setting as _get_setting, set_setting as _set_setting
 
 import models
 import subprocess
@@ -256,22 +258,10 @@ async def auth_middleware(request: Request, call_next):
 
 
 # -------------------------------------------------
-# Settings helpers (key/value table)
+# Settings helpers (key/value table) — see settings.py
 # -------------------------------------------------
-
-def _get_setting(db: Session, key: str, default: str | None = None) -> str | None:
-    row = db.query(models.Setting).filter(models.Setting.key == key).first()
-    if row and row.value is not None:
-        return row.value
-    return default
-
-
-def _set_setting(db: Session, key: str, value: str) -> None:
-    row = db.query(models.Setting).filter(models.Setting.key == key).first()
-    if row:
-        row.value = value
-    else:
-        db.add(models.Setting(key=key, value=value))
+# Local aliases keep existing call sites short while the implementation
+# lives in a single shared module (settings.get_setting / set_setting).
 
 
 def _recycle_stats(path: str) -> dict:
@@ -497,7 +487,9 @@ async def dashboard(
     if dir not in ("asc", "desc"):
         dir = "asc"
 
-    query = db.query(models.MediaFile)
+    query = db.query(models.MediaFile).options(
+        joinedload(models.MediaFile.library).joinedload(models.Library.profile)
+    )
     if q:
         query = query.filter(models.MediaFile.file_name.ilike(f"%{q}%"))
     if library:
@@ -717,6 +709,9 @@ async def get_queue(
     # already matches the profile counts as completed)
     entries = (
         db.query(models.MediaFile)
+        .options(
+            joinedload(models.MediaFile.library).joinedload(models.Library.profile)
+        )
         .filter(
             models.MediaFile.status.in_(("pending", "queued", "processing", "completed"))
         )
@@ -836,40 +831,61 @@ def _compliant_with_fresh_probe(media) -> bool:
     )
 
 
+def _has_und_in_inspection(inspection: dict) -> bool:
+    """True when any audio/subtitle stream is undetermined (post-overrides)."""
+    for stream in inspection.get("audio_streams", []):
+        if (stream.get("language") or "und") == "und":
+            return True
+    for stream in inspection.get("subtitle_streams", []):
+        if (stream.get("language") or "und") == "und":
+            return True
+    return False
+
+
 @app.post("/queue/{media_id}/enqueue")
 async def enqueue_media(media_id: int, request: Request, db: Session = Depends(get_db)):
     media = db.query(models.MediaFile).filter(models.MediaFile.id == media_id).first()
     if not media or media.status != "pending":
         return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303)
 
-    # SAFETY: block enqueue if there is any 'und' (human must decide).
-    # Fresh ffprobe so the decision never relies on stale scan summary.
-    if has_und_language(media, fresh=True):
+    # SAFETY: ONE fresh ffprobe decides both checks (und + profile
+    # compliance). If the probe fails entirely we are conservative: the
+    # file is treated as 'undetermined' and a human must decide.
+    try:
+        inspection = worker.inspect_file(media)
+    except Exception:
+        inspection = None
+
+    def _blocked_redirect(error: str) -> RedirectResponse:
+        referer = request.headers.get("referer", "/")
+        sep = "&" if "?" in referer else "?"
+        return RedirectResponse(url=f"{referer}{sep}error={error}", status_code=303)
+
+    if inspection is None:
+        ui_logger.warning(
+            "Enqueue blocked for media_file id=%s (%s): ffprobe failed (und)",
+            media.id,
+            media.file_name,
+        )
+        return _blocked_redirect("und_blocked")
+
+    if _has_und_in_inspection(inspection):
         ui_logger.warning(
             "Enqueue blocked for media_file id=%s (%s): unknown language (und)",
             media.id,
             media.file_name,
         )
-        referer = request.headers.get("referer", "/")
-        sep = "&" if "?" in referer else "?"
-        return RedirectResponse(
-            url=f"{referer}{sep}error=und_blocked",
-            status_code=303,
-        )
+        return _blocked_redirect("und_blocked")
 
-    # SAFETY: block when the file already matches the profile (fresh probe)
-    if _compliant_with_fresh_probe(media):
+    if compliance.compliance_from_inspection(
+        media, inspection, media.library.profile
+    ):
         ui_logger.info(
             "Enqueue blocked for media_file id=%s (%s): profile already compliant",
             media.id,
             media.file_name,
         )
-        referer = request.headers.get("referer", "/")
-        sep = "&" if "?" in referer else "?"
-        return RedirectResponse(
-            url=f"{referer}{sep}error=profile_ok",
-            status_code=303,
-        )
+        return _blocked_redirect("profile_ok")
 
     media.status = "queued"
     db.commit()
@@ -926,6 +942,9 @@ async def rescan_media(media_id: int, request: Request, db: Session = Depends(ge
 async def preview_enqueue_library(library_id: int, db: Session = Depends(get_db)):
     media_files = (
         db.query(models.MediaFile)
+        .options(
+            joinedload(models.MediaFile.library).joinedload(models.Library.profile)
+        )
         .filter(
             models.MediaFile.library_id == library_id,
             models.MediaFile.status == "pending",
@@ -956,6 +975,9 @@ async def preview_dequeue_library(library_id: int, db: Session = Depends(get_db)
 async def preview_rescan_library(library_id: int, db: Session = Depends(get_db)):
     media_files = (
         db.query(models.MediaFile)
+        .options(
+            joinedload(models.MediaFile.library).joinedload(models.Library.profile)
+        )
         .filter(
             models.MediaFile.library_id == library_id,
             models.MediaFile.status.in_(("completed", "failed")),
@@ -982,6 +1004,9 @@ async def enqueue_library(
 ):
     media_files = (
         db.query(models.MediaFile)
+        .options(
+            joinedload(models.MediaFile.library).joinedload(models.Library.profile)
+        )
         .filter(
             models.MediaFile.library_id == library_id,
             models.MediaFile.status == "pending",
@@ -1060,6 +1085,9 @@ async def rescan_library(
 ):
     media_files = (
         db.query(models.MediaFile)
+        .options(
+            joinedload(models.MediaFile.library).joinedload(models.Library.profile)
+        )
         .filter(
             models.MediaFile.library_id == library_id,
             models.MediaFile.status.in_(("completed", "failed")),
@@ -1229,8 +1257,11 @@ def list_directories(base_key: str, path: str | None = None):
     real_base_path = os.path.realpath(base_path)
     real_current_path = os.path.realpath(current_path)
 
-    # Security check: never allow escaping the base directory
-    if not real_current_path.startswith(real_base_path):
+    # Security check: never allow escaping the base directory.
+    # (startswith WITHOUT a separator would accept /media_evil as /media)
+    if real_current_path != real_base_path and not real_current_path.startswith(
+        real_base_path + os.sep
+    ):
         raise HTTPException(status_code=403, detail="Access denied")
 
     if not os.path.isdir(real_current_path):
@@ -2088,34 +2119,6 @@ async def save_settings_interfaz(
     )
     db.commit()
     return RedirectResponse(url="/settings/interfaz", status_code=303)
-
-
-@app.post("/settings")
-async def save_settings(
-    log_level: str = Form(...),
-    ui_language: str = Form(None),
-    db: Session = Depends(get_db),
-):
-    try:
-        applied = set_log_level(log_level)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid log level")
-    ui_logger.info("Log level changed to %s (runtime, no restart)", applied)
-
-    if ui_language and i18n.is_valid_language(ui_language):
-        setting = (
-            db.query(models.Setting)
-            .filter(models.Setting.key == "ui_language")
-            .first()
-        )
-        if setting:
-            setting.value = ui_language
-        else:
-            db.add(models.Setting(key="ui_language", value=ui_language))
-        db.commit()
-        ui_logger.info("UI language changed to %s (runtime, no restart)", ui_language)
-
-    return RedirectResponse(url="/settings", status_code=303)
 
 # Ensure an API key exists from the very first run (Settings -> General -> Security)
 _bootstrap_db = SessionLocal()

@@ -162,7 +162,9 @@ class DatabaseLogHandler(logging.Handler):
     """
 
     def __init__(self, max_rows: int = _DB_MAX_ROWS, purge_every: int = _DB_PURGE_EVERY):
-        super().__init__(level=TRACE)
+        # DEBUG+ only: TRACE records (e.g. every HTTP request) stay in the
+        # trace file, they would only add noise to the System -> Logs table.
+        super().__init__(level=logging.DEBUG)
         self.max_rows = max_rows
         self.purge_every = purge_every
         self._since_purge = 0

@@ -90,10 +90,11 @@ class MediaFile(Base):
 
     # --------------------
     # Timestamps (traceability)
+    # Naive UTC (SQLite-compatible); rendered in Europe/Madrid by the UI.
     # --------------------
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    started_at = Column(DateTime(timezone=True), nullable=True)
-    finished_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    started_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
 
     # --------------------
     # Technical metadata (SUMMARY ONLY, UI/cache)
