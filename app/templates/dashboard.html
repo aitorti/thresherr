@@ -422,10 +422,14 @@
             <button class="action-btn text-slate-400 hover:text-red-400 transition-colors" title="${I18N.dequeueTitle}">${SVG.stop}</button>
           </form>`;
       } else if (status === "completed" || status === "failed") {
-        container.innerHTML = `
-          <form method="post" action="/queue/${mediaId}/rescan" class="inline">
-            <button class="action-btn text-slate-400 hover:text-amber-300 transition-colors" title="${status === "failed" ? I18N.retryTitle : I18N.rescanTitle}">${SVG.refresh}</button>
-          </form>`;
+        if (status === "completed" && compliant) {
+          container.innerHTML = `<span class="text-green-500" title="${I18N.compliantTitle}">${SVG.check}</span>`;
+        } else {
+          container.innerHTML = `
+            <form method="post" action="/queue/${mediaId}/rescan" class="inline">
+              <button class="action-btn text-slate-400 hover:text-amber-300 transition-colors" title="${status === "failed" ? I18N.retryTitle : I18N.rescanTitle}">${SVG.refresh}</button>
+            </form>`;
+        }
       } else {
         container.innerHTML = `<span class="text-slate-600 text-sm">—</span>`;
       }
