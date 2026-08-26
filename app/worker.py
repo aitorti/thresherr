@@ -833,6 +833,12 @@ def execute_job_plan(job_plan: dict, input_path: str, temp_dir: str) -> str:
             # target_codec must exist for transcode entries
             cmd += [f"-c:a:{audio_out_idx}", s["target_codec"]]
 
+        # Language tag on the output (cures 'und' in the final file when
+        # the language is known, e.g. from manual overrides)
+        lang = (s.get("language") or "").strip()
+        if lang and lang != "und":
+            cmd += [f"-metadata:s:a:{audio_out_idx}", f"language={lang}"]
+
         # Default disposition
         if s.get("set_default"):
             cmd += [f"-disposition:a:{audio_out_idx}", "default"]
@@ -849,6 +855,10 @@ def execute_job_plan(job_plan: dict, input_path: str, temp_dir: str) -> str:
 
         cmd += ["-map", f"0:{s['index']}"]
         cmd += [f"-c:s:{sub_out_idx}", "copy"]
+
+        lang = (s.get("language") or "").strip()
+        if lang and lang != "und":
+            cmd += [f"-metadata:s:s:{sub_out_idx}", f"language={lang}"]
 
         if s.get("set_default"):
             cmd += [f"-disposition:s:{sub_out_idx}", "default"]
@@ -1205,6 +1215,11 @@ def run_worker():
     # First heartbeat + worker start time (kept on restarts)
     _boot_db = SessionLocal()
     try:
+        # Files left in 'scanning' by a crashed language cascade -> pending
+        _boot_db.query(models.MediaFile).filter(
+            models.MediaFile.status == "scanning"
+        ).update({models.MediaFile.status: "pending"}, synchronize_session=False)
+        _boot_db.commit()
         if settings.get_setting(_boot_db, "worker_started_at") is None:
             _set_worker_setting(_boot_db, "worker_started_at", _utcnow().isoformat())
         write_heartbeat(_boot_db, force=True)

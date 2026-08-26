@@ -22,6 +22,7 @@ import health
 import tasks
 import compliance
 import worker
+import language_detect
 
 from settings import get_setting as _get_setting, set_setting as _set_setting
 
@@ -35,6 +36,7 @@ import time
 import hmac
 import secrets
 import hashlib
+import urllib.request
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
@@ -1415,9 +1417,132 @@ async def get_media_ffprobe(media_id: int, db: Session = Depends(get_db)):
         )
 
 # -------------------------------------------------
-# STREAM LANGUAGE OVERRIDES (UI / MANUAL EDITING)
+# AUTO-DETECT LANGUAGE (Whisper on demand, inspect modal)
 # -------------------------------------------------
 
+WHISPER_DEFAULT_URL = "http://whisper:8000/v1"
+
+
+def _detect_audio_language_whisper(file_path: str, stream_index: int, base_url: str) -> str | None:
+    """
+    Extract a 30s sample from the stream and ask the local Whisper
+    service for its language (last-resort detection, on demand).
+    """
+    if not base_url:
+        return None
+    sample = f"/tmp/thresherr_lang_{os.getpid()}_{stream_index}.mp3"
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg", "-y", "-v", "error", "-i", file_path,
+                "-map", f"0:{stream_index}", "-t", "30", "-vn",
+                "-ac", "1", "-ar", "16000", "-f", "mp3", sample,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode != 0 or not os.path.exists(sample) or os.path.getsize(sample) == 0:
+            return None
+
+        boundary = "----thresherr" + secrets.token_hex(8)
+        with open(sample, "rb") as fh:
+            audio = fh.read()
+        body = (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="sample.mp3"\r\n'
+            f"Content-Type: audio/mpeg\r\n\r\n"
+        ).encode() + audio + (
+            f"\r\n--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="model"\r\n\r\n'
+            f"Systran/faster-whisper-small\r\n"
+            f"--{boundary}--\r\n"
+        ).encode()
+
+        req = urllib.request.Request(
+            base_url.rstrip("/") + "/audio/transcriptions",
+            data=body,
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            data = json.loads(resp.read())
+        return language_detect._normalize_lang(data.get("language"))
+    except Exception as exc:
+        ui_logger.warning("Whisper language detection failed: %s", exc)
+        return None
+    finally:
+        try:
+            if os.path.exists(sample):
+                os.remove(sample)
+        except OSError:
+            pass
+
+
+@app.post("/api/media/{media_id}/auto-detect-language")
+async def auto_detect_language(media_id: int, db: Session = Depends(get_db)):
+    """
+    On-demand cascade for a single file (inspect modal button):
+    Whisper for und audio streams, fastText for und text subtitles.
+    Detected languages are saved as stream overrides (the worker applies
+    them and tags the output).
+    """
+    media = db.query(models.MediaFile).filter(models.MediaFile.id == media_id).first()
+    if not media:
+        raise HTTPException(status_code=404, detail="Media file not found")
+
+    try:
+        inspection = worker.inspect_file(media)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"ffprobe failed: {exc}")
+
+    base_url = _get_setting(db, "whisper_base_url", WHISPER_DEFAULT_URL) or ""
+    detected_audio = {}
+    detected_sub = {}
+
+    for stream in inspection.get("audio_streams", []):
+        if (stream.get("language") or "und") != "und":
+            continue
+        lang = _detect_audio_language_whisper(media.full_path, stream["index"], base_url)
+        if lang:
+            detected_audio[str(stream["index"])] = lang
+
+    # First und TEXT subtitle (image subs have no text for fastText)
+    for stream in inspection.get("subtitle_streams", []):
+        if (stream.get("language") or "und") != "und":
+            continue
+        if stream.get("codec") not in ("subrip", "ass", "vtt", "srt"):
+            continue
+        det = language_detect.detect_subtitle_language_fasttext(media.full_path)
+        if det:
+            detected_sub[str(stream["index"])] = det[0]["language"]
+        break
+
+    if not detected_audio and not detected_sub:
+        return {"detected": {"audio": {}, "subtitle": {}}, "saved": False}
+
+    overrides = {}
+    if media.stream_overrides:
+        try:
+            overrides = json.loads(media.stream_overrides)
+        except Exception:
+            overrides = {}
+    overrides.setdefault("audio", {}).update(detected_audio)
+    overrides.setdefault("subtitle", {}).update(detected_sub)
+    media.stream_overrides = json.dumps(overrides)
+    db.commit()
+    ui_logger.info(
+        "Auto-detected languages for media_file id=%s: audio=%s subtitle=%s",
+        media_id,
+        detected_audio,
+        detected_sub,
+    )
+    return {"detected": {"audio": detected_audio, "subtitle": detected_sub}, "saved": True}
+
+
+# -------------------------------------------------
+# STREAM LANGUAGE OVERRIDES (UI / MANUAL EDITING)
+# -------------------------------------------------
 @app.get("/api/media/{media_id}/stream-overrides")
 async def get_stream_overrides(media_id: int, db: Session = Depends(get_db)):
     """
@@ -1933,6 +2058,7 @@ async def get_settings_general(request: Request, db: Session = Depends(get_db)):
         api_key=get_api_key(db),
         auth_enabled_setting=_get_setting(db, "auth_enabled", "0"),
         auth_username=_get_setting(db, "auth_username", ""),
+        whisper_base_url=_get_setting(db, "whisper_base_url", WHISPER_DEFAULT_URL),
     )
 
 
@@ -1942,6 +2068,7 @@ async def save_settings_general(
     auth_enabled: str = Form(None),
     auth_username: str = Form(""),
     auth_password: str = Form(""),
+    whisper_base_url: str = Form(""),
     db: Session = Depends(get_db),
 ):
     try:
@@ -1970,6 +2097,9 @@ async def save_settings_general(
             ui_logger.warning(
                 "Auth enable requested but username/password missing; keeping auth off"
             )
+
+    # Whisper service (language auto-detect, optional)
+    _set_setting(db, "whisper_base_url", whisper_base_url.strip())
     db.commit()
     return RedirectResponse(url="/settings/general", status_code=303)
 

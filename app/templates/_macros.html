@@ -90,6 +90,8 @@
   <span class="px-2 py-0.5 rounded bg-green-900/40 text-green-400 text-[10px] font-bold uppercase border border-green-800/50">{{ t('status.completed') }}</span>
 {% elif file.effective_status == 'processing' %}
   <span class="px-2 py-0.5 rounded bg-blue-900/40 text-blue-400 text-[10px] font-bold uppercase border border-blue-800 animate-pulse">{{ t('status.processing') }}</span>
+{% elif file.effective_status == 'scanning' %}
+  <span class="px-2 py-0.5 rounded bg-blue-900/40 text-blue-400 text-[10px] font-bold uppercase border border-blue-800 animate-pulse">{{ t('status.scanning') }}</span>
 {% elif file.effective_status == 'failed' %}
   <span class="px-2 py-0.5 rounded bg-red-900/40 text-red-400 text-[10px] font-bold uppercase border border-red-800/50"
         title="{% if file.last_error %}{{ file.last_error }}{% else %}{{ t('status.failed') }}{% endif %}">{{ t('status.failed') }}</span>

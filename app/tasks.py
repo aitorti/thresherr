@@ -20,6 +20,7 @@ import models
 from scanner import scan_libraries
 import backups
 import settings
+import language_detect
 
 # Task identifiers, in UI order
 TASK_SCAN = "scan"
@@ -58,6 +59,61 @@ def scan_interval_hours(db) -> int:
         return 0
 
 
+def run_language_cascade(db) -> dict:
+    """
+    Resolve 'und' files automatically after a scan, in decreasing scope:
+
+      Pass 1: mkvinfo/mkvmerge over the 'und' files (Matroska) — tags the
+              container with mkvpropedit when a language is found.
+      Pass 2: mediainfo (audio) + fastText (text subs) over the remaining.
+
+    Files being analysed get the transient 'scanning' status (WORKING badge)
+    and are restored to 'pending' when the cascade finishes.
+    """
+    stats = {"mkvinfo": 0, "mediainfo": 0, "fasttext": 0, "und_remaining": 0}
+
+    und_files = [
+        mf
+        for mf in db.query(models.MediaFile)
+        .filter(models.MediaFile.status == "pending")
+        .all()
+        if language_detect.has_und_in_summary(mf)
+    ]
+    if not und_files:
+        return stats
+
+    for mf in und_files:
+        mf.status = "scanning"
+    db.commit()
+
+    try:
+        # Pass 1: mkvinfo (Matroska only)
+        remaining = []
+        for mf in und_files:
+            if not mf.full_path.lower().endswith(".mkv"):
+                remaining.append(mf)
+                continue
+            if language_detect.resolve_with_mkvinfo(mf, db):
+                stats["mkvinfo"] += 1
+            else:
+                remaining.append(mf)
+
+        # Pass 2: mediainfo (audio) + fastText (text subs) over the rest
+        for mf in remaining:
+            if language_detect.resolve_with_mediainfo(mf, db):
+                stats["mediainfo"] += 1
+    finally:
+        for mf in und_files:
+            if mf.status == "scanning":
+                mf.status = "pending"
+        db.commit()
+
+    stats["und_remaining"] = sum(
+        1 for mf in und_files if language_detect.has_und_in_summary(mf)
+    )
+    return stats
+
+
 def run_scan(db) -> dict:
     """
     Run a library scan right now and record the outcome.
@@ -66,8 +122,14 @@ def run_scan(db) -> dict:
     start = time.monotonic()
     try:
         new_count = scan_libraries(db)
+        cascade = run_language_cascade(db)
         duration = round(time.monotonic() - start, 1)
+        resolved = cascade["mkvinfo"] + cascade["mediainfo"]
         result = f"{new_count} new file(s)"
+        if resolved:
+            result += f" | {resolved} language(s) resolved"
+        if cascade["und_remaining"]:
+            result += f" | {cascade['und_remaining']} und left"
         _set_setting(db, "scan_last_run", _utcnow_naive().isoformat())
         _set_setting(db, "scan_last_duration", str(duration))
         _set_setting(db, "scan_last_result", result)

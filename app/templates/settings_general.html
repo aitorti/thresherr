@@ -54,6 +54,20 @@
       </div>
     </div>
 
+    <div class="border-t border-slate-800 pt-5">
+      <h2 class="text-sm font-bold text-slate-200 mb-1">{{ t('settings.whisper') }}</h2>
+      <p class="text-xs text-slate-500 mb-3">{{ t('settings.whisper_hint') }}</p>
+      <label for="whisper_base_url" class="block text-xs font-bold text-slate-300 mb-1">{{ t('settings.whisper_url') }}</label>
+      <input
+        id="whisper_base_url"
+        type="text"
+        name="whisper_base_url"
+        value="{{ whisper_base_url }}"
+        placeholder="http://whisper:8000/v1"
+        class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500"
+      >
+    </div>
+
     <button type="submit"
             class="px-4 py-2 rounded-md bg-amber-600 text-sm text-slate-950 font-bold hover:bg-amber-500 transition-colors">
       {{ t('settings.save') }}
@@ -91,7 +105,7 @@
 
     <p class="text-xs text-slate-500 mt-4">
       {{ t('settings.api_example') }}
-      <code class="font-mono text-slate-400">curl -H "X-Api-Key: *** api_key }}" http://192.168.1.25:8505/api/v1/system/status</code>
+      <code class="font-mono text-slate-400">curl -H "X-Api-Key: {{ api_key }}" http://192.168.1.25:8505/api/v1/system/status</code>
     </p>
   </div>
 

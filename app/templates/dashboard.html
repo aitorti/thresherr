@@ -335,6 +335,14 @@
             <div></div>
             <div class="flex justify-end gap-3">
               <button
+                id="auto-detect-language"
+                class="px-3 py-1.5 rounded-md bg-slate-800 border border-slate-700 text-xs font-semibold text-amber-300 hover:bg-slate-700 transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="inline mr-1 -mt-0.5"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                {{ t('dash.modal.auto_detect') }}
+              </button>
+
+              <button
                 id="clear-stream-overrides"
                 class="hidden px-3 py-1.5 rounded-md bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-300 hover:bg-slate-700 transition-colors"
               >
@@ -381,6 +389,7 @@
     const I18N = {
       completed: {{ t('status.completed')|tojson }},
       processing: {{ t('status.processing')|tojson }},
+      scanning: {{ t('status.scanning')|tojson }},
       failed: {{ t('status.failed')|tojson }},
       queued: {{ t('status.queued')|tojson }},
       pending: {{ t('status.pending')|tojson }},
@@ -404,6 +413,7 @@
       const map = {
         completed: `${base} bg-green-900/40 text-green-400 border-green-800/50`,
         processing: `${base} bg-blue-900/40 text-blue-400 border-blue-800 animate-pulse`,
+        scanning: `${base} bg-blue-900/40 text-blue-400 border-blue-800 animate-pulse`,
         failed: `${base} bg-red-900/40 text-red-400 border-red-800/50`,
         queued: `${base} bg-red-900/40 text-red-400 border-red-800/50`,
         pending: `${base} bg-slate-700/60 text-slate-400 border-slate-600/50`,
@@ -639,6 +649,9 @@
       colChannels: {{ t('dash.modal.col.channels')|tojson }},
       colLanguage: {{ t('dash.modal.col.language')|tojson }},
       none: {{ t('dash.modal.none')|tojson }},
+      detectRunning: {{ t('dash.modal.detect_running')|tojson }},
+      detectFailed: {{ t('dash.modal.detect_failed')|tojson }},
+      detectOk: {{ t('dash.modal.detect_ok')|tojson }},
     };
 
     const streamOverrides = {
@@ -906,6 +919,30 @@
       document.getElementById("save-stream-overrides").classList.add("hidden");
       document.getElementById("clear-stream-overrides").classList.add("hidden");
       location.reload();
+    });
+
+    document.getElementById("auto-detect-language").addEventListener("click", async () => {
+      if (!currentMediaId) return;
+      const btn = document.getElementById("auto-detect-language");
+      const original = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = I18N.detectRunning;
+      try {
+        const res = await fetch(`/api/media/${currentMediaId}/auto-detect-language`, { method: "POST" });
+        const data = await res.json();
+        if (data && data.saved) {
+          // Overrides saved: reload so the dashboard shows the amber tags
+          location.reload();
+        } else {
+          alert(I18N.detectFailed);
+        }
+      } catch (err) {
+        console.error(err);
+        alert(I18N.detectFailed);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = original;
+      }
     });
 
     closeBtn.addEventListener("click", closeModal);

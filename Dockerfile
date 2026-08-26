@@ -1,7 +1,13 @@
 FROM python:3.11-slim-bookworm
 
-# Instalamos ffmpeg (el músculo de Thresherr)
-RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
+# Utilidades de medios: ffmpeg (transcodificación), MKVToolNix (mkvinfo/
+# mkvpropedit para detección y etiquetado de idiomas en Matroska) y
+# MediaInfo (lectura alternativa de metadatos).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg \
+        mkvtoolnix \
+        mediainfo \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY requirements.txt .
