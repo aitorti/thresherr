@@ -1057,8 +1057,10 @@ def execute_job_plan(job_plan: dict, input_path: str, temp_dir: str) -> str:
         if s["action"] == "copy":
             cmd += [f"-c:a:{audio_out_idx}", "copy"]
         else:
-            # target_codec must exist for transcode entries
-            cmd += [f"-c:a:{audio_out_idx}", s["target_codec"]]
+            # target_codec must exist for transcode entries; map profile
+            # names to real ffmpeg encoders (opus -> libopus, dts -> dca...)
+            enc = compat.AUDIO_ENCODERS.get(s["target_codec"], s["target_codec"])
+            cmd += [f"-c:a:{audio_out_idx}", enc]
 
         # Language tag on the output (cures 'und' in the final file when
         # the language is known, e.g. from manual overrides)

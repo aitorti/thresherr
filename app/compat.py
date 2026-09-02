@@ -45,6 +45,19 @@ VIDEO_ENCODERS = {
     "vp9": "libvpx-vp9",
 }
 
+# Profile audio key -> ffmpeg encoder (native 'opus' is experimental;
+# 'dts' has no encoder of that name — the DTS encoder is 'dca').
+AUDIO_ENCODERS = {
+    "aac": "aac",
+    "ac3": "ac3",
+    "eac3": "eac3",
+    "dts": "dca",
+    "flac": "flac",
+    "mp3": "libmp3lame",
+    "opus": "libopus",
+    "vorbis": "libvorbis",
+}
+
 # Default encode parameters (option A: fixed quality + hard bitrate cap).
 # vp9 cannot combine CRF with a VBV cap in this ffmpeg build, so it uses a
 # capped target bitrate instead (see execute_job_plan).
