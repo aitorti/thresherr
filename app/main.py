@@ -1429,6 +1429,8 @@ WHISPER_SAMPLE_SECONDS = 45
 WHISPER_SAMPLE_FRACTIONS = (0.2, 0.5, 0.8)
 WHISPER_MULTI_SAMPLE_MIN_SECONDS = 600.0
 WHISPER_SEEK_RETRY_SECONDS = 10.0
+# Minimum mean avg_logprob gap (forced decodes) to call a tie-break winner.
+WHISPER_TIEBREAK_MIN_MARGIN = 0.05
 
 
 def _probe_audio_duration(file_path: str) -> float | None:
@@ -1461,12 +1463,23 @@ def _extract_audio_sample(file_path: str, stream_index: int, offset: float, out:
     return result.returncode == 0 and os.path.exists(out) and os.path.getsize(out) > 0
 
 
-def _whisper_transcribe(sample: str, base_url: str) -> dict | None:
-    """POST the sample to the local Whisper service (verbose_json)."""
+def _whisper_transcribe(sample: str, base_url: str, language: str | None = None) -> dict | None:
+    """POST the sample to the local Whisper service (verbose_json).
+
+    `language` optionally forces the Whisper language code (ISO 639-1, e.g.
+    "es") — used by the tie-break to compare candidate decodes.
+    """
     try:
         boundary = "----thresherr" + secrets.token_hex(8)
         with open(sample, "rb") as fh:
             audio = fh.read()
+        lang_field = ""
+        if language:
+            lang_field = (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="language"\r\n\r\n'
+                f"{language}\r\n"
+            )
         body = (
             f"--{boundary}\r\n"
             f'Content-Disposition: form-data; name="file"; filename="sample.mp3"\r\n'
@@ -1475,6 +1488,7 @@ def _whisper_transcribe(sample: str, base_url: str) -> dict | None:
             f"\r\n--{boundary}\r\n"
             f'Content-Disposition: form-data; name="model"\r\n\r\n'
             f"Systran/faster-whisper-small\r\n"
+        ).encode() + lang_field.encode() + (
             f"--{boundary}\r\n"
             f'Content-Disposition: form-data; name="response_format"\r\n\r\n'
             f"verbose_json\r\n"
@@ -1495,27 +1509,29 @@ def _whisper_transcribe(sample: str, base_url: str) -> dict | None:
 
 
 def _whisper_sample_vote(file_path: str, stream_index: int, base_url: str, offset: float,
-                         sample: str) -> tuple[str, str | None]:
+                         sample: str) -> tuple[str, str | None, str | None]:
     """Extract a 45s clip at `offset` and ask Whisper for its language.
 
-    Returns (status, lang): status is "vote" (speech found, lang is the
-    detected code), "empty" (no audible speech — Whisper would only return its
-    language prior), "broken" (extraction failed twice — damaged seek point) or
-    "error" (Whisper request failed). Anything but "vote" discards the sample.
+    Returns (status, lang, raw_lang): status is "vote" (speech found, lang is
+    the normalized code, raw_lang the Whisper ISO 639-1 code), "empty" (no
+    audible speech — Whisper would only return its language prior), "broken"
+    (extraction failed twice — damaged seek point) or "error" (Whisper request
+    failed). Anything but "vote" discards the sample.
     """
     def extract(at: float) -> bool:
         return _extract_audio_sample(file_path, stream_index, at, sample)
 
     # Damaged files: retry 10s before the failing seek point, then no vote.
     if not extract(offset) and not extract(max(0.0, offset - WHISPER_SEEK_RETRY_SECONDS)):
-        return "broken", None
+        return "broken", None, None
     data = _whisper_transcribe(sample, base_url)
     if not data:
-        return "error", None
+        return "error", None, None
     text = (data.get("text") or "").strip()
     if not text:
-        return "empty", None
-    return "vote", language_detect._normalize_lang(data.get("language"))
+        return "empty", None, None
+    raw_lang = data.get("language")
+    return "vote", language_detect._normalize_lang(raw_lang), raw_lang
 
 
 def _whisper_sample_label(fraction: float, duration: float | None) -> str:
@@ -1523,6 +1539,68 @@ def _whisper_sample_label(fraction: float, duration: float | None) -> str:
     if duration:
         return f"@{int(round(fraction * 100))}%"
     return "@start"
+
+
+def _whisper_avg_logprob(data: dict | None) -> float | None:
+    """Duration-weighted mean of segment avg_logprob; None when no segments."""
+    if not data:
+        return None
+    segs = data.get("segments") or []
+    total = 0.0
+    acc = 0.0
+    for seg in segs:
+        span = (seg.get("end") or 0.0) - (seg.get("start") or 0.0)
+        lp = seg.get("avg_logprob")
+        if span > 0 and lp is not None:
+            total += span
+            acc += lp * span
+    if total <= 0:
+        return None
+    return acc / total
+
+
+def _whisper_adjudicate(file_path: str, stream_index: int, base_url: str, duration: float,
+                        valid_samples: list, sample: str) -> tuple[str | None, float | None]:
+    """Tie-break between two candidate languages using forced decodes.
+
+    Re-extracts every valid sample and transcribes it once per candidate with
+    that candidate forced (Whisper `language` hint). The language that decodes
+    the samples best (higher mean avg_logprob) wins, provided the margin is at
+    least WHISPER_TIEBREAK_MIN_MARGIN; otherwise the tie stands (und). Returns
+    (winner_lang, margin) or (None, margin).
+
+    `valid_samples` entries are (fraction, normalized_lang, raw_whisper_lang).
+    """
+    candidates: list[str] = []
+    raw_for: dict[str, str] = {}
+    for _fraction, lang, raw in valid_samples:
+        if lang and lang not in candidates:
+            candidates.append(lang)
+        if lang and raw:
+            raw_for.setdefault(lang, raw)
+    if len(candidates) != 2:
+        return None, None
+
+    scores: dict[str, list[float]] = {cand: [] for cand in candidates}
+    for cand in candidates:
+        for fraction, _lang, _raw in valid_samples:
+            offset = fraction * duration
+            if not _extract_audio_sample(file_path, stream_index, offset, sample):
+                continue
+            data = _whisper_transcribe(sample, base_url, language=raw_for[cand])
+            lp = _whisper_avg_logprob(data)
+            if lp is not None:
+                scores[cand].append(lp)
+
+    def mean_of(cand: str) -> float:
+        return sum(scores[cand]) / len(scores[cand]) if scores[cand] else -99.0
+
+    best = max(candidates, key=mean_of)
+    second = min(candidates, key=mean_of)
+    margin = mean_of(best) - mean_of(second)
+    if best == second or margin < WHISPER_TIEBREAK_MIN_MARGIN:
+        return None, margin
+    return best, margin
 
 
 def _detect_audio_language_whisper(file_path: str, stream_index: int, base_url: str) -> dict | None:
@@ -1535,14 +1613,16 @@ def _detect_audio_language_whisper(file_path: str, stream_index: int, base_url: 
         just return the model prior (usually 'en'), so they are discarded.
       - If the 20% and 50% samples both vote for the same language, the 80%
         sample is skipped (early stop).
-      - Majority of the valid votes wins; a tie keeps the stream 'und' so the
-        human decides.
+      - Majority of the valid votes wins. A 1-1 tie (two candidate languages)
+        is adjudicated by forcing each candidate on every valid sample and
+        keeping the language that decodes best (avg_logprob); if the margin is
+        too small the stream stays 'und' for the human to decide.
       - Files under ~10 minutes get a single 45 s sample at 20% (start when
         the duration can't be probed).
 
-    Returns a dict {language, winner_votes, valid, samples} where `samples`
-    holds per-sample tokens (e.g. 'spa@20% · [skip@80%]'), or None when
-    Whisper is not configured.
+    Returns a dict {language, winner_votes, valid, samples, tiebreak, margin}
+    where `samples` holds per-sample tokens (e.g. 'spa@20% · [skip@80%]'), or
+    None when Whisper is not configured.
     """
     if not base_url:
         return None
@@ -1557,6 +1637,7 @@ def _detect_audio_language_whisper(file_path: str, stream_index: int, base_url: 
         results: list[tuple[str, str | None]] = []
         tokens: list[str] = []
         votes: dict[str, int] = {}
+        valid_samples: list[tuple[float, str, str]] = []  # (fraction, lang, raw_lang)
         valid = 0
 
         for pos, fraction in enumerate(fractions):
@@ -1569,12 +1650,13 @@ def _detect_audio_language_whisper(file_path: str, stream_index: int, base_url: 
                     break
 
             offset = fraction * duration if duration else 0.0
-            status, lang = _whisper_sample_vote(file_path, stream_index, base_url, offset, sample)
+            status, lang, raw_lang = _whisper_sample_vote(file_path, stream_index, base_url, offset, sample)
             results.append((status, lang))
             label = _whisper_sample_label(fraction, duration)
             if status == "vote" and lang:
                 votes[lang] = votes.get(lang, 0) + 1
                 valid += 1
+                valid_samples.append((fraction, lang, raw_lang or lang))
                 tokens.append(f"{lang}{label}")
             else:
                 reason = {"empty": "no-speech", "broken": "broken", "error": "error"}.get(status, status)
@@ -1585,11 +1667,24 @@ def _detect_audio_language_whisper(file_path: str, stream_index: int, base_url: 
             ranked = sorted(votes.items(), key=lambda kv: (-kv[1], kv[0]))
             if len(ranked) == 1 or ranked[0][1] > ranked[1][1]:
                 winner = ranked[0][0]
+
+        tiebreak = False
+        margin: float | None = None
+        if not winner and valid >= 2 and duration:
+            # No majority: adjudicate between the two candidate languages by
+            # forced decodes (the true language decodes the samples best).
+            winner, margin = _whisper_adjudicate(
+                file_path, stream_index, base_url, duration, valid_samples, sample
+            )
+            if winner:
+                tiebreak = True
         return {
             "language": winner,
             "winner_votes": votes.get(winner, 0) if winner else 0,
             "valid": valid,
             "samples": tokens,
+            "tiebreak": tiebreak,
+            "margin": margin,
         }
     finally:
         try:
@@ -1631,7 +1726,11 @@ async def auto_detect_language(media_id: int, db: Session = Depends(get_db)):
         line = " · ".join(det["samples"])
         if det["language"]:
             detected_audio[str(idx)] = det["language"]
-            verdict = f"{det['language']} {det['winner_votes']}/{det['valid']}"
+            if det.get("tiebreak"):
+                margin = det.get("margin") or 0.0
+                verdict = f"{det['language']} (tiebreak Δ{margin:.2f})"
+            else:
+                verdict = f"{det['language']} {det['winner_votes']}/{det['valid']}"
         elif det["valid"] > 0:
             verdict = "und (tie)"
         else:
