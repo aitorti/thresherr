@@ -62,7 +62,7 @@ AUDIO_ENCODERS = {
 # vp9 cannot combine CRF with a VBV cap in this ffmpeg build, so it uses a
 # capped target bitrate instead (see execute_job_plan).
 VIDEO_DEFAULTS = {
-    "h264": {"crf": 20, "preset": "medium"},
+    "h264": {"crf": 23, "preset": "medium"},
     "h265": {"crf": 24, "preset": "medium"},
     "av1": {"crf": 32, "preset": 8},
     "vp9": {"crf": 32, "deadline": "good", "cpu_used": 4},
