@@ -654,7 +654,6 @@ async def dashboard(
 
 # --- WORKGIN WITH PROFILES ---
 
-@app.get("/profiles", response_class=HTMLResponse)
 def _profile_matrix() -> dict:
     """Compat matrix for the profile form (dynamic option filtering)."""
     return {
@@ -679,6 +678,7 @@ def _profile_validation_problems(name: str, container: str, video_codec: str,
     return problems
 
 
+@app.get("/profiles", response_class=HTMLResponse)
 async def get_profiles(request: Request, db: Session = Depends(get_db)):
     stats = compute_global_stats(db)
     profiles = db.query(models.Profile).all()
@@ -691,6 +691,7 @@ async def get_profiles(request: Request, db: Session = Depends(get_db)):
         matrix=_profile_matrix(),
         editing=None,
     )
+
 
 @app.post("/profiles")
 async def create_profile(
