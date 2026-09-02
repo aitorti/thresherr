@@ -21,6 +21,7 @@ import backups
 import health
 import tasks
 import compliance
+import connect
 import worker
 import language_detect
 
@@ -422,6 +423,68 @@ async def api_delete_backup(name: str):
         raise HTTPException(status_code=404, detail="Backup not found")
     ui_logger.info("API backup deleted: %s", name)
     return {"deleted": name}
+
+
+# --- Connect (notifications) ---
+
+@api_v1.get("/connect")
+def api_connect_list(db: Session = Depends(get_db)):
+    """List connections (System -> Connect)."""
+    return [connect.serialize(c) for c in connect.list_connections(db)]
+
+
+@api_v1.post("/connect")
+async def api_connect_save(request: Request, db: Session = Depends(get_db)):
+    """Create or update a connection.
+    JSON body: {id?, name, kind, enabled, events: [...], config: {...}}
+    """
+    data = await request.json()
+    name = str(data.get("name") or "").strip()
+    kind = str(data.get("kind") or "")
+    events = data.get("events") or []
+    config = data.get("config") or {}
+    raw_id = str(data.get("id") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    if kind not in connect.KINDS:
+        raise HTTPException(
+            status_code=400,
+            detail="kind must be one of: telegram, webhook, script",
+        )
+    if not isinstance(events, list) or not events:
+        raise HTTPException(status_code=400, detail="at least one event is required")
+    if not isinstance(config, dict):
+        config = {}
+    conn_id = int(raw_id) if raw_id.isdigit() else None
+    conn = connect.save_connection(
+        db,
+        conn_id=conn_id,
+        name=name,
+        kind=kind,
+        enabled=bool(data.get("enabled", True)),
+        events=[str(e) for e in events],
+        config=config,
+    )
+    db.commit()
+    ui_logger.info("API connect saved: id=%s (%s, %s)", conn.id, name, kind)
+    return connect.serialize(conn)
+
+
+@api_v1.delete("/connect/{conn_id}")
+def api_connect_delete(conn_id: int, db: Session = Depends(get_db)):
+    if not connect.delete_connection(db, conn_id):
+        raise HTTPException(status_code=404, detail="Connection not found")
+    db.commit()
+    ui_logger.info("API connect deleted: id=%s", conn_id)
+    return {"deleted": conn_id}
+
+
+@api_v1.post("/connect/{conn_id}/test")
+def api_connect_test(conn_id: int, db: Session = Depends(get_db)):
+    result = connect.test_connection(db, conn_id)
+    if not result["ok"]:
+        raise HTTPException(status_code=400, detail=result["message"])
+    return result
 
 
 app.include_router(api_v1)
@@ -871,6 +934,16 @@ async def enqueue_media(media_id: int, request: Request, db: Session = Depends(g
             media.id,
             media.file_name,
         )
+        connect.fire_event(
+            db,
+            "UndBlocked",
+            {
+                "mediaId": media.id,
+                "fileName": media.file_name,
+                "library": media.library.name if media.library else "?",
+                "reason": "probe_failed",
+            },
+        )
         return _blocked_redirect("und_blocked")
 
     if _has_und_in_inspection(inspection):
@@ -878,6 +951,22 @@ async def enqueue_media(media_id: int, request: Request, db: Session = Depends(g
             "Enqueue blocked for media_file id=%s (%s): unknown language (und)",
             media.id,
             media.file_name,
+        )
+        und_streams = [
+            s.get("index")
+            for s in inspection.get("audio_streams", []) + inspection.get("subtitle_streams", [])
+            if (s.get("language") or "und") == "und"
+        ]
+        connect.fire_event(
+            db,
+            "UndBlocked",
+            {
+                "mediaId": media.id,
+                "fileName": media.file_name,
+                "library": media.library.name if media.library else "?",
+                "reason": "und_streams",
+                "undStreams": und_streams,
+            },
         )
         return _blocked_redirect("und_blocked")
 
@@ -1047,6 +1136,15 @@ async def enqueue_library(
         compliant,
         blocked,
     )
+    if blocked > 0:
+        library_name = (
+            media_files[0].library.name if media_files else f"library {library_id}"
+        )
+        connect.fire_event(
+            db,
+            "UndBlocked",
+            {"library": library_name, "blockedCount": blocked, "reason": "batch"},
+        )
 
     referer = request.headers.get("referer", "/")
     sep = "&" if "?" in referer else "?"
@@ -2161,6 +2259,172 @@ async def save_scan_config(
 # required to complete a restore. This avoids replacing a live WAL database
 # behind running processes.
 
+# -------------------------------------------------
+# CONNECT (System -> Connect) — *arr style notifications
+# -------------------------------------------------
+
+def _connect_render_form(request, db, form: dict, is_edit: bool,
+                         form_error: str | None = None):
+    return render(
+        request=request,
+        name="system_connect.html",
+        db=db,
+        conns=None,
+        form=form,
+        is_edit=is_edit,
+        form_error=form_error,
+        events=connect.EVENTS,
+    )
+
+
+@app.get("/system/connect", response_class=HTMLResponse)
+async def system_connect(request: Request, db: Session = Depends(get_db)):
+    """List configured connections."""
+    return render(
+        request=request,
+        name="system_connect.html",
+        db=db,
+        conns=[connect.serialize(c) for c in connect.list_connections(db)],
+        form=None,
+        is_edit=False,
+        form_error=None,
+    )
+
+
+@app.get("/system/connect/new", response_class=HTMLResponse)
+async def system_connect_new(request: Request, db: Session = Depends(get_db)):
+    form = {
+        "conn_id": 0,
+        "name": "",
+        "kind": "telegram",
+        "enabled": True,
+        "events": [],
+        "config": {},
+    }
+    return _connect_render_form(request, db, form, is_edit=False)
+
+
+@app.get("/system/connect/{conn_id}/edit", response_class=HTMLResponse)
+async def system_connect_edit(conn_id: int, request: Request,
+                              db: Session = Depends(get_db)):
+    conn = connect.get_connection(db, conn_id)
+    if conn is None:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    s = connect.serialize(conn)
+    form = {
+        "conn_id": conn.id,
+        "name": s["name"],
+        "kind": s["kind"],
+        "enabled": s["enabled"],
+        "events": s["events"],
+        "config": s["config"],
+    }
+    return _connect_render_form(request, db, form, is_edit=True)
+
+
+@app.post("/system/connect/save")
+async def system_connect_save(
+    request: Request,
+    conn_id: int = Form(0),
+    name: str = Form(""),
+    kind: str = Form(""),
+    enabled: str = Form("0"),
+    events: list[str] = Form(default=[]),
+    bot_token: str = Form(""),
+    chat_id: str = Form(""),
+    url: str = Form(""),
+    script_path: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    form = {
+        "conn_id": conn_id,
+        "name": name.strip(),
+        "kind": kind,
+        "enabled": enabled == "1",
+        "events": events,
+        "config": {
+            "bot_token": bot_token.strip(),
+            "chat_id": chat_id.strip(),
+            "url": url.strip(),
+            "script_path": script_path.strip(),
+        },
+    }
+    is_edit = conn_id > 0
+    error = None
+    if not form["name"]:
+        error = "name_required"
+    elif kind not in ("telegram", "webhook", "script"):
+        error = "kind_invalid"
+    elif not events:
+        error = "events_required"
+    elif kind == "telegram" and not (bot_token.strip() and chat_id.strip()):
+        error = "telegram_fields"
+    elif kind == "webhook" and not url.strip().lower().startswith(
+        ("http://", "https://")
+    ):
+        error = "url_invalid"
+    elif kind == "script" and not script_path.strip():
+        error = "script_required"
+    if error:
+        return _connect_render_form(
+            request, db, form, is_edit=is_edit, form_error=error
+        )
+
+    # Store only the fields of the selected kind (switching drops old ones)
+    if kind == "telegram":
+        config = {"bot_token": bot_token.strip(), "chat_id": chat_id.strip()}
+    elif kind == "webhook":
+        config = {"url": url.strip()}
+    else:
+        config = {"script_path": script_path.strip()}
+
+    conn = connect.save_connection(
+        db,
+        conn_id=conn_id if is_edit else None,
+        name=form["name"],
+        kind=kind,
+        enabled=form["enabled"],
+        events=events,
+        config=config,
+    )
+    db.commit()
+    ui_logger.info("Connect saved: id=%s (%s, %s)", conn.id, form["name"], kind)
+    return RedirectResponse(url="/system/connect?ok=connect_saved", status_code=303)
+
+
+@app.post("/system/connect/{conn_id}/toggle")
+async def system_connect_toggle(conn_id: int, request: Request,
+                                db: Session = Depends(get_db)):
+    conn = connect.get_connection(db, conn_id)
+    if conn:
+        conn.enabled = not conn.enabled
+        db.commit()
+        ui_logger.info(
+            "Connect toggled: id=%s -> enabled=%s", conn_id, conn.enabled
+        )
+    return RedirectResponse(url="/system/connect?ok=connect_toggled", status_code=303)
+
+
+@app.post("/system/connect/{conn_id}/delete")
+async def system_connect_delete(conn_id: int, request: Request,
+                                db: Session = Depends(get_db)):
+    if connect.delete_connection(db, conn_id):
+        db.commit()
+        ui_logger.info("Connect deleted: id=%s", conn_id)
+    return RedirectResponse(url="/system/connect?ok=connect_deleted", status_code=303)
+
+
+@app.post("/system/connect/{conn_id}/test")
+async def system_connect_test(conn_id: int, request: Request,
+                              db: Session = Depends(get_db)):
+    result = connect.test_connection(db, conn_id)
+    mtype = "success" if result["ok"] else "error"
+    return RedirectResponse(
+        url=f"/system/connect?msg={quote(result['message'])}&mtype={mtype}",
+        status_code=303,
+    )
+
+
 @app.get("/system/backups", response_class=HTMLResponse)
 async def system_backups(request: Request, db: Session = Depends(get_db)):
     stats = compute_global_stats(db)
@@ -2207,6 +2471,7 @@ def _run_backup_now(db: Session) -> dict:
         os.path.basename(path),
         removed,
     )
+    connect.fire_event(db, "BackupCompleted", {"file": os.path.basename(path)})
     return {"path": path, "removed": removed}
 
 

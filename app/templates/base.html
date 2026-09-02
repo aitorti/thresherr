@@ -162,6 +162,12 @@
             {{ t('nav.tasks') }}
           </a>
 
+          <a href="/system/connect"
+             class="block px-3 py-2 rounded-md mb-1 transition-colors
+                    {% if path.startswith('/system/connect') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
+            {{ t('nav.connect') }}
+          </a>
+
           <a href="/system/backups"
              class="block px-3 py-2 rounded-md mb-1 transition-colors
                     {% if path.startswith('/system/backups') %} bg-slate-800 text-amber-300 border border-slate-700 {% else %} text-slate-200 hover:bg-slate-800/60 {% endif %}">
@@ -344,6 +350,19 @@
       if (whisper) {
         // Already URL-decoded once by URLSearchParams; the text contains '%'.
         showBanner(whisper, params.get("wtype") === "info" ? "info" : "success");
+      }
+      const msgp = params.get("msg");
+      if (msgp) {
+        showBanner(msgp, params.get("mtype") === "error" ? "error" : "success");
+      }
+      if (params.get("ok") === "connect_saved") {
+        showBanner("{{ t('connect.saved_ok') }}", "success");
+      }
+      if (params.get("ok") === "connect_deleted") {
+        showBanner("{{ t('connect.deleted_ok') }}", "success");
+      }
+      if (params.get("ok") === "connect_toggled") {
+        showBanner("{{ t('connect.toggled_ok') }}", "success");
       }
     })();
   </script>

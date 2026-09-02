@@ -21,6 +21,7 @@ from scanner import scan_libraries
 import backups
 import settings
 import language_detect
+import connect
 
 # Task identifiers, in UI order
 TASK_SCAN = "scan"
@@ -134,7 +135,19 @@ def run_scan(db) -> dict:
         _set_setting(db, "scan_last_duration", str(duration))
         _set_setting(db, "scan_last_result", result)
         db.commit()
-        return {"ok": True, "new_count": new_count, "duration": duration, "result": result}
+        out = {"ok": True, "new_count": new_count, "duration": duration, "result": result}
+        # Connect: only actionable scans notify (new files found).
+        if new_count > 0:
+            connect.fire_event(
+                db,
+                "ScanCompleted",
+                {
+                    "newFiles": new_count,
+                    "result": result,
+                    "duration": duration,
+                },
+            )
+        return out
     except Exception as exc:
         db.rollback()
         duration = round(time.monotonic() - start, 1)

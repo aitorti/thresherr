@@ -4,6 +4,7 @@ from sqlalchemy import (
     String,
     ForeignKey,
     BigInteger,
+    Boolean,
     DateTime,
     Text
 )
@@ -179,6 +180,25 @@ class Setting(Base):
 
     key = Column(String, primary_key=True)
     value = Column(String, nullable=True)
+
+
+# --------------------
+# Connect / notifications (*arr style, System -> Connect)
+# --------------------
+class Connection(Base):
+    __tablename__ = "connections"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    # telegram | webhook | script
+    kind = Column(String, nullable=False)
+    enabled = Column(Boolean, nullable=False, default=True)
+    # JSON list of subscribed events (e.g. ["JobCompleted", "JobFailed"])
+    events = Column(Text, nullable=False, default="[]")
+    # JSON dict with the kind-specific config (bot_token/chat_id, url, path)
+    config = Column(Text, nullable=False, default="{}")
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, nullable=True)
 
 
 # --------------------

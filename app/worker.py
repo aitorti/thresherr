@@ -15,6 +15,8 @@ import naming
 import backups
 import tasks
 import settings
+import health
+import connect
 
 logger = get_logger("worker")
 
@@ -1201,7 +1203,42 @@ def maybe_automatic_backup(db) -> str | None:
     removed = backups.enforce_retention(backups.BACKUP_DIR, retention)
     if removed:
         logger.info("Backup retention removed %s old backup(s)", removed)
-    return os.path.basename(path)
+    name = os.path.basename(path)
+    connect.fire_event(db, "BackupCompleted", {"file": name})
+    return name
+
+
+def _fire_job_event(db, job) -> None:
+    """Connect: JobCompleted / JobFailed for a finished job (never raises)."""
+    try:
+        if job is None or job.status not in ("completed", "failed"):
+            return
+        event = "JobCompleted" if job.status == "completed" else "JobFailed"
+        data = {
+            "mediaId": job.id,
+            "fileName": job.file_name,
+            "path": job.full_path,
+            "library": job.library.name if job.library else "?",
+        }
+        if job.status == "completed":
+            data["sizeOriginal"] = job.size_original
+            data["sizeFinal"] = job.size_final
+            if job.size_original and job.size_final:
+                data["savingsBytes"] = max(0, job.size_original - job.size_final)
+                data["savingsPct"] = (
+                    100.0
+                    * max(0, job.size_original - job.size_final)
+                    / job.size_original
+                )
+            if job.started_at and job.finished_at:
+                data["durationSeconds"] = (
+                    job.finished_at - job.started_at
+                ).total_seconds()
+        else:
+            data["error"] = job.last_error or "?"
+        connect.fire_event(db, event, data)
+    except Exception:
+        logger.exception("Connect event failed (job id=%s)", job.id if job else None)
 
 
 # -------------------------------------------------
@@ -1350,6 +1387,7 @@ def run_worker():
             db.commit()
 
             logger.info("Finished media_file id=%s status=%s", job.id, job.status)
+            _fire_job_event(db, job)
 
         except Exception as exc:
             db.rollback()
@@ -1366,6 +1404,8 @@ def run_worker():
                 except Exception as inner:
                     db.rollback()
                     logger.error("Could not mark job id=%s as failed: %s", job.id, inner)
+            if job is not None and job.status == "failed":
+                _fire_job_event(db, job)
             logger.exception("Unhandled worker error: %s", exc)
 
         finally:
@@ -1401,6 +1441,12 @@ def run_worker():
                             logger.info("Scheduled scan: %s", result)
                     except Exception as exc:
                         logger.error("Scheduled scan failed: %s", exc)
+
+                    try:
+                        issues = health.run_health_checks(_cleanup_db, DB_PATH)
+                        connect.notify_health_if_changed(_cleanup_db, issues)
+                    except Exception as exc:
+                        logger.error("Health notification check failed: %s", exc)
                 finally:
                     _cleanup_db.close()
 
