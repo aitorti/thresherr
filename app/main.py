@@ -1316,22 +1316,30 @@ def _set_display_languages(mf) -> None:
 
 
 @app.get("/api/media/status")
-async def get_media_status(db: Session = Depends(get_db)):
+async def get_media_status(
+    status: str | None = Query(None),
+    library: int | None = Query(None),
+    q: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
     """
     Lightweight endpoint used by the dashboard polling logic.
-    Returns the current status of all media files.
+    Returns the current (id, status) pairs, scoped to the active dashboard
+    filters when given (all files when none are given), so filtered views
+    poll fewer rows.
     """
-    results = (
-        db.query(models.MediaFile.id, models.MediaFile.status)
-        .all()
-    )
+    query = db.query(models.MediaFile.id, models.MediaFile.status)
+    if status in ("pending", "queued", "processing", "completed", "failed"):
+        query = query.filter(models.MediaFile.status == status)
+    if library is not None:
+        query = query.filter(models.MediaFile.library_id == library)
+    if q:
+        query = query.filter(models.MediaFile.file_name.ilike(f"%{q}%"))
+    results = query.all()
 
     return [
-        {
-            "id": media_id,
-            "status": status,
-        }
-        for media_id, status in results
+        {"id": media_id, "status": media_status}
+        for media_id, media_status in results
     ]
 
 # --- DASHBOARD ROW DATA POLLING API ---

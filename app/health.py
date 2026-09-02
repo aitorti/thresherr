@@ -16,6 +16,7 @@ import os
 import shutil
 import sqlite3
 import platform
+import time
 from datetime import datetime, timezone
 
 import models
@@ -102,7 +103,14 @@ def db_info(db_path: str) -> dict:
     return {"path": db_path, "exists": exists, "size": size}
 
 
-def db_integrity_ok(db_path: str) -> bool:
+# PRAGMA integrity_check reads the whole database: cache the result for a
+# few minutes so System -> Status (and the hourly worker health notify) do
+# not re-scan it on every visit.
+_INTEGRITY_CACHE: dict[str, tuple[float, bool]] = {}
+INTEGRITY_CACHE_TTL_SECONDS = 300.0
+
+
+def _db_integrity_check(db_path: str) -> bool:
     """Quick PRAGMA integrity_check on the live database (read-only)."""
     try:
         con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
@@ -113,6 +121,17 @@ def db_integrity_ok(db_path: str) -> bool:
             con.close()
     except Exception:
         return False
+
+
+def db_integrity_ok(db_path: str) -> bool:
+    """db_integrity_ok with a short TTL cache (see INTEGRITY_CACHE_TTL_SECONDS)."""
+    now = time.monotonic()
+    cached = _INTEGRITY_CACHE.get(db_path)
+    if cached is not None and now - cached[0] < INTEGRITY_CACHE_TTL_SECONDS:
+        return cached[1]
+    result = _db_integrity_check(db_path)
+    _INTEGRITY_CACHE[db_path] = (now, result)
+    return result
 
 
 # -------------------------------------------------

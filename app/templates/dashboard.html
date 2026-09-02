@@ -472,7 +472,16 @@
 
     async function pollStatuses() {
       try {
-        const response = await fetch("/api/media/status");
+        // Scope the poll to the active toolbar filters (fewer rows when
+        // filtering; "all"/empty filters mean every file, as before).
+        const params = new URLSearchParams(window.location.search);
+        const sp = new URLSearchParams();
+        for (const k of ["status", "library", "q"]) {
+          const v = params.get(k);
+          if (v && v !== "all") sp.set(k, v);
+        }
+        const qs = sp.toString();
+        const response = await fetch(`/api/media/status${qs ? `?${qs}` : ""}`);
         const data = await response.json();
         data.forEach(({ id, status }) => {
           const card = document.querySelector(`[data-media-id="${id}"]`);
