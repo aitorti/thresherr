@@ -17,6 +17,7 @@ import tasks
 import settings
 import health
 import connect
+import compat
 
 logger = get_logger("worker")
 
@@ -71,13 +72,13 @@ def write_heartbeat(db, force: bool = False) -> None:
 # Temp output path & cleanup helpers
 # -------------------------------------------------
 
-def temp_output_path(full_path: str, temp_dir: str) -> str:
+def temp_output_path(full_path: str, temp_dir: str, ext: str = ".mkv") -> str:
     """
     Path of the temporary output file for a media file.
-    Single source of truth for the .thresherr.tmp.mkv naming convention.
+    Single source of truth for the .thresherr.tmp<ext> naming convention.
     """
     name = os.path.splitext(os.path.basename(full_path))[0]
-    return os.path.join(temp_dir, f"{name}.thresherr.tmp.mkv")
+    return os.path.join(temp_dir, f"{name}.thresherr.tmp{ext}")
 
 
 def remove_temp_output(job: models.MediaFile) -> None:
@@ -87,7 +88,15 @@ def remove_temp_output(job: models.MediaFile) -> None:
     orphan .thresherr.tmp.mkv files are never left behind.
     """
     try:
-        temp_output = temp_output_path(job.full_path, job.library.temp_path)
+        ext = ".mkv"
+        try:
+            import json as _json
+
+            plan = _json.loads(job.job_plan or "{}")
+            ext = compat.CONTAINER_EXT.get(plan.get("container") or "mkv", ".mkv")
+        except Exception:
+            pass
+        temp_output = temp_output_path(job.full_path, job.library.temp_path, ext=ext)
         if os.path.exists(temp_output):
             os.remove(temp_output)
             logger.debug("Removed temp output: %s", temp_output)
@@ -106,6 +115,9 @@ def _normalize_subtitle_codec(codec_name: str | None) -> str | None:
     if "pgs" in c:
         return "pgs"
     if c in {"subrip", "srt"}:
+        return "subrip"
+    if "mov_text" in c:
+        # MP4 stores text subtitles as mov_text (equivalent to our subrip target)
         return "subrip"
     if "ass" in c:
         return "ass"
@@ -263,8 +275,16 @@ def inspect_file(media: models.MediaFile) -> dict:
     if container and "," in container:
         container = container.split(",")[0].strip()
 
-    # Video, nothing to do for now
-    video_info = {"codec": None, "width": None, "height": None, "bitrate": None}
+    # Video metadata (phase 2: codec/res/bitrate rules + HDR detection)
+    video_info = {
+        "codec": None,
+        "width": None,
+        "height": None,
+        "bitrate": None,
+        "profile": None,
+        "pix_fmt": None,
+        "color_transfer": None,
+    }
 
     audio_streams = []
     subtitle_streams = []
@@ -287,6 +307,9 @@ def inspect_file(media: models.MediaFile) -> dict:
                 "width": s.get("width"),
                 "height": s.get("height"),
                 "bitrate": _safe_int(s.get("bit_rate")),
+                "profile": s.get("profile"),
+                "pix_fmt": s.get("pix_fmt"),
+                "color_transfer": s.get("color_transfer"),
             }
 
         elif stype == "audio":
@@ -627,8 +650,26 @@ def decide_subtitle_streams(inspection: dict, profile: models.Profile) -> list:
         if l.strip()
     ]
 
-    # Allowed codecs: only the target subtitle codec (if defined)
-    allowed_codecs = {profile.subtitle_codec} if profile.subtitle_codec else set()
+    # Allowed codecs: only the target subtitle codec (if defined).
+    # 'none' means the output must carry NO subtitle streams.
+    target_codec = profile.subtitle_codec or ""
+    if target_codec == "none":
+        return [
+            {
+                "index": s["index"],
+                "codec": s.get("codec"),
+                "codec_raw": s.get("codec_raw"),
+                "language": s.get("language"),
+                "forced": s.get("forced", False),
+                "default": s.get("default", False),
+                "action": "remove",
+                "target_codec": None,
+                "set_default": False,
+                "reason": "subtitle_target_none",
+            }
+            for s in subtitle_streams
+        ]
+    allowed_codecs = {target_codec} if target_codec else set()
 
     default_language = profile.subtitle_def_language
 
@@ -709,6 +750,7 @@ def decide_subtitle_streams(inspection: dict, profile: models.Profile) -> list:
         result.append({
             "index": idx,
             "codec": s.get("codec"),
+            "codec_raw": s.get("codec_raw"),
             "language": s.get("language"),
             "forced": s.get("forced", False),
             "default": s.get("default", False),
@@ -733,13 +775,20 @@ def build_job_plan(
     """
     Build a job_plan based on inspection and profile.
 
-    Phase 1:
-    - Video is ALWAYS copied
-    - Only audio and subtitle cleanup is planned
+    Phase 2:
+    - Video is transcoded when it does not match the profile (codec /
+      resolution cap / bitrate cap); HDR sources are tonemapped to SDR.
+    - Audio/subtitle cleanup as before.
+    - The output container is the one selected in the profile.
     """
 
+    container = (profile.container or "mkv").lower()
+    if not compat.is_valid_container(container):
+        container = "mkv"
+
     plan = {
-        "version": 1,
+        "version": 2,
+        "container": container,
         "profile": {
             "id": profile.id,
             "name": profile.name,
@@ -749,10 +798,7 @@ def build_job_plan(
             "container": inspection.get("container"),
             "duration": inspection.get("duration"),
         },
-        "video": {
-            "action": "copy",
-            "reason": "video_handling_disabled_in_phase_1",
-        },
+        "video": decide_video_stream(inspection, profile),
         "audio": {
             "strategy": "cleanup",
             "target_codec": profile.audio_codec,
@@ -778,18 +824,177 @@ def build_job_plan(
         "warnings_expected": [],
     }
 
+    # Container rules over the kept subtitle streams: conversions (mp4 ->
+    # mov_text, webm -> webvtt) and removals for codecs the container
+    # cannot carry (e.g. pgs in mp4/webm, any subtitle in avi). Streams
+    # already muxed as the container codec (reprocessing our own output)
+    # pass through untouched.
+    sub_rules = compat.CONTAINER_SUBTITLE.get(container, {})
+    for s in plan["subtitles"]["streams"]:
+        if s.get("action") != "copy":
+            continue
+        mux_codec = sub_rules.get(s.get("codec"))
+        if mux_codec is None:
+            s["action"] = "remove"
+            s["reason"] = f"container_{container}_cannot_carry"
+            continue
+        if (s.get("codec_raw") or "").lower() != mux_codec:
+            s["mux_codec"] = mux_codec
+
     return plan
+
+def _video_is_hdr(video_info: dict) -> bool:
+    """True when the video stream looks HDR (PQ/HLG transfer)."""
+    transfer = (video_info.get("color_transfer") or "").lower()
+    if transfer in compat.HDR_TRANSFERS:
+        return True
+    # Some releases carry 10-bit without the transfer tag: only treat it
+    # as HDR when it is NOT the common SDR 10-bit profile name.
+    profile = (video_info.get("profile") or "").lower()
+    pix_fmt = (video_info.get("pix_fmt") or "").lower()
+    return bool(
+        not transfer
+        and profile in ("main 10", "high 10")
+        and pix_fmt.endswith("10le")
+        and pix_fmt != "yuv420p10le"
+    )
+
+
+def decide_video_stream(inspection: dict, profile: models.Profile) -> dict:
+    """
+    Decide what to do with the video stream (phase 2).
+
+    The video is copied when it already matches the profile (codec,
+    resolution tier and bitrate cap); otherwise it is transcoded to the
+    profile target with a fixed-quality encode + hard bitrate cap (option
+    A), downscaling when above the resolution cap.
+
+    Returns the 'video' section of the job plan.
+    """
+    src = inspection.get("video") or {}
+    codec = src.get("codec")
+    height = src.get("height")
+    bitrate = src.get("bitrate")
+
+    target = (profile.video_codec or "h264").lower()
+    target_ff = compat.VIDEO_FFPROBE.get(target, target)
+    max_res = profile.video_max_res or 0
+    max_kbps = profile.video_max_bitrate or 0
+
+    base = {"codec": codec, "width": src.get("width"), "height": height}
+    if not codec:
+        base.update({"action": "copy", "reason": "no_video_metadata"})
+        return base
+
+    needs_codec = codec != target_ff
+    needs_scale = bool(max_res and height and height > max_res)
+    needs_bitrate = bool(max_kbps and bitrate and bitrate > max_kbps * 1000)
+
+    if not (needs_codec or needs_scale or needs_bitrate):
+        base.update({"action": "copy", "reason": "video_compliant"})
+        return base
+
+    reasons = []
+    if needs_codec:
+        reasons.append(f"codec {codec}!={target_ff}")
+    if needs_scale:
+        reasons.append(f"height {height}>{max_res}")
+    if needs_bitrate:
+        reasons.append(f"bitrate {bitrate}>{max_kbps}k")
+
+    defaults = compat.VIDEO_DEFAULTS.get(target, compat.VIDEO_DEFAULTS["h264"])
+    decision = {
+        "action": "transcode",
+        "reason": ", ".join(reasons),
+        "codec": codec,
+        "target_codec": target,
+        "target_codec_name": target_ff,
+        "encoder": compat.VIDEO_ENCODERS.get(target, "libx264"),
+        "preset": defaults.get("preset", "medium"),
+        "crf": defaults.get("crf"),
+        "hdr": _video_is_hdr(src),
+    }
+    if needs_scale:
+        decision["scale_height"] = max_res
+    if max_kbps:
+        decision["maxrate_kbps"] = max_kbps
+    return decision
+
 
 # -------------------------------------------------
 # Execution
 # -------------------------------------------------
 
+def _video_encoder_args(video_plan: dict) -> list[str]:
+    """ffmpeg video encoder + filters args for a transcode decision.
+
+    Option A (fixed quality + hard cap): CRF with -maxrate/-bufsize.
+    vp9 cannot combine CRF with a VBV cap in this build -> capped target
+    bitrate instead. HDR sources get the native tonemap filter chain and
+    the output is explicitly tagged BT.709.
+    """
+    target = video_plan.get("target_codec") or "h264"
+    defaults = compat.VIDEO_DEFAULTS.get(target, compat.VIDEO_DEFAULTS["h264"])
+    crf = video_plan.get("crf") or defaults.get("crf")
+    preset = video_plan.get("preset") or defaults.get("preset")
+    max_kbps = video_plan.get("maxrate_kbps") or 0
+
+    args: list[str] = []
+    filters: list[str] = []
+
+    scale_h = video_plan.get("scale_height")
+    if scale_h:
+        filters.append(f"scale=-2:{int(scale_h)}")
+
+    if video_plan.get("hdr"):
+        # Native tonemap (no zscale in this build): 10-bit -> tone map -> 8-bit
+        filters.append("format=yuv420p10le")
+        filters.append("tonemap=hable:desat=0")
+        filters.append("format=yuv420p")
+        args += [
+            "-color_primaries", "bt709",
+            "-color_trc", "bt709",
+            "-colorspace", "bt709",
+        ]
+    else:
+        filters.append("format=yuv420p")
+
+    if filters:
+        args += ["-vf", ",".join(filters)]
+
+    if target == "vp9":
+        # libvpx-vp9: CRF + VBV cap unsupported -> capped average target.
+        vp9 = defaults
+        args += [
+            "-deadline", vp9.get("deadline", "good"),
+            "-cpu-used", str(vp9.get("cpu_used", 4)),
+        ]
+        if max_kbps:
+            args += [
+                "-b:v", f"{max_kbps}k",
+                "-maxrate", f"{max_kbps}k",
+                "-bufsize", f"{max_kbps * 2}k",
+            ]
+        else:
+            args += ["-crf", str(crf or 32), "-b:v", "0"]
+        return args
+
+    if max_kbps:
+        args += [
+            "-maxrate", f"{max_kbps}k",
+            "-bufsize", f"{max_kbps * 2}k",
+        ]
+    args += ["-crf", str(crf)]
+    args += ["-preset", str(preset)]
+    return args
+
+
 def execute_job_plan(job_plan: dict, input_path: str, temp_dir: str) -> str:
     """
-    Execute a real ffmpeg command based on job_plan (audio + subtitles only).
-    Video is always copied.
+    Execute a real ffmpeg command based on job_plan (video + audio + subs).
 
     - Works on a temp output file inside temp_dir (never touches the original).
+    - Outputs the profile container (mkv/mp4/webm/avi).
     - Uses absolute stream indices from ffprobe via '-map 0:<index>'.
     - Applies default dispositions based on 'set_default'.
     - Returns the temp output path.
@@ -798,8 +1003,9 @@ def execute_job_plan(job_plan: dict, input_path: str, temp_dir: str) -> str:
 
     os.makedirs(temp_dir, exist_ok=True)
 
-    # Always output MKV for safety/compatibility (EAC3 + subtitles are widely supported in MKV)
-    output_path = temp_output_path(input_path, temp_dir)
+    container = (job_plan.get("container") or "mkv").lower()
+    out_ext = compat.CONTAINER_EXT.get(container, ".mkv")
+    output_path = temp_output_path(input_path, temp_dir, ext=out_ext)
 
     # Detect input container by extension (for legacy repair flags)
     ext = os.path.splitext(input_path)[1].lower()
@@ -813,8 +1019,14 @@ def execute_job_plan(job_plan: dict, input_path: str, temp_dir: str) -> str:
     # Input file
     cmd += ["-i", input_path]
 
-    # --- VIDEO: always copy ---
-    cmd += ["-map", "0:v", "-c:v", "copy"]
+    # --- VIDEO: copy or transcode (profile rules) ---
+    video_plan = job_plan.get("video", {}) or {}
+    cmd += ["-map", "0:v"]
+    if video_plan.get("action") == "transcode":
+        cmd += ["-c:v", video_plan.get("encoder", "libx264")]
+        cmd += _video_encoder_args(video_plan)
+    else:
+        cmd += ["-c:v", "copy"]
 
     # Keep metadata + chapters (nice-to-have)
     cmd += ["-map_metadata", "0", "-map_chapters", "0"]
@@ -849,14 +1061,18 @@ def execute_job_plan(job_plan: dict, input_path: str, temp_dir: str) -> str:
 
         audio_out_idx += 1
 
-    # --- SUBTITLES: include only copy streams (no subtitle transcoding in your rules) ---
+    # --- SUBTITLES: copy kept streams (mux-converted for mp4/webm) ---
     sub_out_idx = 0
     for s in job_plan.get("subtitles", {}).get("streams", []):
         if s.get("action") != "copy":
             continue
 
         cmd += ["-map", f"0:{s['index']}"]
-        cmd += [f"-c:s:{sub_out_idx}", "copy"]
+        mux_codec = s.get("mux_codec")
+        if mux_codec:
+            cmd += [f"-c:s:{sub_out_idx}", mux_codec]
+        else:
+            cmd += [f"-c:s:{sub_out_idx}", "copy"]
 
         lang = (s.get("language") or "").strip()
         if lang and lang != "und":
@@ -914,12 +1130,26 @@ def verify_result(temp_output_path: str, job_plan: dict) -> str:
 
     streams = probe.get("streams", [])
 
-    # -------- VIDEO (critical safety check) --------
-    # Never accept an output without a video stream: replacing the original
-    # with a video-less file would be catastrophic.
+    # -------- VIDEO (transcode expectations) --------
+    vplan = job_plan.get("video", {}) or {}
     out_video = [s for s in streams if s.get("codec_type") == "video"]
     if not out_video:
         return "failed: output has no video stream"
+    if vplan.get("action") == "transcode":
+        ov = out_video[0]
+        expected_codec = vplan.get("target_codec_name")
+        if expected_codec and ov.get("codec_name") != expected_codec:
+            return (
+                f"failed: video codec {ov.get('codec_name')} "
+                f"!= {expected_codec}"
+            )
+        scale_h = vplan.get("scale_height")
+        if scale_h and (not ov.get("height") or ov.get("height") > scale_h):
+            return f"failed: output height {ov.get('height')} > {scale_h}"
+        if vplan.get("hdr"):
+            transfer = (ov.get("color_transfer") or "").lower()
+            if transfer in compat.HDR_TRANSFERS:
+                return f"failed: output still tagged HDR ({transfer})"
 
     # -------- DURATION (truncated/corrupt output check) --------
     # Compare against the input duration captured during inspection.
@@ -927,6 +1157,18 @@ def verify_result(temp_output_path: str, job_plan: dict) -> str:
     fmt = probe.get("format", {}) or {}
     output_duration = _safe_float(fmt.get("duration"))
     expected_duration = _safe_float(job_plan.get("input", {}).get("duration"))
+
+    # -------- CONTAINER (the muxer must match the profile container) --------
+    container = (job_plan.get("container") or "mkv").lower()
+    expected_format = {
+        "mkv": "matroska",
+        "mp4": "mp4",
+        "webm": "matroska",
+        "avi": "avi",
+    }.get(container, "matroska")
+    actual_format = (fmt.get("format_name") or "").split(",")[0].strip()
+    if actual_format != expected_format:
+        return f"failed: output container {actual_format} != {expected_format}"
 
     if expected_duration and output_duration is None:
         return "failed: output duration could not be determined"
@@ -998,8 +1240,11 @@ def verify_result(temp_output_path: str, job_plan: dict) -> str:
         )
 
     for plan in planned_subs:
-        if not any(s["codec"] == plan["codec"] for s in out_subs):
-            return f"failed: expected subtitle codec not found ({plan['codec']})"
+        expected_sub_codec = plan.get("mux_codec") or plan["codec"]
+        if not any(s["codec"] == expected_sub_codec for s in out_subs):
+            return (
+                f"failed: expected subtitle codec not found ({expected_sub_codec})"
+            )
 
     if sum(s["default"] for s in out_subs) > 1:
         return "failed: more than one subtitle default stream"
@@ -1132,23 +1377,32 @@ def _naming_context(job: models.MediaFile, job_plan: dict, inspection: dict) -> 
 
     video = inspection.get("video", {}) or {}
     height = video.get("height")
+    video_plan = job_plan.get("video", {}) or {}
 
     return {
         "title": title,
         "year": year,
-        "quality": naming.quality_from_dimensions(
-            video.get("width"), height
-        )
-        or "",
-        "video_codec": video.get("codec") or "",
+        "quality": _output_quality(video, video_plan) or "",
+        "video_codec": _output_codec(video, video_plan) or "",
         "audio_codecs": "+".join(audio_codecs),
         "audio_languages": "-".join(audio_langs),
         "subtitle_languages": "-".join(sub_langs),
-        # Phase 1: the worker ALWAYS outputs mkv (the job plan has no
-        # container key) — explicit here so the naming never changes by
-        # accident if the plan grows a container field.
-        "container": "mkv",
+        "container": job_plan.get("container") or "mkv",
     }
+
+
+def _output_quality(video: dict, video_plan: dict) -> str | None:
+    """Quality tier of the OUTPUT video (scaled height when transcoding)."""
+    if video_plan and video_plan.get("action") == "transcode" and video_plan.get("scale_height"):
+        return f"{int(video_plan['scale_height'])}p"
+    return naming.quality_from_dimensions(video.get("width"), video.get("height"))
+
+
+def _output_codec(video: dict, video_plan: dict) -> str | None:
+    """Codec name of the OUTPUT video stream."""
+    if video_plan and video_plan.get("action") == "transcode":
+        return video_plan.get("target_codec_name") or video_plan.get("target_codec")
+    return video.get("codec")
 
 
 def build_output_name_from_job(
@@ -1325,19 +1579,37 @@ def run_worker():
             job.verification_result = verification
 
             if verification == "ok":
+                # Output container comes from the profile
+                container_ext = compat.CONTAINER_EXT.get(
+                    job_plan.get("container") or "mkv", ".mkv"
+                )
+                directory = os.path.dirname(job.full_path)
+
                 # Naming (Settings -> Media Management): rename on the fly
-                final_path = job.full_path
+                final_path = None
                 naming_enabled, naming_template = _naming_config(db)
                 if naming_enabled:
                     new_name = build_output_name_from_job(
                         job, job_plan, inspection, naming_template
                     )
                     if new_name and new_name != os.path.basename(job.full_path):
-                        final_path = naming.unique_dest_path(
-                            os.path.dirname(job.full_path), new_name
-                        )
+                        final_path = naming.unique_dest_path(directory, new_name)
                         logger.info(
                             "Renaming output: %s -> %s",
+                            os.path.basename(job.full_path),
+                            os.path.basename(final_path),
+                        )
+
+                if final_path is None:
+                    # Keep the original stem and switch to the container ext
+                    stem = os.path.splitext(os.path.basename(job.full_path))[0]
+                    candidate = os.path.join(directory, f"{stem}{container_ext}")
+                    if os.path.abspath(candidate) == os.path.abspath(job.full_path):
+                        final_path = job.full_path
+                    else:
+                        final_path = naming.unique_dest_path(directory, f"{stem}{container_ext}")
+                        logger.info(
+                            "Output container: %s -> %s",
                             os.path.basename(job.full_path),
                             os.path.basename(final_path),
                         )
@@ -1359,10 +1631,25 @@ def run_worker():
 
                 safe_replace_cross_fs(job.full_path, temp_output, dest_path=final_path)
 
+                # When the output path differs from the original (new
+                # container/name) and the original was NOT recycled, remove
+                # it so no duplicate is left behind.
+                if final_path != job.full_path:
+                    try:
+                        if os.path.exists(job.full_path):
+                            os.remove(job.full_path)
+                    except OSError as exc:
+                        logger.warning(
+                            "Could not remove superseded original %s: %s",
+                            job.full_path,
+                            exc,
+                        )
+
                 # Re-scan final file for UI metadata
                 final_meta = get_video_metadata(final_path)
                 job.video_codec = final_meta.get("video_codec")
                 job.resolution = final_meta.get("resolution")
+                job.video_bitrate = final_meta.get("video_bitrate")
                 job.audio_codec = final_meta.get("audio_codec")
                 job.audio_languages = final_meta.get("audio_languages")
                 job.subtitle_codec = final_meta.get("subtitle_codec")

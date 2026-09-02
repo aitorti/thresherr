@@ -22,6 +22,7 @@ import health
 import tasks
 import compliance
 import connect
+import compat
 import worker
 import language_detect
 
@@ -657,12 +658,23 @@ async def dashboard(
 async def get_profiles(request: Request, db: Session = Depends(get_db)):
     stats = compute_global_stats(db)
     profiles = db.query(models.Profile).all()
+    # Matrix exposed to the profile form (dynamic option filtering)
+    matrix = {
+        c: {
+            "video": list(compat.CONTAINER_VIDEO[c]),
+            "audio": list(compat.CONTAINER_AUDIO[c]),
+            "subtitle": list(compat.CONTAINER_SUBTITLE[c].keys()),
+            "hint": compat.CONTAINER_HINTS.get(c, ""),
+        }
+        for c in compat.CONTAINERS
+    }
     return render(
         request=request,
         name="profiles.html",
         db=db,
         **stats,
         profiles=profiles,
+        matrix=matrix,
     )
 
 @app.post("/profiles")
@@ -680,6 +692,18 @@ async def create_profile(
     subtitle_languages: str = Form(None),
     db: Session = Depends(get_db)
 ):
+    problems = []
+    if not (name or "").strip():
+        problems.append("profile name is required")
+    problems += compat.incompatible_reasons(
+        container, video_codec, audio_codec, subtitle_codec
+    )
+    if problems:
+        return RedirectResponse(
+            url=f"/profiles?msg={quote('; '.join(problems))}&mtype=error",
+            status_code=303,
+        )
+
     new_profile = models.Profile(
         name=name, video_codec=video_codec, container=container,
         video_max_res=video_max_res, video_max_bitrate=video_max_bitrate,

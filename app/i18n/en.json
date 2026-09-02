@@ -385,5 +385,6 @@
   "connect.err.script_required": "A script path is required.",
   "logs.from_date": "From",
   "logs.to_date": "To",
-  "logs.clear_dates": "Clear dates"
+  "logs.clear_dates": "Clear dates",
+  "prof.sub_none": "None (no subtitles)"
 }

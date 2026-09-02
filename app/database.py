@@ -76,6 +76,36 @@ def _set_sqlite_pragma(dbapi_connection, connection_record):
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+
+def _ensure_schema_columns() -> None:
+    """Lightweight additive migrations for existing databases.
+
+    create_all only creates missing tables, never missing columns on
+    existing ones. Additive ALTERs live here and run at import time in
+    every process (app + worker).
+    """
+    try:
+        import sqlite3
+
+        con = sqlite3.connect(DB_PATH, timeout=10)
+        try:
+            cols = [
+                r[1] for r in con.execute("PRAGMA table_info(media_files)")
+            ]
+            if cols and "video_bitrate" not in cols:
+                con.execute(
+                    "ALTER TABLE media_files ADD COLUMN video_bitrate INTEGER"
+                )
+                con.commit()
+                print("[database] added column media_files.video_bitrate")
+        finally:
+            con.close()
+    except Exception as exc:
+        print(f"[database] schema ensure skipped/failed: {exc}")
+
+
+_ensure_schema_columns()
+
 Base = declarative_base()
 
 def get_db():

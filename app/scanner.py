@@ -180,6 +180,7 @@ def get_video_metadata(file_path: str) -> dict:
 
         video_codec = None
         resolution = None
+        video_bitrate = None
         audio_codecs = set()
         audio_languages = []
         subtitle_codecs = set()
@@ -192,6 +193,10 @@ def get_video_metadata(file_path: str) -> dict:
 
             if stype == "video" and not video_codec:
                 video_codec = codec
+                try:
+                    video_bitrate = int(stream["bit_rate"])
+                except (KeyError, TypeError, ValueError):
+                    video_bitrate = None
                 # Commercial tier from BOTH dimensions (letterbox-safe):
                 # a 1920x800 scope release is 1080p, not 720p.
                 resolution = naming.quality_from_dimensions(
@@ -213,6 +218,7 @@ def get_video_metadata(file_path: str) -> dict:
         return {
             "video_codec": video_codec,
             "resolution": resolution,
+            "video_bitrate": video_bitrate,
             "audio_codec": ", ".join(sorted(audio_codecs)) if audio_codecs else None,
             "audio_languages": ", ".join(audio_languages) if audio_languages else None,
             "subtitle_codec": ", ".join(sorted(subtitle_codecs)) if subtitle_codecs else None,
@@ -224,6 +230,7 @@ def get_video_metadata(file_path: str) -> dict:
         return {
             "video_codec": None,
             "resolution": None,
+            "video_bitrate": None,
             "audio_codec": None,
             "audio_languages": None,
             "subtitle_codec": None,

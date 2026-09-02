@@ -21,7 +21,9 @@ Pure-ish module: no FastAPI. Imports the decision functions from worker
 """
 
 import os
+import re
 
+import compat
 from worker import build_job_plan
 
 
@@ -33,9 +35,19 @@ def _lang_list(raw: str | None) -> list[str]:
     return [l.strip() for l in (raw or "").split(",") if l.strip()]
 
 
-def _is_mkv(media) -> bool:
-    """The worker always outputs .mkv (phase 1), so only .mkv is 'done'."""
-    return os.path.splitext(media.full_path or "")[1].lower() == ".mkv"
+def _matches_container(media, profile) -> bool:
+    """The file extension must be the profile's output container."""
+    container = (profile.container or "mkv").lower()
+    ext = compat.CONTAINER_EXT.get(container, ".mkv")
+    return os.path.splitext(media.full_path or "")[1].lower() == ext
+
+
+def _resolution_tier(label: str | None) -> int | None:
+    """'1080p' -> 1080; None when there is no number."""
+    if not label:
+        return None
+    match = re.search(r"(\d+)", label)
+    return int(match.group(1)) if match else None
 
 
 # -------------------------------------------------
@@ -77,8 +89,21 @@ def compliance_from_summary(media, profile) -> bool:
     # remove them and the file is "not compliant until processed".
     sub_langs = _lang_list(media.subtitle_languages)
     if sub_langs:
-        sub_codecs = {profile.subtitle_codec} if profile.subtitle_codec else set()
-        if sub_codecs and (media.subtitle_codec or "").lower() not in sub_codecs:
+        target_sub = (profile.subtitle_codec or "").lower()
+        if target_sub == "none":
+            # Profile demands NO subtitles in the output
+            return False
+        allowed_sub = {
+            compat.SUBTITLE_EQUIV.get(target_sub, target_sub)
+        } if target_sub else set()
+        media_sub_codecs = [
+            compat.SUBTITLE_EQUIV.get(c.strip().lower(), c.strip().lower())
+            for c in (media.subtitle_codec or "").split(",")
+            if c.strip()
+        ]
+        if allowed_sub and media_sub_codecs and any(
+            c not in allowed_sub for c in media_sub_codecs
+        ):
             return False
 
         sub_allowed = _allowed_languages(profile.subtitle_languages)
@@ -89,11 +114,31 @@ def compliance_from_summary(media, profile) -> bool:
                 if lang not in sub_allowed:
                     return False
 
-    # --- Container (phase 1: worker always outputs mkv) ---
-    if not _is_mkv(media):
+    # --- Video (phase 2: codec / resolution cap / bitrate cap) ---
+    target_video = compat.VIDEO_FFPROBE.get((profile.video_codec or "").lower())
+    if target_video and (media.video_codec or "").lower() != target_video:
         return False
 
-    # Video is always copied in phase 1 -> no constraint
+    max_res = profile.video_max_res or 0
+    if max_res:
+        res_num = _resolution_tier(media.resolution)
+        if res_num is None:
+            # Unknown resolution: conservative (the individual enqueue
+            # re-checks with a fresh probe).
+            return False
+        if res_num > max_res:
+            return False
+
+    max_kbps = profile.video_max_bitrate or 0
+    # Bitrate is only enforced when known (scan summary may lack it for
+    # legacy rows until the next scan; the worker enforces it regardless).
+    if max_kbps and media.video_bitrate and media.video_bitrate > max_kbps * 1000:
+        return False
+
+    # --- Container (the file must already be the profile output) ---
+    if not _matches_container(media, profile):
+        return False
+
     return True
 
 
@@ -111,6 +156,11 @@ def compliance_from_inspection(media, inspection: dict, profile) -> bool:
     """
     plan = build_job_plan(media, profile, inspection)
 
+    # The video must be copied as-is (no transcode planned)
+    video = plan.get("video", {}) or {}
+    if video.get("action") != "copy":
+        return False
+
     for stream in plan.get("audio", {}).get("streams", []):
         if stream.get("action") != "copy":
             return False
@@ -123,7 +173,7 @@ def compliance_from_inspection(media, inspection: dict, profile) -> bool:
         if stream.get("set_default") and not stream.get("default"):
             return False
 
-    if not _is_mkv(media):
+    if not _matches_container(media, profile):
         return False
 
     return True

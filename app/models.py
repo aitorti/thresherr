@@ -103,6 +103,7 @@ class MediaFile(Base):
     # --------------------
     video_codec = Column(String, nullable=True)
     resolution = Column(String, nullable=True)
+    video_bitrate = Column(BigInteger, nullable=True)
     audio_codec = Column(String, nullable=True)
     audio_languages = Column(String, nullable=True)
     subtitle_codec = Column(String, nullable=True)

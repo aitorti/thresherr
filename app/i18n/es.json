@@ -385,5 +385,6 @@
   "connect.err.script_required": "La ruta del script es obligatoria.",
   "logs.from_date": "Desde",
   "logs.to_date": "Hasta",
-  "logs.clear_dates": "Quitar fechas"
+  "logs.clear_dates": "Quitar fechas",
+  "prof.sub_none": "Ninguno (sin subtítulos)"
 }

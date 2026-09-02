@@ -31,23 +31,25 @@
           <div class="grid grid-cols-2 gap-3">
             <div>
               <label class="block text-xs font-bold text-slate-300 mb-1">{{ t('prof.video_codec') }}</label>
-              <select name="video_codec" class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-amber-500">
-                <option value="h264" selected>H.264</option>
-                <option value="h265">H.265</option>
-                <option value="av1">AV1</option>
-                <option value="vp9">VP9</option>
+              <select id="prof-video-codec" name="video_codec" class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-amber-500">
+                <option value="h264" data-video selected>H.264</option>
+                <option value="h265" data-video>H.265</option>
+                <option value="av1" data-video>AV1</option>
+                <option value="vp9" data-video>VP9</option>
               </select>
             </div>
             <div>
               <label class="block text-xs font-bold text-slate-300 mb-1">{{ t('prof.container') }}</label>
-              <select name="container" class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-amber-500">
-                <option value="mkv" selected>MKV</option>
-                <option value="mp4">MP4</option>
-                <option value="avi">AVI</option>
-                <option value="webm">WebM</option>
+              <select id="prof-container" name="container" onchange="applyMatrix()" class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-amber-500">
+                <option value="mkv" data-container selected>MKV</option>
+                <option value="mp4" data-container>MP4</option>
+                <option value="webm" data-container>WebM</option>
+                <option value="avi" data-container>AVI</option>
               </select>
             </div>
           </div>
+
+          <p id="container-hint" class="text-[11px] text-slate-500 -mt-2"></p>
 
           <div class="grid grid-cols-2 gap-3">
             <div>
@@ -76,13 +78,15 @@
             <div class="grid grid-cols-2 gap-3">
               <div>
                 <label class="block text-xs font-bold text-slate-300 mb-1">{{ t('prof.audio_codec') }}</label>
-                <select name="audio_codec" class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-amber-500">
-                  <option value="aac">AAC</option>
-                  <option value="eac3" selected>E-AC3</option>
-                  <option value="ac3">AC3</option>
-                  <option value="dts">DTS</option>
-                  <option value="flac">FLAC</option>
-                  <option value="mp3">MP3</option>
+                <select id="prof-audio-codec" name="audio_codec" class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-amber-500">
+                  <option value="aac" data-audio>AAC</option>
+                  <option value="eac3" data-audio selected>E-AC3</option>
+                  <option value="ac3" data-audio>AC3</option>
+                  <option value="dts" data-audio>DTS</option>
+                  <option value="flac" data-audio>FLAC</option>
+                  <option value="mp3" data-audio>MP3</option>
+                  <option value="opus" data-audio>Opus</option>
+                  <option value="vorbis" data-audio>Vorbis</option>
                 </select>
               </div>
               <div>
@@ -111,11 +115,12 @@
             <div class="grid grid-cols-2 gap-3">
               <div>
                 <label class="block text-xs font-bold text-slate-300 mb-1">{{ t('prof.sub_codec') }}</label>
-                <select name="subtitle_codec" class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-amber-500">
-                  <option value="subrip" selected>SubRip (SRT)</option>
-                  <option value="vtt">VTT</option>
-                  <option value="ass">ASS/SSA</option>
-                  <option value="pgs">PGS</option>
+                <select id="prof-sub-codec" name="subtitle_codec" class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-amber-500">
+                  <option value="subrip" data-sub selected>SubRip (SRT)</option>
+                  <option value="vtt" data-sub>VTT</option>
+                  <option value="ass" data-sub>ASS/SSA</option>
+                  <option value="pgs" data-sub>PGS</option>
+                  <option value="none" data-sub>{{ t('prof.sub_none') }}</option>
                 </select>
               </div>
               <div>
@@ -214,4 +219,37 @@
     </section>
   </div>
 </div>
+
+<script>
+  // Container/codec compatibility matrix (server-side source of truth).
+  const MATRIX = {{ matrix|tojson }};
+
+  function applyMatrix() {
+    const container = document.getElementById("prof-container").value;
+    const rules = MATRIX[container] || { video: [], audio: [], subtitle: [] };
+
+    const sync = (selectId, kind) => {
+      const select = document.getElementById(selectId);
+      if (!select) return;
+      let firstEnabled = null;
+      Array.from(select.options).forEach((opt) => {
+        const ok = rules[kind].includes(opt.value);
+        opt.disabled = !ok;
+        if (ok && !firstEnabled) firstEnabled = opt.value;
+      });
+      if (firstEnabled && !rules[kind].includes(select.value)) {
+        select.value = firstEnabled;
+      }
+    };
+
+    sync("prof-video-codec", "video");
+    sync("prof-audio-codec", "audio");
+    sync("prof-sub-codec", "subtitle");
+
+    const hint = document.getElementById("container-hint");
+    if (hint) hint.textContent = rules.hint || "";
+  }
+
+  document.addEventListener("DOMContentLoaded", applyMatrix);
+</script>
 {% endblock %}
