@@ -1040,6 +1040,9 @@ def execute_job_plan(job_plan: dict, input_path: str, temp_dir: str) -> str:
         cmd += _video_encoder_args(video_plan)
     else:
         cmd += ["-c:v", "copy"]
+        if container == "avi":
+            # AVI needs Annex-B byte streams: h264 in mkv/mp4 is AVCC
+            cmd += ["-bsf:v", "h264_mp4toannexb"]
 
     # Keep metadata + chapters (nice-to-have)
     cmd += ["-map_metadata", "0", "-map_chapters", "0"]
