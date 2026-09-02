@@ -2006,16 +2006,47 @@ def has_und_language(media: models.MediaFile, fresh: bool = False) -> bool:
 LOGS_PER_PAGE = 50
 
 
+def _madrid_day_bounds(date_str: str) -> tuple[datetime, datetime] | None:
+    """
+    'YYYY-MM-DD' in Europe/Madrid -> (start_utc_naive, end_utc_naive_exclusive).
+    Returns None when the string is invalid or the zone database is
+    unavailable (the filter is then ignored, never crashes).
+    """
+    try:
+        from datetime import timezone as _dt_timezone
+        from zoneinfo import ZoneInfo
+
+        day = datetime.strptime(date_str, "%Y-%m-%d")
+        tz = ZoneInfo("Europe/Madrid")
+        start = day.replace(tzinfo=tz).astimezone(_dt_timezone.utc).replace(tzinfo=None)
+        end = (
+            (day + timedelta(days=1))
+            .replace(tzinfo=tz)
+            .astimezone(_dt_timezone.utc)
+            .replace(tzinfo=None)
+        )
+        return start, end
+    except Exception:
+        return None
+
+
 @app.get("/system/logs", response_class=HTMLResponse)
 async def system_logs(
     request: Request,
     level: str = "all",
     q: str = "",
+    from_date: str = "",
+    to_date: str = "",
     page: int = 1,
     db: Session = Depends(get_db),
 ):
-    """System -> Logs: paginated table with level filter and text search."""
-    stats = compute_global_stats(db)
+    """System -> Logs: paginated table with level filter, text search and
+    date range (from_date/to_date, interpreted in Europe/Madrid)."""
+    # Normalize: only keep parseable dates so echoed inputs stay clean.
+    from_ok = _madrid_day_bounds(from_date) is not None
+    to_ok = _madrid_day_bounds(to_date) is not None
+    from_date = from_date if from_ok else ""
+    to_date = to_date if to_ok else ""
 
     query = db.query(models.Log)
     if level != "all":
@@ -2025,6 +2056,12 @@ async def system_logs(
             query = query.filter(models.Log.level == level.upper())
     if q:
         query = query.filter(models.Log.message.ilike(f"%{q}%"))
+    if from_date:
+        start, _end = _madrid_day_bounds(from_date)
+        query = query.filter(models.Log.time >= start)
+    if to_date:
+        _start, end = _madrid_day_bounds(to_date)
+        query = query.filter(models.Log.time < end)
 
     total = query.count()
     logs = (
@@ -2043,10 +2080,11 @@ async def system_logs(
         request=request,
         name=template_name,
         db=db,
-        **stats,
         logs=logs,
         level=level,
         q=q,
+        from_date=from_date,
+        to_date=to_date,
         page=page,
         has_more=has_more,
     )

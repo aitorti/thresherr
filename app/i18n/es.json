@@ -382,5 +382,8 @@
   "connect.err.events_required": "Selecciona al menos un evento.",
   "connect.err.telegram_fields": "El token del bot y el ID del chat son obligatorios para Telegram.",
   "connect.err.url_invalid": "Se requiere una URL http(s) válida para webhooks.",
-  "connect.err.script_required": "La ruta del script es obligatoria."
+  "connect.err.script_required": "La ruta del script es obligatoria.",
+  "logs.from_date": "Desde",
+  "logs.to_date": "Hasta",
+  "logs.clear_dates": "Quitar fechas"
 }

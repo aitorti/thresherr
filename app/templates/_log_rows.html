@@ -35,7 +35,7 @@
   <td colspan="4" class="py-3 text-center">
     <button
       class="px-4 py-1.5 rounded-md bg-slate-800 border border-slate-700 text-sm text-amber-300 font-semibold hover:bg-slate-700 transition-colors"
-      hx-get="/system/logs?level={{ level }}&q={{ q|urlencode }}&page={{ page + 1 }}"
+      hx-get="/system/logs?level={{ level }}&q={{ q|urlencode }}&page={{ page + 1 }}{% if from_date %}&from_date={{ from_date }}{% endif %}{% if to_date %}&to_date={{ to_date }}{% endif %}"
       hx-target="this"
       hx-swap="outerHTML">
       {{ t('logs.load_more') }}

@@ -6,15 +6,15 @@
   <div class="text-xs text-slate-500 font-semibold mb-1">{{ t('nav.system') }}</div>
   <h1 class="text-2xl font-extrabold text-slate-100 mb-4">{{ t('logs.title') }}</h1>
 
-  <!-- Level filter tabs + search -->
+    <!-- Level filter tabs + search + date range -->
   <div class="flex flex-wrap items-center gap-3 mb-4">
     <div class="flex rounded-md overflow-hidden border border-slate-700">
       {% for key, label in [('all', 'logs.filter_all'), ('info', 'logs.filter_info'), ('warn', 'logs.filter_warn'), ('error', 'logs.filter_error')] %}
         {% if level == key %}
-          <a href="/system/logs?level={{ key }}&q={{ q|urlencode }}"
+          <a href="/system/logs?level={{ key }}&q={{ q|urlencode }}{% if from_date %}&from_date={{ from_date }}{% endif %}{% if to_date %}&to_date={{ to_date }}{% endif %}"
              class="px-4 py-1.5 text-sm font-semibold bg-slate-700 text-amber-300">{{ t(label) }}</a>
         {% else %}
-          <a href="/system/logs?level={{ key }}&q={{ q|urlencode }}"
+          <a href="/system/logs?level={{ key }}&q={{ q|urlencode }}{% if from_date %}&from_date={{ from_date }}{% endif %}{% if to_date %}&to_date={{ to_date }}{% endif %}"
              class="px-4 py-1.5 text-sm font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700 transition-colors">{{ t(label) }}</a>
         {% endif %}
       {% endfor %}
@@ -31,7 +31,29 @@
       hx-trigger="keyup changed delay:400ms"
       hx-target="#log-table"
       hx-swap="innerHTML"
+      hx-include="#log-from, #log-to"
       hx-push-url="true">
+
+    <label class="flex items-center gap-2 text-xs font-semibold text-slate-400">
+      {{ t('logs.from_date') }}
+      <input id="log-from" type="date" name="from_date" value="{{ from_date }}"
+             class="px-2 py-1.5 rounded-md bg-slate-800 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-amber-500"
+             hx-get="/system/logs?level={{ level }}" hx-vals='{"page": 1}'
+             hx-trigger="change" hx-target="#log-table" hx-swap="innerHTML"
+             hx-include="#log-to" hx-push-url="true">
+    </label>
+    <label class="flex items-center gap-2 text-xs font-semibold text-slate-400">
+      {{ t('logs.to_date') }}
+      <input id="log-to" type="date" name="to_date" value="{{ to_date }}"
+             class="px-2 py-1.5 rounded-md bg-slate-800 border border-slate-700 text-sm text-slate-200 focus:outline-none focus:border-amber-500"
+             hx-get="/system/logs?level={{ level }}" hx-vals='{"page": 1}'
+             hx-trigger="change" hx-target="#log-table" hx-swap="innerHTML"
+             hx-include="#log-from" hx-push-url="true">
+    </label>
+    {% if from_date or to_date %}
+      <a href="/system/logs?level={{ level }}&q={{ q|urlencode }}"
+         class="text-xs font-semibold text-slate-400 hover:text-amber-300 underline">✕ {{ t('logs.clear_dates') }}</a>
+    {% endif %}
   </div>
 
   <!-- Log table -->

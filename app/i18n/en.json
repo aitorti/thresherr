@@ -382,5 +382,8 @@
   "connect.err.events_required": "Select at least one event.",
   "connect.err.telegram_fields": "Bot token and chat ID are required for Telegram.",
   "connect.err.url_invalid": "A valid http(s) URL is required for webhooks.",
-  "connect.err.script_required": "A script path is required."
+  "connect.err.script_required": "A script path is required.",
+  "logs.from_date": "From",
+  "logs.to_date": "To",
+  "logs.clear_dates": "Clear dates"
 }
