@@ -386,5 +386,7 @@
   "logs.from_date": "From",
   "logs.to_date": "To",
   "logs.clear_dates": "Clear dates",
-  "prof.sub_none": "None (no subtitles)"
+  "prof.sub_none": "None (no subtitles)",
+  "prof.edit": "Edit",
+  "prof.cancel": "Cancel"
 }

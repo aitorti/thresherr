@@ -386,5 +386,7 @@
   "logs.from_date": "Desde",
   "logs.to_date": "Hasta",
   "logs.clear_dates": "Quitar fechas",
-  "prof.sub_none": "Ninguno (sin subtítulos)"
+  "prof.sub_none": "Ninguno (sin subtítulos)",
+  "prof.edit": "Editar",
+  "prof.cancel": "Cancelar"
 }

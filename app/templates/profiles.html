@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 
 {% block content %}
+{% set p = editing %}
+{% set mr = (p.video_max_res if p else 1080)|int %}
+{% set mb = (p.video_max_bitrate if p else 10000)|int %}
 <div class="max-w-6xl">
   <!-- Breadcrumb, *arr style -->
   <div class="text-xs text-slate-500 font-semibold mb-1">{{ t('nav.settings') }} → {{ t('nav.profiles') }}</div>
@@ -9,19 +12,20 @@
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
     <!-- ========================= -->
-    <!-- New profile creation form -->
+    <!-- Profile create / edit form -->
     <!-- ========================= -->
     <section class="lg:col-span-1">
       <div class="rounded-lg border border-slate-700 bg-slate-900 p-5">
-        <h2 class="text-sm font-bold text-slate-200 mb-4">{{ t('prof.new') }}</h2>
+        <h2 class="text-sm font-bold text-slate-200 mb-4">{{ t('prof.edit') if p else t('prof.new') }}</h2>
 
-        <form action="/profiles" method="POST" class="space-y-4">
+        <form action="{{ '/profiles/' ~ p.id ~ '/edit' if p else '/profiles' }}" method="POST" class="space-y-4">
           <div>
             <label for="prof-name" class="block text-xs font-bold text-slate-300 mb-1">{{ t('prof.name') }}</label>
             <input
               id="prof-name"
               type="text"
               name="name"
+              value="{{ p.name if p else '' }}"
               placeholder="{{ t('prof.name_ph') }}"
               required
               class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500"
@@ -32,19 +36,19 @@
             <div>
               <label class="block text-xs font-bold text-slate-300 mb-1">{{ t('prof.video_codec') }}</label>
               <select id="prof-video-codec" name="video_codec" class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-amber-500">
-                <option value="h264" data-video selected>H.264</option>
-                <option value="h265" data-video>H.265</option>
-                <option value="av1" data-video>AV1</option>
-                <option value="vp9" data-video>VP9</option>
+                <option value="h264" data-video {% if (p and p.video_codec == 'h264') or not p %}selected{% endif %}>H.264</option>
+                <option value="h265" data-video {% if p and p.video_codec == 'h265' %}selected{% endif %}>H.265</option>
+                <option value="av1" data-video {% if p and p.video_codec == 'av1' %}selected{% endif %}>AV1</option>
+                <option value="vp9" data-video {% if p and p.video_codec == 'vp9' %}selected{% endif %}>VP9</option>
               </select>
             </div>
             <div>
               <label class="block text-xs font-bold text-slate-300 mb-1">{{ t('prof.container') }}</label>
               <select id="prof-container" name="container" onchange="applyMatrix()" class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-amber-500">
-                <option value="mkv" data-container selected>MKV</option>
-                <option value="mp4" data-container>MP4</option>
-                <option value="webm" data-container>WebM</option>
-                <option value="avi" data-container>AVI</option>
+                <option value="mkv" data-container {% if (p and p.container == 'mkv') or not p %}selected{% endif %}>MKV</option>
+                <option value="mp4" data-container {% if p and p.container == 'mp4' %}selected{% endif %}>MP4</option>
+                <option value="webm" data-container {% if p and p.container == 'webm' %}selected{% endif %}>WebM</option>
+                <option value="avi" data-container {% if p and p.container == 'avi' %}selected{% endif %}>AVI</option>
               </select>
             </div>
           </div>
@@ -55,21 +59,21 @@
             <div>
               <label class="block text-xs font-bold text-slate-300 mb-1">{{ t('prof.max_res') }}</label>
               <select name="video_max_res" class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-amber-500">
-                <option value="480">480p</option>
-                <option value="720">720p</option>
-                <option value="1080" selected>1080p</option>
-                <option value="1440">1440p</option>
-                <option value="2160">2160p (4K)</option>
+                <option value="480" {% if mr == 480 %}selected{% endif %}>480p</option>
+                <option value="720" {% if mr == 720 %}selected{% endif %}>720p</option>
+                <option value="1080" {% if mr == 1080 %}selected{% endif %}>1080p</option>
+                <option value="1440" {% if mr == 1440 %}selected{% endif %}>1440p</option>
+                <option value="2160" {% if mr == 2160 %}selected{% endif %}>2160p (4K)</option>
               </select>
             </div>
             <div>
               <label class="block text-xs font-bold text-slate-300 mb-1">{{ t('prof.max_bitrate') }}</label>
               <select name="video_max_bitrate" class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-amber-500">
-                <option value="2000">2 Mbps (SD)</option>
-                <option value="5000">5 Mbps (HD)</option>
-                <option value="10000" selected>10 Mbps (Full HD)</option>
-                <option value="25000">25 Mbps (4K Light)</option>
-                <option value="50000">50 Mbps (4K High)</option>
+                <option value="2000" {% if mb == 2000 %}selected{% endif %}>2 Mbps (SD)</option>
+                <option value="5000" {% if mb == 5000 %}selected{% endif %}>5 Mbps (HD)</option>
+                <option value="10000" {% if mb == 10000 %}selected{% endif %}>10 Mbps (Full HD)</option>
+                <option value="25000" {% if mb == 25000 %}selected{% endif %}>25 Mbps (4K Light)</option>
+                <option value="50000" {% if mb == 50000 %}selected{% endif %}>50 Mbps (4K High)</option>
               </select>
             </div>
           </div>
@@ -79,14 +83,14 @@
               <div>
                 <label class="block text-xs font-bold text-slate-300 mb-1">{{ t('prof.audio_codec') }}</label>
                 <select id="prof-audio-codec" name="audio_codec" class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-amber-500">
-                  <option value="aac" data-audio>AAC</option>
-                  <option value="eac3" data-audio selected>E-AC3</option>
-                  <option value="ac3" data-audio>AC3</option>
-                  <option value="dts" data-audio>DTS</option>
-                  <option value="flac" data-audio>FLAC</option>
-                  <option value="mp3" data-audio>MP3</option>
-                  <option value="opus" data-audio>Opus</option>
-                  <option value="vorbis" data-audio>Vorbis</option>
+                  <option value="aac" data-audio {% if (p and p.audio_codec == 'aac') or (not p and False) %}selected{% endif %}>AAC</option>
+                  <option value="eac3" data-audio {% if (p and p.audio_codec == 'eac3') or not p %}selected{% endif %}>E-AC3</option>
+                  <option value="ac3" data-audio {% if p and p.audio_codec == 'ac3' %}selected{% endif %}>AC3</option>
+                  <option value="dts" data-audio {% if p and p.audio_codec == 'dts' %}selected{% endif %}>DTS</option>
+                  <option value="flac" data-audio {% if p and p.audio_codec == 'flac' %}selected{% endif %}>FLAC</option>
+                  <option value="mp3" data-audio {% if p and p.audio_codec == 'mp3' %}selected{% endif %}>MP3</option>
+                  <option value="opus" data-audio {% if p and p.audio_codec == 'opus' %}selected{% endif %}>Opus</option>
+                  <option value="vorbis" data-audio {% if p and p.audio_codec == 'vorbis' %}selected{% endif %}>Vorbis</option>
                 </select>
               </div>
               <div>
@@ -94,6 +98,7 @@
                 <input
                   type="text"
                   name="audio_def_language"
+                  value="{{ p.audio_def_language or '' if p else '' }}"
                   placeholder="spa"
                   class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500"
                 >
@@ -105,6 +110,7 @@
               <input
                 type="text"
                 name="audio_languages"
+                value="{{ p.audio_languages or '' if p else '' }}"
                 placeholder="eng,spa,fra"
                 class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500"
               >
@@ -116,11 +122,11 @@
               <div>
                 <label class="block text-xs font-bold text-slate-300 mb-1">{{ t('prof.sub_codec') }}</label>
                 <select id="prof-sub-codec" name="subtitle_codec" class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-amber-500">
-                  <option value="subrip" data-sub selected>SubRip (SRT)</option>
-                  <option value="vtt" data-sub>VTT</option>
-                  <option value="ass" data-sub>ASS/SSA</option>
-                  <option value="pgs" data-sub>PGS</option>
-                  <option value="none" data-sub>{{ t('prof.sub_none') }}</option>
+                  <option value="subrip" data-sub {% if (p and p.subtitle_codec == 'subrip') or not p %}selected{% endif %}>SubRip (SRT)</option>
+                  <option value="vtt" data-sub {% if p and p.subtitle_codec == 'vtt' %}selected{% endif %}>VTT</option>
+                  <option value="ass" data-sub {% if p and p.subtitle_codec == 'ass' %}selected{% endif %}>ASS/SSA</option>
+                  <option value="pgs" data-sub {% if p and p.subtitle_codec == 'pgs' %}selected{% endif %}>PGS</option>
+                  <option value="none" data-sub {% if p and p.subtitle_codec == 'none' %}selected{% endif %}>{{ t('prof.sub_none') }}</option>
                 </select>
               </div>
               <div>
@@ -128,6 +134,7 @@
                 <input
                   type="text"
                   name="subtitle_def_language"
+                  value="{{ p.subtitle_def_language or '' if p else '' }}"
                   placeholder="spa"
                   class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500"
                 >
@@ -139,18 +146,27 @@
               <input
                 type="text"
                 name="subtitle_languages"
+                value="{{ p.subtitle_languages or '' if p else '' }}"
                 placeholder="eng,spa,fra"
                 class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500"
               >
             </div>
           </div>
 
-          <button
-            type="submit"
-            class="w-full py-2 rounded-md bg-amber-600 text-sm text-slate-950 font-bold hover:bg-amber-500 transition-colors"
-          >
-            {{ t('prof.save') }}
-          </button>
+          <div class="flex gap-2">
+            {% if p %}
+              <a href="/profiles"
+                 class="w-1/3 py-2 rounded-md bg-slate-800 border border-slate-700 text-sm text-slate-300 font-semibold hover:bg-slate-700 transition-colors text-center">
+                {{ t('prof.cancel') }}
+              </a>
+            {% endif %}
+            <button
+              type="submit"
+              class="{% if p %}w-2/3{% else %}w-full{% endif %} py-2 rounded-md bg-amber-600 text-sm text-slate-950 font-bold hover:bg-amber-500 transition-colors"
+            >
+              {{ t('prof.save') }}
+            </button>
+          </div>
         </form>
       </div>
     </section>
@@ -193,7 +209,12 @@
                 </div>
               </td>
               <td class="py-2 px-3">
-                <div class="flex items-center justify-center">
+                <div class="flex items-center justify-center gap-2">
+                  <a href="/profiles/{{ profile.id }}/edit"
+                     class="action-btn text-slate-400 hover:text-amber-300 transition-colors"
+                     title="{{ t('prof.edit') }}">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+                  </a>
                   <form
                     action="/profiles/{{ profile.id }}/delete"
                     method="POST"

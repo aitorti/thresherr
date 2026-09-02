@@ -655,11 +655,9 @@ async def dashboard(
 # --- WORKGIN WITH PROFILES ---
 
 @app.get("/profiles", response_class=HTMLResponse)
-async def get_profiles(request: Request, db: Session = Depends(get_db)):
-    stats = compute_global_stats(db)
-    profiles = db.query(models.Profile).all()
-    # Matrix exposed to the profile form (dynamic option filtering)
-    matrix = {
+def _profile_matrix() -> dict:
+    """Compat matrix for the profile form (dynamic option filtering)."""
+    return {
         c: {
             "video": list(compat.CONTAINER_VIDEO[c]),
             "audio": list(compat.CONTAINER_AUDIO[c]),
@@ -668,13 +666,30 @@ async def get_profiles(request: Request, db: Session = Depends(get_db)):
         }
         for c in compat.CONTAINERS
     }
+
+
+def _profile_validation_problems(name: str, container: str, video_codec: str,
+                                 audio_codec: str, subtitle_codec: str) -> list[str]:
+    problems = []
+    if not (name or "").strip():
+        problems.append("profile name is required")
+    problems += compat.incompatible_reasons(
+        container, video_codec, audio_codec, subtitle_codec
+    )
+    return problems
+
+
+async def get_profiles(request: Request, db: Session = Depends(get_db)):
+    stats = compute_global_stats(db)
+    profiles = db.query(models.Profile).all()
     return render(
         request=request,
         name="profiles.html",
         db=db,
         **stats,
         profiles=profiles,
-        matrix=matrix,
+        matrix=_profile_matrix(),
+        editing=None,
     )
 
 @app.post("/profiles")
@@ -692,11 +707,8 @@ async def create_profile(
     subtitle_languages: str = Form(None),
     db: Session = Depends(get_db)
 ):
-    problems = []
-    if not (name or "").strip():
-        problems.append("profile name is required")
-    problems += compat.incompatible_reasons(
-        container, video_codec, audio_codec, subtitle_codec
+    problems = _profile_validation_problems(
+        name, container, video_codec, audio_codec, subtitle_codec
     )
     if problems:
         return RedirectResponse(
@@ -715,6 +727,80 @@ async def create_profile(
     db.commit()
     ui_logger.debug("Profile created: %s", name)
     return RedirectResponse(url="/profiles", status_code=303)
+
+@app.get("/profiles/{profile_id}/edit", response_class=HTMLResponse)
+async def edit_profile_page(profile_id: int, request: Request,
+                            db: Session = Depends(get_db)):
+    """Edit form for an existing profile (same page, pre-filled)."""
+    profile = (
+        db.query(models.Profile).filter(models.Profile.id == profile_id).first()
+    )
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    stats = compute_global_stats(db)
+    profiles = db.query(models.Profile).all()
+    return render(
+        request=request,
+        name="profiles.html",
+        db=db,
+        **stats,
+        profiles=profiles,
+        matrix=_profile_matrix(),
+        editing=profile,
+    )
+
+
+@app.post("/profiles/{profile_id}/edit")
+async def update_profile(
+    profile_id: int,
+    name: str = Form(...),
+    video_codec: str = Form(...),
+    container: str = Form(...),
+    video_max_res: int = Form(...),
+    video_max_bitrate: int = Form(...),
+    audio_codec: str = Form(...),
+    audio_def_language: str = Form(None),
+    audio_languages: str = Form(None),
+    subtitle_codec: str = Form(...),
+    subtitle_def_language: str = Form(None),
+    subtitle_languages: str = Form(None),
+    db: Session = Depends(get_db),
+):
+    profile = (
+        db.query(models.Profile).filter(models.Profile.id == profile_id).first()
+    )
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+
+    problems = _profile_validation_problems(
+        name, container, video_codec, audio_codec, subtitle_codec
+    )
+    if problems:
+        return RedirectResponse(
+            url=(
+                f"/profiles/{profile_id}/edit"
+                f"?msg={quote('; '.join(problems))}&mtype=error"
+            ),
+            status_code=303,
+        )
+
+    profile.name = name
+    profile.video_codec = video_codec
+    profile.container = container
+    profile.video_max_res = video_max_res
+    profile.video_max_bitrate = video_max_bitrate
+    profile.audio_codec = audio_codec
+    profile.audio_def_language = audio_def_language
+    profile.audio_languages = audio_languages
+    profile.subtitle_codec = subtitle_codec
+    profile.subtitle_def_language = subtitle_def_language
+    profile.subtitle_languages = subtitle_languages
+    db.commit()
+    ui_logger.info("Profile updated: id=%s (%s)", profile.id, profile.name)
+    return RedirectResponse(
+        url="/profiles?msg=Profile%20updated&mtype=success", status_code=303
+    )
+
 
 # --- WORKGIN WITH LIBRARIES ---
 
