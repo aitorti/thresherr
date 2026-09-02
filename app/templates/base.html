@@ -340,6 +340,11 @@
       if (batch) {
         showBanner(decodeURIComponent(batch), "info");
       }
+      const whisper = params.get("whisper");
+      if (whisper) {
+        // Already URL-decoded once by URLSearchParams; the text contains '%'.
+        showBanner(whisper, params.get("wtype") === "info" ? "info" : "success");
+      }
     })();
   </script>
 </body>

@@ -1422,6 +1422,14 @@ async def get_media_ffprobe(media_id: int, db: Session = Depends(get_db)):
 
 WHISPER_DEFAULT_URL = "http://whisper:8000/v1"
 
+# Triple-sampling defaults: 45 s clips at 20/50/80% of the stream, with an
+# early stop when the first two samples agree. Files under ~10 minutes get a
+# single 45 s sample at 20%. See _detect_audio_language_whisper.
+WHISPER_SAMPLE_SECONDS = 45
+WHISPER_SAMPLE_FRACTIONS = (0.2, 0.5, 0.8)
+WHISPER_MULTI_SAMPLE_MIN_SECONDS = 600.0
+WHISPER_SEEK_RETRY_SECONDS = 10.0
+
 
 def _probe_audio_duration(file_path: str) -> float | None:
     """Best-effort media duration (seconds), for sample placement."""
@@ -1437,12 +1445,13 @@ def _probe_audio_duration(file_path: str) -> float | None:
         return None
 
 
-def _extract_audio_sample(file_path: str, stream_index: int, offset: float, out: str) -> bool:
-    """Extract up to 60s of mono 16k mp3 from the stream at offset. True if usable."""
+def _extract_audio_sample(file_path: str, stream_index: int, offset: float, out: str,
+                          seconds: int = WHISPER_SAMPLE_SECONDS) -> bool:
+    """Extract up to `seconds` of mono 16k mp3 from the stream at offset. True if usable."""
     result = subprocess.run(
         [
             "ffmpeg", "-y", "-v", "error", "-ss", str(offset),
-            "-i", file_path, "-map", f"0:{stream_index}", "-t", "60", "-vn",
+            "-i", file_path, "-map", f"0:{stream_index}", "-t", str(seconds), "-vn",
             "-ac", "1", "-ar", "16000", "-f", "mp3", out,
         ],
         capture_output=True,
@@ -1485,40 +1494,103 @@ def _whisper_transcribe(sample: str, base_url: str) -> dict | None:
         return None
 
 
-def _detect_audio_language_whisper(file_path: str, stream_index: int, base_url: str) -> str | None:
-    """
-    Sample the stream where there is likely dialogue (20% in, fallback start)
-    and ask the local Whisper service for its language (last-resort detection,
-    on demand).
+def _whisper_sample_vote(file_path: str, stream_index: int, base_url: str, offset: float,
+                         sample: str) -> tuple[str, str | None]:
+    """Extract a 45s clip at `offset` and ask Whisper for its language.
 
-    Only trusts the language when Whisper actually transcribed text: an empty
-    transcript means no audible speech (studio logos, music-only passages,
-    damaged audio) and Whisper would just return its language prior (usually
-    'en') — assigning that would be a false positive.
+    Returns (status, lang): status is "vote" (speech found, lang is the
+    detected code), "empty" (no audible speech — Whisper would only return its
+    language prior), "broken" (extraction failed twice — damaged seek point) or
+    "error" (Whisper request failed). Anything but "vote" discards the sample.
+    """
+    def extract(at: float) -> bool:
+        return _extract_audio_sample(file_path, stream_index, at, sample)
+
+    # Damaged files: retry 10s before the failing seek point, then no vote.
+    if not extract(offset) and not extract(max(0.0, offset - WHISPER_SEEK_RETRY_SECONDS)):
+        return "broken", None
+    data = _whisper_transcribe(sample, base_url)
+    if not data:
+        return "error", None
+    text = (data.get("text") or "").strip()
+    if not text:
+        return "empty", None
+    return "vote", language_detect._normalize_lang(data.get("language"))
+
+
+def _whisper_sample_label(fraction: float, duration: float | None) -> str:
+    """'@20%' when the duration is known, '@start' when it could not be probed."""
+    if duration:
+        return f"@{int(round(fraction * 100))}%"
+    return "@start"
+
+
+def _detect_audio_language_whisper(file_path: str, stream_index: int, base_url: str) -> dict | None:
+    """
+    Triple sampling (45 s at 20/50/80%) with the local Whisper service.
+
+    Rules:
+      - A sample only votes when Whisper actually transcribed speech; empty
+        transcripts (studio logos, music-only passages, damaged audio) would
+        just return the model prior (usually 'en'), so they are discarded.
+      - If the 20% and 50% samples both vote for the same language, the 80%
+        sample is skipped (early stop).
+      - Majority of the valid votes wins; a tie keeps the stream 'und' so the
+        human decides.
+      - Files under ~10 minutes get a single 45 s sample at 20% (start when
+        the duration can't be probed).
+
+    Returns a dict {language, winner_votes, valid, samples} where `samples`
+    holds per-sample tokens (e.g. 'spa@20% · [skip@80%]'), or None when
+    Whisper is not configured.
     """
     if not base_url:
         return None
     sample = f"/tmp/thresherr_lang_{os.getpid()}_{stream_index}.mp3"
     try:
         duration = _probe_audio_duration(file_path)
-        offsets: list[float] = []
-        if duration and duration > 600:
-            # Long content: sample at 20% (dialogue), fall back to the start.
-            offsets.append(0.2 * duration)
-        offsets.append(0.0)
+        if duration and duration > WHISPER_MULTI_SAMPLE_MIN_SECONDS:
+            fractions = list(WHISPER_SAMPLE_FRACTIONS)
+        else:
+            fractions = [WHISPER_SAMPLE_FRACTIONS[0]]
 
-        for offset in offsets:
-            if not _extract_audio_sample(file_path, stream_index, offset, sample):
-                continue
-            data = _whisper_transcribe(sample, base_url)
-            if not data:
-                continue
-            text = (data.get("text") or "").strip()
-            if not text:
-                # No speech captured -> the language would be the model prior.
-                continue
-            return language_detect._normalize_lang(data.get("language"))
-        return None
+        results: list[tuple[str, str | None]] = []
+        tokens: list[str] = []
+        votes: dict[str, int] = {}
+        valid = 0
+
+        for pos, fraction in enumerate(fractions):
+            # Early stop: first two samples both voted and agree -> skip 80%.
+            if pos == 2 and len(results) == 2:
+                st0, lang0 = results[0]
+                st1, lang1 = results[1]
+                if st0 == "vote" and st1 == "vote" and lang0 == lang1:
+                    tokens.append(f"[skip{_whisper_sample_label(fraction, duration)}]")
+                    break
+
+            offset = fraction * duration if duration else 0.0
+            status, lang = _whisper_sample_vote(file_path, stream_index, base_url, offset, sample)
+            results.append((status, lang))
+            label = _whisper_sample_label(fraction, duration)
+            if status == "vote" and lang:
+                votes[lang] = votes.get(lang, 0) + 1
+                valid += 1
+                tokens.append(f"{lang}{label}")
+            else:
+                reason = {"empty": "no-speech", "broken": "broken", "error": "error"}.get(status, status)
+                tokens.append(f"[{reason}{label}]")
+
+        winner = None
+        if votes:
+            ranked = sorted(votes.items(), key=lambda kv: (-kv[1], kv[0]))
+            if len(ranked) == 1 or ranked[0][1] > ranked[1][1]:
+                winner = ranked[0][0]
+        return {
+            "language": winner,
+            "winner_votes": votes.get(winner, 0) if winner else 0,
+            "valid": valid,
+            "samples": tokens,
+        }
     finally:
         try:
             if os.path.exists(sample):
@@ -1547,13 +1619,28 @@ async def auto_detect_language(media_id: int, db: Session = Depends(get_db)):
     base_url = _get_setting(db, "whisper_base_url", WHISPER_DEFAULT_URL) or ""
     detected_audio = {}
     detected_sub = {}
+    summary_parts: list[str] = []
 
     for stream in inspection.get("audio_streams", []):
         if (stream.get("language") or "und") != "und":
             continue
-        lang = _detect_audio_language_whisper(media.full_path, stream["index"], base_url)
-        if lang:
-            detected_audio[str(stream["index"])] = lang
+        det = _detect_audio_language_whisper(media.full_path, stream["index"], base_url)
+        if det is None:
+            continue  # Whisper not configured
+        idx = stream["index"]
+        line = " · ".join(det["samples"])
+        if det["language"]:
+            detected_audio[str(idx)] = det["language"]
+            verdict = f"{det['language']} {det['winner_votes']}/{det['valid']}"
+        elif det["valid"] > 0:
+            verdict = "und (tie)"
+        else:
+            verdict = "no usable speech"
+        summary_parts.append(f"audio #{idx}: {line} → {verdict}")
+        ui_logger.info(
+            "Whisper langdetect media id=%s stream #%s: %s → %s",
+            media_id, idx, line, verdict,
+        )
 
     # First und TEXT subtitle (image subs have no text for fastText)
     for stream in inspection.get("subtitle_streams", []):
@@ -1564,10 +1651,13 @@ async def auto_detect_language(media_id: int, db: Session = Depends(get_db)):
         det = language_detect.detect_subtitle_language_fasttext(media.full_path)
         if det:
             detected_sub[str(stream["index"])] = det[0]["language"]
+            summary_parts.append(f"subtitle: {det[0]['language']} (fastText)")
         break
 
-    if not detected_audio and not detected_sub:
-        return {"detected": {"audio": {}, "subtitle": {}}, "saved": False}
+    saved = bool(detected_audio or detected_sub)
+    summary = " | ".join(summary_parts) if summary_parts else None
+    if not saved:
+        return {"detected": {"audio": {}, "subtitle": {}}, "saved": False, "summary": summary}
 
     overrides = {}
     if media.stream_overrides:
@@ -1585,7 +1675,7 @@ async def auto_detect_language(media_id: int, db: Session = Depends(get_db)):
         detected_audio,
         detected_sub,
     )
-    return {"detected": {"audio": detected_audio, "subtitle": detected_sub}, "saved": True}
+    return {"detected": {"audio": detected_audio, "subtitle": detected_sub}, "saved": True, "summary": summary}
 
 
 # -------------------------------------------------

@@ -930,8 +930,13 @@
       try {
         const res = await fetch(`/api/media/${currentMediaId}/auto-detect-language`, { method: "POST" });
         const data = await res.json();
-        if (data && data.saved) {
-          // Overrides saved: reload so the dashboard shows the amber tags
+        if (data && data.summary) {
+          // Reload showing the per-sample banner (saved overrides or und tie).
+          const url = new URL(window.location.href);
+          url.searchParams.set("whisper", data.summary);
+          url.searchParams.set("wtype", data.saved ? "saved" : "info");
+          window.location.href = url.toString();
+        } else if (data && data.saved) {
           location.reload();
         } else {
           alert(I18N.detectFailed);
