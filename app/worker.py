@@ -841,6 +841,19 @@ def build_job_plan(
         if (s.get("codec_raw") or "").lower() != mux_codec:
             s["mux_codec"] = mux_codec
 
+    # Container rules over audio: a stream the container cannot carry
+    # (e.g. a copied aac/und stream in a webm output) is transcoded to the
+    # profile audio target instead of failing the mux.
+    audio_in_container = compat.CONTAINER_AUDIO.get(container, ())
+    audio_target = (profile.audio_codec or "").lower()
+    for s in plan["audio"]["streams"]:
+        if s.get("action") == "copy" and audio_in_container:
+            src_codec = (s.get("codec") or "").lower()
+            if src_codec not in audio_in_container and audio_target:
+                s["action"] = "transcode"
+                s["target_codec"] = audio_target
+                s["reason"] = f"container_{container}_requires_codec"
+
     return plan
 
 def _video_is_hdr(video_info: dict) -> bool:
@@ -1160,15 +1173,15 @@ def verify_result(temp_output_path: str, job_plan: dict) -> str:
 
     # -------- CONTAINER (the muxer must match the profile container) --------
     container = (job_plan.get("container") or "mkv").lower()
-    expected_format = {
-        "mkv": "matroska",
-        "mp4": "mp4",
-        "webm": "matroska",
-        "avi": "avi",
-    }.get(container, "matroska")
+    expected_formats = {
+        "mkv": {"matroska"},
+        "mp4": {"mp4", "mov"},  # ffprobe reports mp4 files as 'mov,mp4,...'
+        "webm": {"matroska"},
+        "avi": {"avi"},
+    }.get(container, {"matroska"})
     actual_format = (fmt.get("format_name") or "").split(",")[0].strip()
-    if actual_format != expected_format:
-        return f"failed: output container {actual_format} != {expected_format}"
+    if actual_format not in expected_formats:
+        return f"failed: output container {actual_format} != {sorted(expected_formats)}"
 
     if expected_duration and output_duration is None:
         return "failed: output duration could not be determined"
