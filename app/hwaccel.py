@@ -31,14 +31,14 @@ GLOBAL_PRE_INPUT = {
 }
 
 # Probe recipes: extra pre-input args + a hwupload filter for the family.
+# NOTE: keep the source ABOVE NVENC's minimum frame dimension (>= 65px);
+# 64x64 fails with "Frame Dimension less than the minimum supported value".
+_SRC = "-f", "lavfi", "-i", "testsrc2=s=320x240:r=25:d=1"
 _PROBE = {
-    "nvenc": (["-f", "lavfi", "-i", "color=c=black:s=64x64:r=1:d=0.2"],
-              []),
-    "qsv": (["-init_hw_device", "qsv=hw", "-filter_hw_device", "hw",
-             "-f", "lavfi", "-i", "color=c=black:s=64x64:r=1:d=0.2"],
+    "nvenc": ([*_SRC], []),
+    "qsv": (["-init_hw_device", "qsv=hw", "-filter_hw_device", "hw", *_SRC],
             ["format=nv12", "hwupload=extra_hw_frames=64"]),
-    "vaapi": (["-vaapi_device", "/dev/dri/renderD128",
-               "-f", "lavfi", "-i", "color=c=black:s=64x64:r=1:d=0.2"],
+    "vaapi": (["-vaapi_device", "/dev/dri/renderD128", *_SRC],
               ["format=nv12", "hwupload"]),
 }
 
