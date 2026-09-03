@@ -172,8 +172,11 @@ ACCEL_VIDEO_ENCODERS = {
 ACCEL_VIDEO_DEFAULTS = {
     "cpu": dict(VIDEO_DEFAULTS),
     "nvenc": {
-        "h264": {"cq": 21, "preset": "p4"},
-        "h265": {"cq": 22, "preset": "p4"},
+        # Calibrated 2026-09-03 (300, 720p): cq 25 visually matches x264
+        # crf 23 at ~1.5x the bitrate (4.2 vs 2.7 Mbps on the sample);
+        # the old cq 21 produced ~2x the bits for no visible gain.
+        "h264": {"cq": 25, "preset": "p4"},
+        "h265": {"cq": 26, "preset": "p4"},  # same +2 offset vs crf; validate visually on first use
     },
     "vaapi": {
         "h264": {"qp": 21},
