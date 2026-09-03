@@ -18,6 +18,7 @@ import settings
 import health
 import connect
 import compat
+import hwaccel
 
 logger = get_logger("worker")
 
@@ -40,6 +41,37 @@ STALE_PROCESSING_TIMEOUT_MINUTES = 60
 # status page treats a recent 'processing' job as a live worker.
 HEARTBEAT_EVERY_SECONDS = 30
 _last_heartbeat_write = 0.0
+
+# Hardware acceleration backend resolved at startup from THRESHERR_ACCEL
+# (set by the docker-compose `extends` block, Immich-style).
+ACCEL = "cpu"
+
+
+def init_hwaccel(db) -> None:
+    """Resolve + probe the requested accel backend and persist the outcome.
+
+    Called once at worker startup. When the requested backend is unusable
+    (no GPU/device, driver missing...) the worker falls back to CPU and
+    Health reports it (health.hwaccel_fallback).
+    """
+    global ACCEL
+    requested = hwaccel.requested_accel()
+    ok, detail = hwaccel.probe(requested)
+    effective = requested if ok else "cpu"
+    ACCEL = effective
+
+    _set_worker_setting(db, "hwaccel_requested", requested)
+    _set_worker_setting(db, "hwaccel_effective", effective)
+    _set_worker_setting(db, "hwaccel_ok", "1" if ok else "0")
+    _set_worker_setting(db, "hwaccel_detail", detail)
+    db.commit()
+
+    if requested != "cpu" and not ok:
+        logger.warning(
+            "hwaccel %s requested but unavailable (%s) -> falling back to CPU",
+            requested, detail,
+        )
+    logger.info("hwaccel: requested=%s effective=%s (%s)", requested, effective, detail)
 
 
 def _utcnow() -> datetime:
@@ -915,16 +947,15 @@ def decide_video_stream(inspection: dict, profile: models.Profile) -> dict:
     if needs_bitrate:
         reasons.append(f"bitrate {bitrate}>{max_kbps}k")
 
-    defaults = compat.VIDEO_DEFAULTS.get(target, compat.VIDEO_DEFAULTS["h264"])
+    defaults = compat.accel_defaults(ACCEL, target)
     decision = {
         "action": "transcode",
         "reason": ", ".join(reasons),
         "codec": codec,
         "target_codec": target,
         "target_codec_name": target_ff,
-        "encoder": compat.VIDEO_ENCODERS.get(target, "libx264"),
-        "preset": defaults.get("preset", "medium"),
-        "crf": defaults.get("crf"),
+        "encoder": compat.accel_encoder(ACCEL, target),
+        "quality": dict(defaults),
         "hdr": _video_is_hdr(src),
     }
     if needs_scale:
@@ -941,16 +972,23 @@ def decide_video_stream(inspection: dict, profile: models.Profile) -> dict:
 def _video_encoder_args(video_plan: dict) -> list[str]:
     """ffmpeg video encoder + filters args for a transcode decision.
 
-    Option A (fixed quality + hard cap): CRF with -maxrate/-bufsize.
+    CPU (Option A: fixed quality + hard cap): CRF with -maxrate/-bufsize.
     vp9 cannot combine CRF with a VBV cap in this build -> capped target
     bitrate instead. HDR sources get the native tonemap filter chain and
     the output is explicitly tagged BT.709.
+
+    Hardware families (encoder name decides):
+      nvenc -> -rc vbr -cq N -preset pX (no cap: -b:v 0)
+      qsv   -> -preset X -global_quality N (hwupload extra frames)
+      vaapi -> -rc_mode CQP|VBR -qp N (hwupload)
+    Pre-input init args (qsv/vaapi devices) are added by execute_job_plan
+    via hwaccel.pre_input_args().
     """
     target = video_plan.get("target_codec") or "h264"
-    defaults = compat.VIDEO_DEFAULTS.get(target, compat.VIDEO_DEFAULTS["h264"])
-    crf = video_plan.get("crf") or defaults.get("crf")
-    preset = video_plan.get("preset") or defaults.get("preset")
+    encoder = video_plan.get("encoder") or "libx264"
+    defaults = video_plan.get("quality") or compat.accel_defaults(ACCEL, target)
     max_kbps = video_plan.get("maxrate_kbps") or 0
+    family = compat.encoder_family(encoder)
 
     args: list[str] = []
     filters: list[str] = []
@@ -972,8 +1010,57 @@ def _video_encoder_args(video_plan: dict) -> list[str]:
     else:
         filters.append("format=yuv420p")
 
+    # Hardware upload: nvenc accepts software frames (auto-upload);
+    # qsv/vaapi need an explicit hwupload at the end of the chain.
+    if family == "qsv":
+        filters.append("hwupload=extra_hw_frames=64")
+    elif family == "vaapi":
+        filters.append("hwupload")
+
     if filters:
         args += ["-vf", ",".join(filters)]
+
+    # ---- Hardware families ----
+    if family == "nvenc":
+        cq = defaults.get("cq", 21)
+        preset = defaults.get("preset", "p4")
+        args += ["-rc", "vbr", "-cq", str(cq), "-preset", str(preset)]
+        if max_kbps:
+            args += [
+                "-maxrate", f"{max_kbps}k",
+                "-bufsize", f"{max_kbps * 2}k",
+            ]
+        else:
+            args += ["-b:v", "0"]  # pure quality target (cq only)
+        return args
+
+    if family == "qsv":
+        preset = defaults.get("preset", "medium")
+        gq = defaults.get("global_quality", 21)
+        args += ["-preset", str(preset), "-global_quality", str(gq)]
+        if max_kbps:
+            args += [
+                "-maxrate", f"{max_kbps}k",
+                "-bufsize", f"{max_kbps * 2}k",
+            ]
+        return args
+
+    if family == "vaapi":
+        qp = defaults.get("qp", 21)
+        if max_kbps:
+            args += [
+                "-rc_mode", "VBR",
+                "-qp", str(qp),
+                "-maxrate", f"{max_kbps}k",
+                "-bufsize", f"{max_kbps * 2}k",
+            ]
+        else:
+            args += ["-rc_mode", "CQP", "-qp", str(qp)]
+        return args
+
+    # ---- CPU family (unchanged behaviour) ----
+    crf = defaults.get("crf")
+    preset = defaults.get("preset")
 
     if target == "vp9":
         # libvpx-vp9: CRF + VBV cap unsupported -> capped average target.
@@ -1029,11 +1116,16 @@ def execute_job_plan(job_plan: dict, input_path: str, temp_dir: str) -> str:
     if ext == ".avi":
         cmd += ["-fflags", "+genpts"]
 
+    # Hardware encoders that need a device/hw context must initialise it
+    # BEFORE the input (-i). nvenc needs nothing here (auto-upload).
+    video_plan = job_plan.get("video", {}) or {}
+    if video_plan.get("action") == "transcode":
+        cmd += hwaccel.pre_input_args(video_plan.get("encoder", ""))
+
     # Input file
     cmd += ["-i", input_path]
 
     # --- VIDEO: copy or transcode (profile rules) ---
-    video_plan = job_plan.get("video", {}) or {}
     cmd += ["-map", "0:v"]
     if video_plan.get("action") == "transcode":
         cmd += ["-c:v", video_plan.get("encoder", "libx264")]
@@ -1532,6 +1624,7 @@ def run_worker():
         if settings.get_setting(_boot_db, "worker_started_at") is None:
             _set_worker_setting(_boot_db, "worker_started_at", _utcnow().isoformat())
         write_heartbeat(_boot_db, force=True)
+        init_hwaccel(_boot_db)
     finally:
         _boot_db.close()
 

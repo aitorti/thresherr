@@ -275,6 +275,26 @@ def run_health_checks(db, db_path: str) -> list[dict]:
             }
         )
 
+    # --- Hardware acceleration: requested backend fell back to CPU ---
+    hw_req = _get_setting(db, "hwaccel_requested")
+    if hw_req and hw_req != "cpu":
+        hw_eff = _get_setting(db, "hwaccel_effective") or "cpu"
+        hw_ok = _get_setting(db, "hwaccel_ok") or "0"
+        hw_detail = _get_setting(db, "hwaccel_detail") or ""
+        if hw_eff == "cpu" or hw_ok != "1":
+            issues.append(
+                {
+                    "level": "warning",
+                    "source": "Worker",
+                    "key": "health.hwaccel_fallback",
+                    "args": {
+                        "requested": hw_req,
+                        "effective": hw_eff,
+                        "detail": hw_detail,
+                    },
+                }
+            )
+
     # --- Media: files blocked by unknown language (und) ---
     blocked = 0
     for mf in (

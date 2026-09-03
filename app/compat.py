@@ -130,3 +130,90 @@ def incompatible_reasons(container: str, video_codec: str, audio_codec: str,
             f"subtitles ({subtitle_codec}) are not supported in {container}"
         )
     return problems
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Hardware acceleration (Immich-style install-time selection)
+#
+# The operator picks the backend once, at deploy time, by uncommenting
+# the `extends` block in docker-compose.yml and changing ONE line:
+#   service: cpu | nvenc | vaapi | qsv
+# The referenced hwaccel.transcoding.yml service also injects
+# THRESHERR_ACCEL into the worker container; the worker reads it and
+# resolves encoders/recipes here. Codecs without a hardware encoder on
+# the selected backend (e.g. av1/vp9 on nvenc) automatically fall back
+# to the CPU encoder.
+# ─────────────────────────────────────────────────────────────────────
+
+HW_ACCELS = ("cpu", "nvenc", "vaapi", "qsv")
+
+# Per-backend encoder for each profile video key. A missing codec means
+# "no hardware encoder for it on this backend" -> CPU fallback.
+ACCEL_VIDEO_ENCODERS = {
+    "cpu": dict(VIDEO_ENCODERS),
+    "nvenc": {
+        "h264": "h264_nvenc",
+        "h265": "hevc_nvenc",
+        # av1/vp9: Turing NVENC has no AV1; VP9 NVENC is not exposed -> CPU
+    },
+    "vaapi": {
+        "h264": "h264_vaapi",
+        "h265": "hevc_vaapi",
+    },
+    "qsv": {
+        "h264": "h264_qsv",
+        "h265": "hevc_qsv",
+    },
+}
+
+# Per-backend quality recipes (keys differ per encoder family: crf for
+# x264/x265, cq for nvenc, global_quality for qsv, qp for vaapi).
+# Starting points; the NVENC numbers get validated by the fire test.
+ACCEL_VIDEO_DEFAULTS = {
+    "cpu": dict(VIDEO_DEFAULTS),
+    "nvenc": {
+        "h264": {"cq": 21, "preset": "p4"},
+        "h265": {"cq": 22, "preset": "p4"},
+    },
+    "vaapi": {
+        "h264": {"qp": 21},
+        "h265": {"qp": 22},
+    },
+    "qsv": {
+        "h264": {"global_quality": 21, "preset": "medium"},
+        "h265": {"global_quality": 22, "preset": "medium"},
+    },
+}
+
+# Encoder name -> (family, needs extra global init args before -i)
+_HW_MARKERS = ("_nvenc", "_qsv", "_vaapi")
+
+
+def is_valid_accel(accel: str) -> bool:
+    return accel in HW_ACCELS
+
+
+def encoder_family(encoder: str) -> str:
+    """'cpu' | 'nvenc' | 'qsv' | 'vaapi' from an ffmpeg encoder name."""
+    for marker in ("_nvenc", "_qsv", "_vaapi"):
+        if marker in encoder:
+            return marker[1:]
+    return "cpu"
+
+
+def accel_encoder(accel: str, codec: str) -> str:
+    """ffmpeg encoder for (accel, codec); CPU encoder when the backend has
+    no hardware encoder for that codec."""
+    table = ACCEL_VIDEO_ENCODERS.get(accel) or {}
+    if codec in table:
+        return table[codec]
+    return VIDEO_ENCODERS.get(codec, "libx264")
+
+
+def accel_defaults(accel: str, codec: str) -> dict:
+    """Quality recipe for (accel, codec); CPU recipe when the backend has
+    no hardware encoder for that codec."""
+    table = ACCEL_VIDEO_DEFAULTS.get(accel) or {}
+    if codec in table:
+        return dict(table[codec])
+    return dict(VIDEO_DEFAULTS.get(codec, VIDEO_DEFAULTS["h264"]))

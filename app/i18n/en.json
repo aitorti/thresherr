@@ -307,6 +307,7 @@
   "health.worker_never": "The worker has never reported. Is the thresherr-worker container running?",
   "health.worker_stopped": "The worker is not running (last heartbeat a while ago). Restart the stack.",
   "health.stale_jobs": "{count} job(s) stuck in processing — the worker may have died",
+  "health.hwaccel_fallback": "Hardware acceleration {requested} requested but {effective} is active (CPU fallback): {detail}",
   "health.und_blocked": "{count} file(s) blocked by unknown language (und) — assign languages to unblock",
   "health.temp_missing": "/temp is not mounted — the worker needs a temp volume",
   "health.temp_low": "Low free space on {path}: {free} left — transcodes need headroom",

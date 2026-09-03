@@ -1,0 +1,41 @@
+# Aceleración hardware para el worker — patrón Immich.
+#
+# El docker-compose.yml principal hereda UNO de estos servicios vía
+# `extends` (bloque comentado en el servicio `worker`). Para elegir el
+# dispositivo de transcode, descomenta ese bloque y cambia UNA SOLA línea:
+#
+#   service: cpu   -> transcode por CPU (por defecto, sin dispositivos)
+#   service: nvenc -> NVIDIA NVENC (añade la GPU al contenedor)
+#   service: vaapi -> VA-API (AMD / Intel iGPU: /dev/dri)
+#   service: qsv   -> Intel QuickSync (/dev/dri)
+#
+# Cada servicio inyecta también THRESHERR_ACCEL, que el worker lee para
+# resolver el encoder (compat.py) y verificar el backend al arrancar
+# (probe de 1 frame; si falla -> fallback a CPU + aviso en Health).
+services:
+  cpu:
+    environment:
+      - THRESHERR_ACCEL=cpu
+
+  nvenc:
+    environment:
+      - THRESHERR_ACCEL=nvenc
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu, video]
+
+  vaapi:
+    environment:
+      - THRESHERR_ACCEL=vaapi
+    devices:
+      - /dev/dri:/dev/dri
+
+  qsv:
+    environment:
+      - THRESHERR_ACCEL=qsv
+    devices:
+      - /dev/dri:/dev/dri

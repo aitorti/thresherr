@@ -16,6 +16,19 @@ services:
     build: .
     container_name: thresherr-worker
     command: ["python", "worker.py"]
+    # ── Aceleración hardware (patrón Immich) ──────────────────────────
+    # Para transcode con GPU/QuickSync/VA-API descomenta estas 3 líneas y
+    # elige el backend cambiando UNA SOLA línea (service:):
+    #   cpu   → transcode por CPU (por defecto)
+    #   nvenc → NVIDIA NVENC (añade la GPU al contenedor)
+    #   vaapi → VA-API (AMD / Intel iGPU)
+    #   qsv   → Intel QuickSync
+    # El fichero hwaccel.transcoding.yml inyecta THRESHERR_ACCEL al worker
+    # y le da acceso al dispositivo; el worker verifica el backend al
+    # arrancar y cae a CPU con aviso en Health si no está disponible.
+    # extends:
+    #   file: hwaccel.transcoding.yml
+    #   service: cpu
     volumes:
       - ./app:/app
       - ./data:/data

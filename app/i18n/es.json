@@ -307,6 +307,7 @@
   "health.worker_never": "El worker nunca ha informado. ¿Está el contenedor thresherr-worker en marcha?",
   "health.worker_stopped": "El worker no está en marcha (última señal hace tiempo). Reinicia el stack.",
   "health.stale_jobs": "{count} trabajo(s) atascados en procesando — el worker puede haber muerto",
+  "health.hwaccel_fallback": "Aceleración {requested} solicitada pero activo {effective} (fallback a CPU): {detail}",
   "health.und_blocked": "{count} archivo(s) bloqueados por idioma desconocido (und) — asigna idiomas para desbloquear",
   "health.temp_missing": "/temp no está montado — el worker necesita un volumen temporal",
   "health.temp_low": "Poco espacio libre en {path}: quedan {free} — el transcode necesita margen",
