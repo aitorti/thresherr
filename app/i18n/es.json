@@ -155,6 +155,8 @@
   "prof.sub_codec": "Códec de subtítulos",
   "prof.def_sub": "Idioma de subt. pred.",
   "prof.sub_whitelist": "Lista blanca de idiomas de subtítulos (separados por comas)",
+  "prof.sub_types": "Tipos de subtítulos a mantener",
+  "prof.sub_types_hint": "Sin marcar = mantener todos. Se eliminan las pistas cuyo tipo no esté marcado (p. ej. desmarca SDH para quedarte solo con los completos).",
   "prof.save": "Guardar perfil",
   "prof.active": "Perfiles activos",
   "prof.delete_confirm": "¿Eliminar perfil? Todas las bibliotecas asociadas también se eliminarán.",

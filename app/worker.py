@@ -356,6 +356,9 @@ def inspect_file(media: models.MediaFile) -> dict:
             })
 
         elif stype == "subtitle":
+            sub_title = (tags.get("title") or "").strip() or None
+            is_hi = bool(disp.get("hearing_impaired", 0))
+            is_cc = bool(disp.get("captions", 0))
             subtitle_streams.append({
                 "index": idx,
                 "codec_raw": codec,
@@ -363,6 +366,13 @@ def inspect_file(media: models.MediaFile) -> dict:
                 "language": lang,
                 "default": is_default,
                 "forced": is_forced,
+                "hearing_impaired": is_hi,
+                "captions": is_cc,
+                "title": sub_title,
+                "sub_type": compat.classify_subtitle_type(
+                    title=sub_title, forced=is_forced,
+                    hearing_impaired=is_hi, captions=is_cc,
+                ),
             })
 
     # -------------------------------------------------
@@ -703,6 +713,13 @@ def decide_subtitle_streams(inspection: dict, profile: models.Profile) -> list:
         ]
     allowed_codecs = {target_codec} if target_codec else set()
 
+    # Type whitelist (full/forced/sdh/cc): empty means all types are fine.
+    allowed_types = [
+        t.strip().lower()
+        for t in (profile.subtitle_types or "").split(",")
+        if t.strip()
+    ]
+
     default_language = profile.subtitle_def_language
 
     actions = {}
@@ -715,31 +732,10 @@ def decide_subtitle_streams(inspection: dict, profile: models.Profile) -> list:
         idx = s["index"]
         lang = s.get("language") or "und"
         codec = s.get("codec")
+        sub_type = s.get("sub_type") or "full"
 
-        # 1) Codec not allowed: convert text subs to the profile target
-        #    (ASS/VTT -> SRT) when possible; otherwise REMOVE. The language
-        #    whitelist applies to conversions too (a non-allowed language
-        #    is removed, never converted).
-        if allowed_codecs and codec not in allowed_codecs:
-            lang_ok = lang == "und" or not allowed_languages or lang in allowed_languages
-            convertible = (
-                lang_ok
-                and bool(codec)
-                and target_codec in compat.SUBTITLE_CONVERTIBLE.get(codec, set())
-            )
-            actions[idx] = {
-                "action": "transcode" if convertible else "remove",
-                "target_codec": target_codec if convertible else None,
-                "reason": (
-                    f"codec_converted_to_{target_codec}" if convertible
-                    else ("language_not_allowed" if not lang_ok else "codec_not_allowed")
-                ),
-            }
-            if convertible:
-                kept_indices.append(idx)
-            continue
-
-        # 2) Known language but not allowed -> REMOVE
+        # 1) Language whitelist (allowed, not required): a known language
+        #    outside it is REMOVED (never converted).
         if lang != "und" and allowed_languages and lang not in allowed_languages:
             actions[idx] = {
                 "action": "remove",
@@ -748,7 +744,33 @@ def decide_subtitle_streams(inspection: dict, profile: models.Profile) -> list:
             }
             continue
 
-        # 3) Allowed codec + (allowed language OR 'und') -> KEEP
+        # 2) Type whitelist (full/forced/sdh/cc): a type outside it is
+        #    REMOVED (never converted).
+        if allowed_types and sub_type not in allowed_types:
+            actions[idx] = {
+                "action": "remove",
+                "target_codec": None,
+                "reason": "subtitle_type_not_allowed",
+            }
+            continue
+
+        # 3) Codec: allowed -> KEEP (copy); convertible text subs
+        #    (ASS/VTT -> target) -> transcode; image subs (PGS) -> REMOVE.
+        if allowed_codecs and codec not in allowed_codecs:
+            convertible = bool(codec) and target_codec in compat.SUBTITLE_CONVERTIBLE.get(codec, set())
+            actions[idx] = {
+                "action": "transcode" if convertible else "remove",
+                "target_codec": target_codec if convertible else None,
+                "reason": (
+                    f"codec_converted_to_{target_codec}" if convertible
+                    else "codec_not_allowed"
+                ),
+            }
+            if convertible:
+                kept_indices.append(idx)
+            continue
+
+        # 4) Allowed codec + (allowed language OR 'und') -> KEEP (copy)
         actions[idx] = {
             "action": "copy",
             "target_codec": None,
@@ -800,6 +822,8 @@ def decide_subtitle_streams(inspection: dict, profile: models.Profile) -> list:
             "language": s.get("language"),
             "forced": s.get("forced", False),
             "default": s.get("default", False),
+            "title": s.get("title"),
+            "sub_type": s.get("sub_type") or "full",
 
             "action": a["action"],
             "target_codec": a.get("target_codec"),
@@ -1218,6 +1242,13 @@ def execute_job_plan(job_plan: dict, input_path: str, temp_dir: str) -> str:
             cmd += [f"-c:s:{sub_out_idx}", enc]
         else:
             cmd += [f"-c:s:{sub_out_idx}", "copy"]
+
+        # Subtitle titles keep their semantic markers (SDH/Forced/CC),
+        # scrubbed of release junk: 'English [www.newpct1.com] (SDH)'
+        # survives as 'English (SDH)' so players can tell tracks apart.
+        _sub_title = compat.clean_subtitle_title(s.get("title"))
+        if _sub_title:
+            cmd += [f"-metadata:s:s:{sub_out_idx}", f"title={_sub_title}"]
 
         lang = (s.get("language") or "").strip()
         if lang and lang != "und":
@@ -1718,7 +1749,7 @@ def run_worker():
 
             logger.debug(
                 "subtitle plan: %s",
-                [(s["index"], s["action"], s["language"], s["codec"], "forced" if s.get("forced") else "full", "DEFAULT" if s.get("set_default") else "") for s in job_plan["subtitles"]["streams"]],
+                [(s["index"], s["action"], s["language"], s["codec"], s.get("sub_type") or "full", "DEFAULT" if s.get("set_default") else "") for s in job_plan["subtitles"]["streams"]],
             )
             #############
 

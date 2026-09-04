@@ -37,6 +37,8 @@ class Profile(Base):
     subtitle_codec = Column(String, nullable=False)
     subtitle_def_language = Column(String, nullable=True)
     subtitle_languages = Column(String, nullable=True)  # comma-separated whitelist
+    # comma-separated type whitelist: full,forced,sdh,cc (empty = all types)
+    subtitle_types = Column(String, nullable=True)
 
     libraries = relationship(
         "Library",

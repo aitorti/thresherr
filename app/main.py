@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from database import engine, SessionLocal, DB_PATH
 from scanner import get_video_metadata
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from logging_setup import (
     TRACE,
     LOG_DIR,
@@ -729,6 +729,7 @@ async def create_profile(
     subtitle_codec: str = Form(...),
     subtitle_def_language: str = Form(None),
     subtitle_languages: str = Form(None),
+    subtitle_types: List[str] = Form(default=[]),
     db: Session = Depends(get_db)
 ):
     problems = _profile_validation_problems(
@@ -745,7 +746,8 @@ async def create_profile(
         video_max_res=video_max_res, video_max_bitrate=video_max_bitrate,
         audio_codec=audio_codec, audio_def_language=audio_def_language,
         audio_languages=audio_languages, subtitle_codec=subtitle_codec,
-        subtitle_def_language=subtitle_def_language, subtitle_languages=subtitle_languages
+        subtitle_def_language=subtitle_def_language, subtitle_languages=subtitle_languages,
+        subtitle_types=",".join(subtitle_types)
     )
     db.add(new_profile)
     db.commit()
@@ -788,6 +790,7 @@ async def update_profile(
     subtitle_codec: str = Form(...),
     subtitle_def_language: str = Form(None),
     subtitle_languages: str = Form(None),
+    subtitle_types: List[str] = Form(default=[]),
     db: Session = Depends(get_db),
 ):
     profile = (
@@ -819,6 +822,7 @@ async def update_profile(
     profile.subtitle_codec = subtitle_codec
     profile.subtitle_def_language = subtitle_def_language
     profile.subtitle_languages = subtitle_languages
+    profile.subtitle_types = ",".join(subtitle_types)
     db.commit()
     ui_logger.info("Profile updated: id=%s (%s)", profile.id, profile.name)
     return RedirectResponse(

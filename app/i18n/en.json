@@ -155,6 +155,8 @@
   "prof.sub_codec": "Subtitle Codec",
   "prof.def_sub": "Def. Sub Lang",
   "prof.sub_whitelist": "Whitelist Sub Lang (comma separated)",
+  "prof.sub_types": "Subtitle types to keep",
+  "prof.sub_types_hint": "Unchecked = keep all. Tracks whose type is not checked are removed (e.g. uncheck SDH to keep only full subs).",
   "prof.save": "Save Profile",
   "prof.active": "Active Profiles",
   "prof.delete_confirm": "Delete profile? All related libraries will also be deleted.",

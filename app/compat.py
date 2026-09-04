@@ -13,6 +13,8 @@ Profile codec keys (as stored in DB / sent by the UI):
   sub:    subrip | vtt | ass | pgs
 """
 
+import re
+
 CONTAINERS = ("mkv", "mp4", "webm", "avi")
 CONTAINER_EXT = {
     "mkv": ".mkv",
@@ -103,6 +105,54 @@ SUBTITLE_CONVERTIBLE = {
     "ass": {"subrip"},   # ASS -> SRT (styling is dropped)
     "vtt": {"subrip"},   # WebVTT -> SRT
 }
+
+# Subtitle track types a profile can whitelist (UI multi-select).
+SUBTITLE_TYPES = ("full", "forced", "sdh", "cc")
+
+# Words that mark a track as SDH / CC when present in its title.
+_SDH_RE = re.compile(r"(?i)\b(sdh|hearing\s*impaired|for the deaf|deaf\s*subtitle)\b")
+_CC_RE = re.compile(r"(?i)\b(closed\s*captions?|\bcc\b)")
+
+
+def classify_subtitle_type(
+    *,
+    title: str | None = None,
+    forced: bool = False,
+    hearing_impaired: bool = False,
+    captions: bool = False,
+) -> str:
+    """
+    Classify a subtitle track type from its disposition flags + title.
+
+    Returns one of SUBTITLE_TYPES. Flags win over title words; a track
+    without any marker is 'full' (the common case).
+    """
+    if forced:
+        return "forced"
+    if hearing_impaired:
+        return "sdh"
+    if captions:
+        return "cc"
+    t = title or ""
+    if "forced" in t.lower():
+        return "forced"
+    if _SDH_RE.search(t):
+        return "sdh"
+    if _CC_RE.search(t):
+        return "cc"
+    return "full"
+
+
+def clean_subtitle_title(title: str | None) -> str:
+    """
+    Scrub release junk from a subtitle track title while keeping its
+    semantic markers: 'English [www.newpct1.com] (SDH)' -> 'English (SDH)'.
+    """
+    if not title:
+        return ""
+    t = re.sub(r"\[[^\]]*\]", " ", title)
+    t = re.sub(r"\s{2,}", " ", t).strip(" -")
+    return t
 
 # Colour transfers that identify HDR content (PQ / HLG). Tonemapped to SDR.
 HDR_TRANSFERS = {"smpte2084", "arib-std-b67"}
