@@ -133,7 +133,9 @@ def _collapse(text: str) -> str:
     text = re.sub(r"([\[\(])\s+", r"\1", text)
     text = re.sub(r"\s{2,}", " ", text)
     text = re.sub(r"([ _.\-])\1+", r"\1", text)
-    text = re.sub(r"\s*([_\-.])\s*", r"\1", text)
+    # Collapse spacing around underscore/dot separators only; dashes keep
+    # their spacing so hyphenated titles stay "X-Men - First Class".
+    text = re.sub(r"\s*([_.])\s*", r"\1", text)
     return text.strip(" _.-")
 
 
