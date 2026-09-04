@@ -90,7 +90,10 @@ def clean_title(file_name: str) -> str:
     # Langs] or group tags) — drop them entirely.
     name = re.sub(r"\[[^\]]*\]", " ", name)
     name = _RELEASE_NOISE_RE.sub(" ", name)
-    name = re.sub(r"\s*[-–]\s*", " - ", name)
+    # Normalize separator dashes, but keep word-internal hyphens intact
+    # (Spider-Man, X-Men -> not "Spider - Man"). A dash is a separator
+    # only when it is NOT flanked by word characters on both sides.
+    name = re.sub(r"(?<!\w)[-–](?!\w)", " - ", name)
     name = re.sub(r"\s+", " ", name).strip(" -")
 
     if not name:
