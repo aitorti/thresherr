@@ -84,6 +84,11 @@ CONTAINER_AUDIO = {
 # Subtitle codec -> mux codec conversion when the container requires it.
 # A codec absent from the map cannot be carried by the container: kept
 # subtitle streams of that codec are removed by the worker.
+# Container mux subtitle rules. Values:
+#   - None            -> the container carries the codec natively: mux as-is
+#                        (mkv accepts subrip/vtt/ass/pgs without conversion)
+#   - a codec name    -> convert to that mux codec (mp4: subrip -> mov_text)
+#   - missing key     -> the container cannot carry that codec (pgs in mp4)
 CONTAINER_SUBTITLE = {
     "mkv": {"subrip": None, "vtt": None, "ass": None, "pgs": None, "none": None},
     "mp4": {"subrip": "mov_text", "vtt": "mov_text", "ass": "mov_text", "none": None},

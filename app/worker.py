@@ -865,12 +865,16 @@ def build_job_plan(
     for s in plan["subtitles"]["streams"]:
         if s.get("action") != "copy":
             continue
-        mux_codec = sub_rules.get(s.get("codec"))
-        if mux_codec is None:
+        if s.get("codec") not in sub_rules:
+            # Codec not listed for this container -> it cannot be muxed
+            # (e.g. pgs in mp4/webm, any subtitle in avi).
             s["action"] = "remove"
             s["reason"] = f"container_{container}_cannot_carry"
             continue
-        if (s.get("codec_raw") or "").lower() != mux_codec:
+        mux_codec = sub_rules[s.get("codec")]
+        # A None value means the container carries the codec natively
+        # (mux as-is); a codec name means convert to it (srt -> mov_text).
+        if mux_codec and (s.get("codec_raw") or "").lower() != mux_codec:
             s["mux_codec"] = mux_codec
 
     # Container rules over audio: a stream the container cannot carry
