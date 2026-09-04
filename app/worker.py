@@ -1136,8 +1136,16 @@ def execute_job_plan(job_plan: dict, input_path: str, temp_dir: str) -> str:
             # AVI needs Annex-B byte streams: h264 in mkv/mp4 is AVCC
             cmd += ["-bsf:v", "h264_mp4toannexb"]
 
-    # Keep metadata + chapters (nice-to-have)
-    cmd += ["-map_metadata", "0", "-map_chapters", "0"]
+    # Chapters are kept, but ALL metadata is scrubbed and rebuilt: source
+    # rips carry junk tags (web/group ads like [www.newpct.com][toni32] in
+    # container/stream titles). -map_metadata -1 copies nothing; only the
+    # tags written explicitly below survive in the output.
+    cmd += ["-map_metadata", "-1", "-map_chapters", "0"]
+
+    # Clean container title: movie name only (no year, no release noise).
+    _clean_title = naming.clean_title(os.path.basename(input_path))
+    if _clean_title:
+        cmd += ["-metadata", f"title={_clean_title}"]
 
     # --- AUDIO: include only copy/transcode streams ---
     audio_out_idx = 0
@@ -1163,11 +1171,13 @@ def execute_job_plan(job_plan: dict, input_path: str, temp_dir: str) -> str:
         if lang and lang != "und":
             cmd += [f"-metadata:s:a:{audio_out_idx}", f"language={lang}"]
 
-        # Default disposition
+        # Default/forced dispositions on the output stream
+        _audio_disp = []
         if s.get("set_default"):
-            cmd += [f"-disposition:a:{audio_out_idx}", "default"]
-        else:
-            cmd += [f"-disposition:a:{audio_out_idx}", "0"]
+            _audio_disp.append("default")
+        if s.get("forced"):
+            _audio_disp.append("forced")
+        cmd += [f"-disposition:a:{audio_out_idx}", "+".join(_audio_disp) if _audio_disp else "0"]
 
         audio_out_idx += 1
 
@@ -1188,10 +1198,14 @@ def execute_job_plan(job_plan: dict, input_path: str, temp_dir: str) -> str:
         if lang and lang != "und":
             cmd += [f"-metadata:s:s:{sub_out_idx}", f"language={lang}"]
 
+        # Default/forced dispositions (forced Spanish subs keep their flag
+        # so players show them as "Spanish (forced)")
+        _sub_disp = []
         if s.get("set_default"):
-            cmd += [f"-disposition:s:{sub_out_idx}", "default"]
-        else:
-            cmd += [f"-disposition:s:{sub_out_idx}", "0"]
+            _sub_disp.append("default")
+        if s.get("forced"):
+            _sub_disp.append("forced")
+        cmd += [f"-disposition:s:{sub_out_idx}", "+".join(_sub_disp) if _sub_disp else "0"]
 
         sub_out_idx += 1
 
