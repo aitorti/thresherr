@@ -716,13 +716,27 @@ def decide_subtitle_streams(inspection: dict, profile: models.Profile) -> list:
         lang = s.get("language") or "und"
         codec = s.get("codec")
 
-        # 1) Codec not allowed -> REMOVE (always)
+        # 1) Codec not allowed: convert text subs to the profile target
+        #    (ASS/VTT -> SRT) when possible; otherwise REMOVE. The language
+        #    whitelist applies to conversions too (a non-allowed language
+        #    is removed, never converted).
         if allowed_codecs and codec not in allowed_codecs:
+            lang_ok = lang == "und" or not allowed_languages or lang in allowed_languages
+            convertible = (
+                lang_ok
+                and bool(codec)
+                and target_codec in compat.SUBTITLE_CONVERTIBLE.get(codec, set())
+            )
             actions[idx] = {
-                "action": "remove",
-                "target_codec": None,
-                "reason": "codec_not_allowed",
+                "action": "transcode" if convertible else "remove",
+                "target_codec": target_codec if convertible else None,
+                "reason": (
+                    f"codec_converted_to_{target_codec}" if convertible
+                    else ("language_not_allowed" if not lang_ok else "codec_not_allowed")
+                ),
             }
+            if convertible:
+                kept_indices.append(idx)
             continue
 
         # 2) Known language but not allowed -> REMOVE
@@ -788,7 +802,7 @@ def decide_subtitle_streams(inspection: dict, profile: models.Profile) -> list:
             "default": s.get("default", False),
 
             "action": a["action"],
-            "target_codec": None,
+            "target_codec": a.get("target_codec"),
             "set_default": a.get("set_default", False),
             "reason": a["reason"],
         })
@@ -863,19 +877,24 @@ def build_job_plan(
     # pass through untouched.
     sub_rules = compat.CONTAINER_SUBTITLE.get(container, {})
     for s in plan["subtitles"]["streams"]:
-        if s.get("action") != "copy":
+        if s.get("action") not in ("copy", "transcode"):
             continue
-        if s.get("codec") not in sub_rules:
+        # Codec that will end up in the file: source (copy) or target (transcode)
+        out_codec = s.get("target_codec") or s.get("codec")
+        if out_codec not in sub_rules:
             # Codec not listed for this container -> it cannot be muxed
             # (e.g. pgs in mp4/webm, any subtitle in avi).
             s["action"] = "remove"
             s["reason"] = f"container_{container}_cannot_carry"
             continue
-        mux_codec = sub_rules[s.get("codec")]
+        mux_codec = sub_rules[out_codec]
         # A None value means the container carries the codec natively
         # (mux as-is); a codec name means convert to it (srt -> mov_text).
-        if mux_codec and (s.get("codec_raw") or "").lower() != mux_codec:
-            s["mux_codec"] = mux_codec
+        if not mux_codec:
+            continue
+        if s.get("action") == "copy" and (s.get("codec_raw") or "").lower() == mux_codec:
+            continue  # already stored as the container's mux codec
+        s["mux_codec"] = mux_codec
 
     # Container rules over audio: a stream the container cannot carry
     # (e.g. a copied aac/und stream in a webm output) is transcoded to the
@@ -1188,13 +1207,15 @@ def execute_job_plan(job_plan: dict, input_path: str, temp_dir: str) -> str:
     # --- SUBTITLES: copy kept streams (mux-converted for mp4/webm) ---
     sub_out_idx = 0
     for s in job_plan.get("subtitles", {}).get("streams", []):
-        if s.get("action") != "copy":
+        if s.get("action") not in ("copy", "transcode"):
             continue
 
         cmd += ["-map", f"0:{s['index']}"]
-        mux_codec = s.get("mux_codec")
-        if mux_codec:
-            cmd += [f"-c:s:{sub_out_idx}", mux_codec]
+        enc = s.get("mux_codec")
+        if not enc and s.get("action") == "transcode":
+            enc = s.get("target_codec")
+        if enc:
+            cmd += [f"-c:s:{sub_out_idx}", enc]
         else:
             cmd += [f"-c:s:{sub_out_idx}", "copy"]
 

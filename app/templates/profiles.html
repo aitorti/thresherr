@@ -122,7 +122,7 @@
               <div>
                 <label class="block text-xs font-bold text-slate-300 mb-1">{{ t('prof.sub_codec') }}</label>
                 <select id="prof-sub-codec" name="subtitle_codec" class="w-full bg-slate-800 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-amber-500">
-                  <option value="subrip" data-sub {% if (p and p.subtitle_codec == 'subrip') or not p %}selected{% endif %}>SubRip (SRT)</option>
+                  <option value="subrip" data-sub {% if (p and p.subtitle_codec == 'subrip') or not p %}selected{% endif %}>SRT</option>
                   <option value="vtt" data-sub {% if p and p.subtitle_codec == 'vtt' %}selected{% endif %}>VTT</option>
                   <option value="ass" data-sub {% if p and p.subtitle_codec == 'ass' %}selected{% endif %}>ASS/SSA</option>
                   <option value="pgs" data-sub {% if p and p.subtitle_codec == 'pgs' %}selected{% endif %}>PGS</option>
@@ -203,7 +203,7 @@
                 </div>
               </td>
               <td class="py-2 px-3">
-                <div class="text-sm text-slate-200">{{ profile.subtitle_codec|upper }}</div>
+                <div class="text-sm text-slate-200">{{ sub_codec_label(profile.subtitle_codec) or '—' }}</div>
                 <div class="text-[10px] text-slate-500" title="{{ profile.subtitle_languages or '' }}">
                   {{ profile.subtitle_def_language or '—' }}{% if profile.subtitle_languages %} · {{ profile.subtitle_languages }}{% endif %}
                 </div>

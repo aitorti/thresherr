@@ -190,7 +190,7 @@
             </div>
           </td>
           <td class="px-4 py-3">
-            <div class="text-green-400 font-medium uppercase text-xs" data-field="subtitle_codec">{{ file.subtitle_codec or '—' }}</div>
+            <div class="text-green-400 font-medium uppercase text-xs" data-field="subtitle_codec">{{ sub_codec_label(file.subtitle_codec) or '—' }}</div>
             <div class="text-[10px] text-slate-400 italic mt-0.5" data-field="subtitle_languages">
               {%- for lang in file.subtitle_languages_list -%}
                 <span{% if lang in file.subtitle_override_langs %} class="text-amber-400 font-bold" title="{{ t('dash.override_title') }}"{% endif %}>{{ lang }}</span>{% if not loop.last %}, {% endif %}
@@ -264,7 +264,7 @@
       <div class="text-xs text-slate-400 mt-0.5" data-field="overview_meta">
         {{ file.year or '—' }} · {{ file.resolution or '—' }} · {{ file.video_codec or '—' }} ·
         {{ file.audio_codec or '—' }} ({% for lang in file.audio_languages_list %}{{ lang }}{% if not loop.last %}, {% endif %}{% endfor %}) ·
-        {{ file.subtitle_codec or '—' }} ({% for lang in file.subtitle_languages_list %}{{ lang }}{% if not loop.last %}, {% endif %}{% endfor %})
+        {{ sub_codec_label(file.subtitle_codec) or '—' }} ({% for lang in file.subtitle_languages_list %}{{ lang }}{% if not loop.last %}, {% endif %}{% endfor %})
       </div>
       <div class="text-[10px] text-slate-500 mt-0.5 font-mono">
         {{ file.library.name if file.library else '—' }} · {{ (file.size_original / 1048576)|round(0)|int if file.size_original is not none else '—' }} MB
@@ -533,12 +533,25 @@
     }
 
     // Fields refreshed from /api/media/{id}/row when a file completes
+    const SUB_LABELS = {
+      subrip: "SRT", srt: "SRT", ass: "ASS", ssa: "ASS", vtt: "VTT",
+      webvtt: "VTT", pgs: "PGS", hdmv_pgs_subtitle: "PGS",
+      mov_text: "TX3G", dvd_subtitle: "VobSub", dvdsub: "VobSub",
+    };
+    const subLabel = (v) => {
+      if (!v) return "—";
+      return String(v).split(",").map((x) => {
+        const p = x.trim();
+        if (!p) return "";
+        return SUB_LABELS[p.toLowerCase()] || p.toUpperCase();
+      }).filter(Boolean).join(", ");
+    };
     const ROW_TEXT_FIELDS = {
       file_name: (d) => d.file_name || "—",
       resolution: (d) => d.resolution || "—",
       audio_codec: (d) => d.audio_codec || "—",
       audio_languages: (d) => d.audio_languages || "-",
-      subtitle_codec: (d) => d.subtitle_codec || "—",
+      subtitle_codec: (d) => subLabel(d.subtitle_codec),
       subtitle_languages: (d) => d.subtitle_languages || "-",
     };
 
@@ -582,7 +595,7 @@
           overviewMeta.textContent =
             `${data.year || "—"} · ${data.resolution || "—"} · ${data.video_codec || "—"} · ` +
             `${data.audio_codec || "—"} (${data.audio_languages || "—"}) · ` +
-            `${data.subtitle_codec || "—"} (${data.subtitle_languages || "—"})`;
+            `${subLabel(data.subtitle_codec)} (${data.subtitle_languages || "—"})`;
         }
 
         // Inspect button keeps the fresh file name (modal title)

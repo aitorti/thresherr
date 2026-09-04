@@ -54,6 +54,28 @@ models.Base.metadata.create_all(bind=engine)
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
 
+# Subtitle codec labels: values in the DB/ffprobe are ffmpeg codec names
+# (subrip); the UI shows user-friendly names (SRT). Handles comma lists.
+SUBTITLE_CODEC_LABELS = {
+    "subrip": "SRT", "srt": "SRT", "ass": "ASS", "ssa": "ASS",
+    "vtt": "VTT", "webvtt": "VTT", "pgs": "PGS",
+    "hdmv_pgs_subtitle": "PGS", "mov_text": "TX3G",
+    "dvd_subtitle": "VobSub", "dvdsub": "VobSub", "none": "None",
+}
+
+
+def _sub_codec_label(value) -> str:
+    """'subrip' -> 'SRT'; 'ass, hdmv_pgs_subtitle' -> 'ASS, PGS'."""
+    if not value:
+        return ""
+    parts = []
+    for raw in str(value).split(","):
+        p = raw.strip()
+        if not p:
+            continue
+        parts.append(SUBTITLE_CODEC_LABELS.get(p.lower(), p.upper()))
+    return ", ".join(parts)
+
 # 2b. Logging (*arr-style: rolling files + SQLite table, System -> Logs)
 setup_logging()
 ui_logger = get_logger("ui")
@@ -149,6 +171,7 @@ def render(request: Request, name: str, db: Session, **context) -> HTMLResponse:
     context["lang"] = lang
     context["languages"] = i18n.LANGUAGES
     context["fmt_dt"] = _make_fmt_dt(db)
+    context["sub_codec_label"] = _sub_codec_label
     context["current_user"] = _current_user(db, request)
     context["auth_enabled"] = _get_setting(db, "auth_enabled", "0") == "1"
     return templates.TemplateResponse(request=request, name=name, context=context)

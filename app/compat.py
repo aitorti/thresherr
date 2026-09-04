@@ -96,6 +96,14 @@ CONTAINER_SUBTITLE = {
     "avi": {"none": None},
 }
 
+# Subtitle codecs that can be transcoded into another text codec.
+# Image-based subs (pgs, dvd_subtitle) cannot be converted without OCR.
+# Key = source codec (normalized), value = set of convertible targets.
+SUBTITLE_CONVERTIBLE = {
+    "ass": {"subrip"},   # ASS -> SRT (styling is dropped)
+    "vtt": {"subrip"},   # WebVTT -> SRT
+}
+
 # Colour transfers that identify HDR content (PQ / HLG). Tonemapped to SDR.
 HDR_TRANSFERS = {"smpte2084", "arib-std-b67"}
 
