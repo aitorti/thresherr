@@ -1410,7 +1410,7 @@ def verify_result(temp_output_path: str, job_plan: dict) -> str:
     # -------- SUBTITLES --------
     planned_subs = [
         s for s in job_plan["subtitles"]["streams"]
-        if s["action"] == "copy"
+        if s["action"] in ("copy", "transcode")
     ]
 
     if len(out_subs) != len(planned_subs):
@@ -1420,7 +1420,11 @@ def verify_result(temp_output_path: str, job_plan: dict) -> str:
         )
 
     for plan in planned_subs:
-        expected_sub_codec = plan.get("mux_codec") or plan["codec"]
+        expected_sub_codec = plan.get("mux_codec") or (
+            plan["target_codec"]
+            if plan["action"] == "transcode"
+            else plan["codec"]
+        )
         if not any(s["codec"] == expected_sub_codec for s in out_subs):
             return (
                 f"failed: expected subtitle codec not found ({expected_sub_codec})"
