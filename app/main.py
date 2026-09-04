@@ -1047,6 +1047,24 @@ def _has_und_in_inspection(inspection: dict) -> bool:
     return False
 
 
+def _sync_language_summary(media, inspection: dict, db: Session) -> None:
+    """
+    Refresh the row's language summary from a fresh inspection so the UI
+    (und badge, stream lists) shows the same reality the enqueue gate uses.
+    """
+    def _langs(streams):
+        out = []
+        for s in streams:
+            lang = s.get("language") or "und"
+            if lang not in out:
+                out.append(lang)
+        return ", ".join(out) if out else None
+
+    media.audio_languages = _langs(inspection.get("audio_streams", []))
+    media.subtitle_languages = _langs(inspection.get("subtitle_streams", []))
+    db.commit()
+
+
 @app.post("/queue/{media_id}/enqueue")
 async def enqueue_media(media_id: int, request: Request, db: Session = Depends(get_db)):
     media = db.query(models.MediaFile).filter(models.MediaFile.id == media_id).first()
@@ -1060,6 +1078,12 @@ async def enqueue_media(media_id: int, request: Request, db: Session = Depends(g
         inspection = worker.inspect_file(media)
     except Exception:
         inspection = None
+
+    # Keep the row summary honest: the UI shows the same per-stream
+    # languages the gate below evaluates (a hidden 'und' must be visible
+    # so the human can resolve it).
+    if inspection is not None:
+        _sync_language_summary(media, inspection, db)
 
     def _blocked_redirect(error: str) -> RedirectResponse:
         referer = request.headers.get("referer", "/")
