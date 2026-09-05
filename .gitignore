@@ -216,3 +216,4 @@ data/
 
 # Local trash (old DB files moved aside on the server)
 app/_trash/
+docker-compose.override.yml

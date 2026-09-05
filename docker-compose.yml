@@ -1,9 +1,21 @@
+# ─────────────────────────────────────────────────────────────
+# Thresherr — docker-compose del TALLER de desarrollo (/git).
+# Contenedores dev (thresherr-dev-app / thresherr-dev-worker, puerto
+# 8506) con --reload activo para iterar rápido. Monta la zona de
+# pruebas (/multimedia), NO la biblioteca real.
+# Para una instalación estable/producción usa una copia propia (ver
+# /docker/thresherr en la máquina de Aitor) con tus rutas reales.
+# GPU: el backend se elige en docker-compose.override.yml
+# (hwaccel.transcoding.yml: cpu | nvenc | vaapi | qsv).
+# ─────────────────────────────────────────────────────────────
+name: thresherr-dev
+
 services:
   app:
     build: .
-    container_name: thresherr-app
+    container_name: thresherr-dev-app
     ports:
-      - "8505:8000"
+      - "8506:8000"
     volumes:
       - ./app:/app
       - ./data:/data
@@ -14,7 +26,7 @@ services:
 
   worker:
     build: .
-    container_name: thresherr-worker
+    container_name: thresherr-dev-worker
     command: ["python", "worker.py"]
     # ── Límite de CPU opcional (red de seguridad) ─────────────────────
     # El escaneo y el transcode pueden saturar el host en bibliotecas
