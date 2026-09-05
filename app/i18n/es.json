@@ -331,6 +331,7 @@
   "tasks.col.actions": "Acciones",
   "tasks.scan": "Escanear bibliotecas",
   "tasks.scan_hint": "Detecta archivos de medios nuevos en todas las bibliotecas",
+  "tasks.scan_running": "Escaneando",
   "tasks.scan_interval_hint": "Horas entre escaneos automáticos. 0 desactiva.",
   "tasks.hours": "h",
   "tasks.never": "Nunca",

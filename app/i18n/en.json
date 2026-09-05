@@ -331,6 +331,7 @@
   "tasks.col.actions": "Actions",
   "tasks.scan": "Scan Libraries",
   "tasks.scan_hint": "Finds new media files in all libraries",
+  "tasks.scan_running": "Scanning",
   "tasks.scan_interval_hint": "Hours between automatic scans. 0 disables.",
   "tasks.hours": "h",
   "tasks.never": "Never",

@@ -1,0 +1,7 @@
+{# Live scan status fragment (polled via HTMX from System -> Tasks).
+   Rendered by GET /system/tasks/scan/status with scan_state in context. #}
+{% if scan_state.running %}
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-bold bg-amber-900/60 text-amber-300 border border-amber-700">
+  <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>{{ t('tasks.scan_running') }}{% if scan_state.progress_total %}: {{ scan_state.progress_done }}/{{ scan_state.progress_total }}{% endif %}
+</span>
+{% else %}{{ scan_state.last_result or '—' }}{% endif %}

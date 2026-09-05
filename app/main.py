@@ -35,6 +35,7 @@ import os
 import glob
 import re
 import time
+import threading
 import hmac
 import secrets
 import hashlib
@@ -399,9 +400,14 @@ async def api_list_tasks(db: Session = Depends(get_db)):
 
 @api_v1.post("/system/tasks/{task}/execute")
 async def api_execute_task(task: str, db: Session = Depends(get_db)):
-    """Execute a task right now (scan | recycle | backup)."""
+    """Execute a task right now (scan | recycle | backup).
+
+    Scans are started in the background (the endpoint returns immediately
+    with started=true); recycle and backup run inline as before.
+    """
     if task == tasks.TASK_SCAN:
-        return tasks.run_scan(db)
+        started = _start_scan_background()
+        return {"started": started}
     if task == tasks.TASK_RECYCLE:
         return tasks.run_recycle_cleanup(db)
     if task == tasks.TASK_BACKUP:
@@ -995,11 +1001,79 @@ async def activity_history(
         has_more=has_more,
     )
 
+# -------------------------------------------------
+# BACKGROUND SCAN (non-blocking)
+# -------------------------------------------------
+# Scanning a big NAS/CIFS library takes minutes. Running it inline in a
+# request handler freezes the whole UI (single event loop), so scans are
+# started in a daemon thread with their own DB session. The 'scan_running'
+# setting is the cross-process lock shared with the worker.
+
+_scan_launch_lock = threading.Lock()
+
+
+def _start_scan_background() -> bool:
+    """
+    Launch a library scan in a background daemon thread.
+
+    Returns True when a scan was started, False when one is already
+    running (checked with a dedicated session; run_scan re-checks the
+    setting inside the thread, so a worker scan can never overlap).
+    """
+    with _scan_launch_lock:
+        check_db = SessionLocal()
+        try:
+            if _get_setting(check_db, "scan_running", "0") == "1":
+                return False
+        finally:
+            check_db.close()
+
+        def _run() -> None:
+            db = SessionLocal()
+            try:
+                def _progress(done: int, total: int) -> None:
+                    # Persist live progress for the System -> Tasks poller.
+                    try:
+                        _set_setting(db, "scan_progress_done", str(done))
+                        _set_setting(db, "scan_progress_total", str(total))
+                        db.commit()
+                    except Exception:
+                        ui_logger.exception("Failed to persist scan progress")
+
+                out = tasks.run_scan(db, progress=_progress)
+                ui_logger.info("Background scan finished: %s", out.get("result"))
+            except Exception:
+                ui_logger.exception("Background scan crashed")
+            finally:
+                db.close()
+
+        threading.Thread(
+            target=_run, name="thresherr-scan", daemon=True
+        ).start()
+        return True
+
+
+@app.get("/system/tasks/scan/status", response_class=HTMLResponse)
+async def scan_status_fragment(request: Request, db: Session = Depends(get_db)):
+    """HTMX fragment: live scan progress (polled by System -> Tasks)."""
+    return render(
+        request=request,
+        name="_scan_status.html",
+        db=db,
+        scan_state=tasks.scan_state(db),
+    )
+
+
 @app.get("/scan")
-async def manual_scan(request: Request, db: Session = Depends(get_db)):
-    out = tasks.run_scan(db)
-    ui_logger.info("Manual scan completed: %s", out["result"])
-    return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303,)
+async def manual_scan(request: Request):
+    started = _start_scan_background()
+    ui_logger.info(
+        "Manual scan %s",
+        "started in background" if started else "skipped (already running)",
+    )
+    return RedirectResponse(
+        url=request.headers.get("referer", "/"), status_code=303
+    )
 
 # --- DELETE PROFILES & LIBRARIES ---
 
@@ -2411,11 +2485,11 @@ async def system_tasks(request: Request, db: Session = Depends(get_db)):
 
 
 @app.post("/system/tasks/scan/execute")
-async def execute_scan_task(db: Session = Depends(get_db)):
-    out = tasks.run_scan(db)
-    ui_logger.info("Task scan executed: %s", out["result"])
+async def execute_scan_task():
+    started = _start_scan_background()
+    msg = "Scan started in background" if started else "Scan already running"
     return RedirectResponse(
-        url=f"/system/tasks?batch={quote(out['result'])}", status_code=303
+        url=f"/system/tasks?batch={quote(msg)}", status_code=303
     )
 
 

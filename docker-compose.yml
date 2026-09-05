@@ -16,6 +16,12 @@ services:
     build: .
     container_name: thresherr-worker
     command: ["python", "worker.py"]
+    # ── Límite de CPU opcional (red de seguridad) ─────────────────────
+    # El escaneo y el transcode pueden saturar el host en bibliotecas
+    # grandes. Descomenta 'cpus' y ajusta el valor a TU hardware
+    # (requiere docker compose v2 y recrear el contenedor):
+    #   cpus: "4.0"   → 50% de una máquina de 8 hilos (ej. Xeon 4C/8T)
+    # cpus: "4.0"
     # ── Aceleración hardware (patrón Immich) ──────────────────────────
     # Para transcode con GPU/QuickSync/VA-API descomenta estas 3 líneas y
     # elige el backend cambiando UNA SOLA línea (service:):

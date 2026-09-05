@@ -115,14 +115,33 @@ def run_language_cascade(db) -> dict:
     return stats
 
 
-def run_scan(db) -> dict:
+def run_scan(db, progress=None) -> dict:
     """
     Run a library scan right now and record the outcome.
     Returns {"ok": bool, "new_count"|"error": ..., "duration": seconds}.
+
+    Safe to call from any process or thread: the 'scan_running' setting
+    acts as a cross-process lock, so a manual scan (app background
+    thread) and a scheduled scan (worker housekeeping) can never overlap.
+    The lock is always cleared in a finally block.
+
+    progress: optional callable(done, total) invoked periodically while
+    files are being probed (used to persist live progress for the UI).
     """
     start = time.monotonic()
+
+    # Anti-overlap: one scan at a time, across processes.
+    if _get_setting(db, "scan_running", "0") == "1":
+        duration = round(time.monotonic() - start, 1)
+        result = "scan already running"
+        return {"ok": False, "error": result, "duration": duration, "result": result}
+
+    _set_setting(db, "scan_running", "1")
+    _set_setting(db, "scan_progress_done", "0")
+    _set_setting(db, "scan_progress_total", "0")
+    db.commit()
     try:
-        new_count = scan_libraries(db)
+        new_count = scan_libraries(db, progress=progress)
         cascade = run_language_cascade(db)
         duration = round(time.monotonic() - start, 1)
         resolved = cascade["mkvinfo"] + cascade["mediainfo"]
@@ -157,6 +176,9 @@ def run_scan(db) -> dict:
         _set_setting(db, "scan_last_result", result)
         db.commit()
         return {"ok": False, "error": str(exc), "duration": duration, "result": result}
+    finally:
+        _set_setting(db, "scan_running", "0")
+        db.commit()
 
 
 def maybe_scheduled_scan(db) -> str | None:
@@ -172,6 +194,10 @@ def maybe_scheduled_scan(db) -> str | None:
         if (_utcnow_naive() - last).total_seconds() < interval * 3600:
             return None
     out = run_scan(db)
+    # The app is already scanning (manual run): not a worker failure and
+    # nothing for the worker to report as a scheduled run.
+    if not out.get("ok") and out.get("error") == "scan already running":
+        return None
     return out.get("result")
 
 
@@ -181,6 +207,10 @@ def scan_state(db) -> dict:
         "last_run": parse_ts(_get_setting(db, "scan_last_run")),
         "last_duration": _get_setting(db, "scan_last_duration"),
         "last_result": _get_setting(db, "scan_last_result"),
+        # Live state for the UI (background scan):
+        "running": _get_setting(db, "scan_running", "0") == "1",
+        "progress_done": int(_get_setting(db, "scan_progress_done", "0") or "0"),
+        "progress_total": int(_get_setting(db, "scan_progress_total", "0") or "0"),
     }
 
 

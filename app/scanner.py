@@ -3,6 +3,7 @@ import re
 import subprocess
 import json
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from sqlalchemy.orm import Session
 import models
 import naming
@@ -12,6 +13,12 @@ logger = get_logger("scanner")
 
 # Common video extensions
 VIDEO_EXTENSIONS = (".mkv", ".mp4", ".avi", ".mov", ".m4v", ".webm")
+
+# Number of parallel ffprobe workers during a library scan. Probing is
+# I/O-bound (local disk or CIFS/NAS reads), so 4 workers are safe even on
+# modest CPUs. Override with the THRESHERR_SCAN_WORKERS env var when needed.
+PROBE_WORKERS = int(os.environ.get("THRESHERR_SCAN_WORKERS", "4"))
+
 
 # -------------------------------------------------
 # Helpers (scanner-only, UI oriented)
@@ -242,7 +249,25 @@ def get_video_metadata(file_path: str) -> dict:
 # Library scan
 # -------------------------------------------------
 
-def scan_libraries(db: Session) -> int:
+def _probe_one(full_path: str):
+    """
+    ffprobe a single file (runs inside the scan thread pool).
+
+    Returns (full_path, meta, size) on success, or (full_path, None, None)
+    when the file is unreadable. Never raises: a single broken file must
+    not abort the whole scan.
+    """
+    try:
+        meta = get_video_metadata(full_path)
+        size = os.path.getsize(full_path)
+        return full_path, meta, size
+    except OSError as exc:
+        logger.warning("Skipping unreadable file %s: %s", full_path, exc)
+        return full_path, None, None
+
+
+def scan_libraries(db: Session, batch_size: int = 250,
+                   progress=None, workers: int | None = None) -> int:
     """
     Discover media files and register them in the database.
 
@@ -250,10 +275,21 @@ def scan_libraries(db: Session) -> int:
     - This function ONLY discovers files
     - Status is always set to 'pending'
     - No processing decisions are made here
-    """
 
+    Concurrency notes:
+    - ffprobe calls run in a small thread pool (I/O-bound, GIL released by
+      subprocess), while ALL database writes stay on the calling thread
+      (SQLAlchemy sessions are not thread-safe).
+    - Inserts are committed in batches (default 250) instead of one giant
+      commit per library, so the SQLite write lock is only held for
+      milliseconds and the worker/UI can keep writing during a long scan.
+
+    progress: optional callable(done, total) invoked periodically from the
+    calling thread while files are being probed.
+    """
     libraries = db.query(models.Library).all()
     new_files_count = 0
+    probe_workers = workers if workers is not None else PROBE_WORKERS
 
     for library in libraries:
         if not os.path.exists(library.media_path):
@@ -268,25 +304,59 @@ def scan_libraries(db: Session) -> int:
             .all()
         }
 
+        # Single inventory pass: we only walk the tree once and collect the
+        # files that need probing. This also gives us the total upfront so
+        # the UI can show real progress (done/total).
+        to_probe = []
         for root, _, files in os.walk(library.media_path):
             for file in files:
                 if not file.lower().endswith(VIDEO_EXTENSIONS):
                     continue
-
                 full_path = os.path.join(root, file)
                 if full_path in existing:
                     continue
+                to_probe.append(full_path)
 
+        total = len(to_probe)
+        if total == 0:
+            continue
+
+        logger.info(
+            "Scanning library %s: %s new file(s) with %s probe worker(s)",
+            library.name, total, probe_workers,
+        )
+
+        done = 0
+        added_since_commit = 0
+
+        def _notify_progress() -> None:
+            if progress is None:
+                return
+            # Throttle: every 25 files and always on the last one.
+            if done % 25 == 0 or done == total:
                 try:
-                    meta = get_video_metadata(full_path)
-                    size = os.path.getsize(full_path)
-                except OSError as exc:
-                    # A single unreadable file must not break the whole scan
-                    logger.warning("Skipping unreadable file %s: %s", full_path, exc)
+                    progress(done, total)
+                except Exception:
+                    logger.warning("Scan progress callback failed", exc_info=True)
+
+        with ThreadPoolExecutor(max_workers=probe_workers) as pool:
+            futures = [pool.submit(_probe_one, fp) for fp in to_probe]
+            for future in as_completed(futures):
+                done += 1
+                try:
+                    full_path, meta, size = future.result()
+                except Exception as exc:
+                    # Defensive: a probe must not abort the whole scan.
+                    logger.warning("Scan probe crashed: %s", exc)
+                    _notify_progress()
+                    continue
+
+                if meta is None:
+                    _notify_progress()
                     continue
 
                 media = models.MediaFile(
-                    file_name=file,
+                    file_name=os.path.basename(full_path),
                     full_path=full_path,
                     library_id=library.id,
                     status="pending",
@@ -297,6 +367,13 @@ def scan_libraries(db: Session) -> int:
                 db.add(media)
                 existing.add(full_path)
                 new_files_count += 1
+                added_since_commit += 1
+
+                if added_since_commit >= batch_size:
+                    db.commit()
+                    added_since_commit = 0
+
+                _notify_progress()
 
         db.commit()
 

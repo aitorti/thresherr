@@ -64,7 +64,9 @@
           </td>
           <td class="py-3 px-3 text-sm text-slate-300">{{ fmt_dt(scan_state.last_run) if scan_state.last_run else t('tasks.never') }}</td>
           <td class="py-3 px-3 text-sm text-slate-300">{% if scan_state.last_duration %}{{ scan_state.last_duration }}s{% else %}—{% endif %}</td>
-          <td class="py-3 px-3 text-xs text-slate-400 max-w-[220px] truncate" title="{{ scan_state.last_result or '' }}">{{ scan_state.last_result or '—' }}</td>
+          <td class="py-3 px-3 text-xs text-slate-400 max-w-[260px] truncate" title="{{ scan_state.last_result or '' }}">
+            <span hx-get="/system/tasks/scan/status" hx-trigger="every 3s" hx-swap="innerHTML">{% include "_scan_status.html" %}</span>
+          </td>
           <td class="py-3 px-3">
             <form method="post" action="/system/tasks/scan/execute" class="flex justify-end">
               <button type="submit" title="{{ t('tasks.execute_title') }}"
