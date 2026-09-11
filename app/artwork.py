@@ -82,16 +82,25 @@ def find_local_poster(media_path: str, library_root: str | None = None) -> str |
 
 
 def ensure_poster(media, library=None, force: bool = False) -> bool:
-    """Cache the local poster of `media`, resized. True when one is available."""
-    target = poster_cache_path(media.id)
-    if os.path.exists(target) and not force:
-        return True
+    """Cache the local poster of `media`, resized. True when one is available.
 
+    The cached copy is rebuilt when the source image is NEWER than it: the
+    provider (Jellyfin, Radarr, a re-download...) can replace the artwork in the
+    folder at any time, and serving the old poster for ever would be wrong.
+    """
+    target = poster_cache_path(media.id)
     source = find_local_poster(
         media.full_path, getattr(library, "media_path", None)
     )
     if source is None:
         return False
+
+    if not force and os.path.exists(target):
+        try:
+            if os.path.getmtime(source) <= os.path.getmtime(target):
+                return True
+        except OSError:
+            pass
 
     try:
         from PIL import Image, ImageOps
