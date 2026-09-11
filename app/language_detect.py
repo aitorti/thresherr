@@ -22,6 +22,7 @@ as an on-demand button in the inspect modal (see main.py).
 import json
 import os
 import re
+import shutil
 import subprocess
 import urllib.request
 
@@ -54,9 +55,19 @@ _LANG_MAP = {
 _UND_CODES = {"und", "unk", "unknown", "undefined", "", "none", "null", "-"}
 
 # fastText lid.176 model (Facebook, ~1 MB, cached in the data volume)
-_LID_MODEL_URL = "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin"
+_LID_MODEL_URL = (
+    "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.ftz"
+)
 _LID_MODEL_DIR = os.environ.get("THRESHERR_MODEL_DIR", "/data/models")
-_LID_MODEL_PATH = os.path.join(_LID_MODEL_DIR, "lid.176.bin")
+# Bundled inside the image (see the Dockerfile): the install is plug and play
+# and the detector works even without network access.
+_LID_BUNDLED_MODEL_DIR = os.environ.get(
+    "THRESHERR_BUNDLED_MODEL_DIR", "/opt/thresherr/models"
+)
+# Lookup order inside a directory: the full model wins when present, otherwise
+# the quantised one (~1 MB instead of 131 MB; same answer in practice).
+_LID_MODEL_FILENAMES = ("lid.176.bin", "lid.176.ftz")
+_LID_MODEL_DOWNLOAD_NAME = "lid.176.ftz"
 
 # Idiomas que el detector puede proponer (los que los perfiles suelen usar)
 _DETECTABLE = {"spa", "eng", "fra", "ita", "deu", "por", "jpn", "chi", "rus", "nld"}
@@ -204,13 +215,35 @@ def detect_audio_with_mediainfo(path: str) -> list[dict]:
 # Subtitles: fastText (text subs only)
 # -------------------------------------------------
 
-def _lid_model_path() -> str:
+def _resolve_lid_model() -> str:
+    """Path of the fastText language-id model, plug and play.
+
+    Resolution order:
+      1. THRESHERR_LID_MODEL (explicit path, power users)
+      2. a model already present in the data volume (downloaded earlier)
+      3. the model BUNDLED in the image (no download, works offline)
+      4. download the small quantised model into the data volume
+    """
+    explicit = os.environ.get("THRESHERR_LID_MODEL")
+    if explicit:
+        return explicit
+
+    for directory in (_LID_MODEL_DIR, _LID_BUNDLED_MODEL_DIR):
+        for name in _LID_MODEL_FILENAMES:
+            candidate = os.path.join(directory, name)
+            if os.path.exists(candidate):
+                return candidate
+
     os.makedirs(_LID_MODEL_DIR, exist_ok=True)
-    if not os.path.exists(_LID_MODEL_PATH):
-        tmp = _LID_MODEL_PATH + ".tmp"
-        urllib.request.urlretrieve(_LID_MODEL_URL, tmp)
-        os.replace(tmp, _LID_MODEL_PATH)
-    return _LID_MODEL_PATH
+    target = os.path.join(_LID_MODEL_DIR, _LID_MODEL_DOWNLOAD_NAME)
+    tmp = target + ".tmp"
+    logger.info("Downloading fastText model: %s -> %s", _LID_MODEL_URL, target)
+    with urllib.request.urlopen(_LID_MODEL_URL, timeout=120) as response:
+        with open(tmp, "wb") as handle:
+            shutil.copyfileobj(response, handle)
+    os.replace(tmp, target)
+    logger.info("fastText model ready: %s", target)
+    return target
 
 
 def _extract_subtitle_text(path: str, track_idx: int = 0) -> str:
@@ -253,7 +286,7 @@ def _lid_model():
             raise RuntimeError("fastText model unavailable (see earlier warning)")
         try:
             import fasttext
-            _LID_MODEL = fasttext.load_model(_lid_model_path())
+            _LID_MODEL = fasttext.load_model(_resolve_lid_model())
         except Exception as exc:
             _LID_MODEL_FAILED = True
             logger.warning(
