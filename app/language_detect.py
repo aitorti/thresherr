@@ -22,8 +22,13 @@ as an on-demand button in the inspect modal (see main.py).
 import json
 import os
 import re
+import shutil
 import subprocess
 import urllib.request
+
+from logging_setup import get_logger
+
+logger = get_logger("language")
 
 # Track-name keywords per language (mkvinfo/mediainfo "title" fallback)
 _TRACK_NAME_HINTS = {
@@ -50,9 +55,19 @@ _LANG_MAP = {
 _UND_CODES = {"und", "unk", "unknown", "undefined", "", "none", "null", "-"}
 
 # fastText lid.176 model (Facebook, ~1 MB, cached in the data volume)
-_LID_MODEL_URL = "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin"
+_LID_MODEL_URL = (
+    "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.ftz"
+)
 _LID_MODEL_DIR = os.environ.get("THRESHERR_MODEL_DIR", "/data/models")
-_LID_MODEL_PATH = os.path.join(_LID_MODEL_DIR, "lid.176.bin")
+# Bundled inside the image (see the Dockerfile): the install is plug and play
+# and the detector works even without network access.
+_LID_BUNDLED_MODEL_DIR = os.environ.get(
+    "THRESHERR_BUNDLED_MODEL_DIR", "/opt/thresherr/models"
+)
+# Lookup order inside a directory: the full model wins when present, otherwise
+# the quantised one (~1 MB instead of 131 MB; same answer in practice).
+_LID_MODEL_FILENAMES = ("lid.176.bin", "lid.176.ftz")
+_LID_MODEL_DOWNLOAD_NAME = "lid.176.ftz"
 
 # Idiomas que el detector puede proponer (los que los perfiles suelen usar)
 _DETECTABLE = {"spa", "eng", "fra", "ita", "deu", "por", "jpn", "chi", "rus", "nld"}
@@ -111,7 +126,15 @@ def _apply_to_summary(summary: str | None, detected: list[str]) -> str | None:
     for extra in detected[di:]:
         if extra not in out:
             out.append(extra)
-    return ", ".join(out)
+    # Dedupe preserving order: resolving SEVERAL tracks can propose a language
+    # the summary already listed ('spa, und' + [spa, eng] gave 'spa, spa, eng').
+    seen = set()
+    deduped = []
+    for lang in out:
+        if lang not in seen:
+            seen.add(lang)
+            deduped.append(lang)
+    return ", ".join(deduped)
 
 
 def has_und_in_summary(media) -> bool:
@@ -200,13 +223,35 @@ def detect_audio_with_mediainfo(path: str) -> list[dict]:
 # Subtitles: fastText (text subs only)
 # -------------------------------------------------
 
-def _lid_model_path() -> str:
+def _resolve_lid_model() -> str:
+    """Path of the fastText language-id model, plug and play.
+
+    Resolution order:
+      1. THRESHERR_LID_MODEL (explicit path, power users)
+      2. a model already present in the data volume (downloaded earlier)
+      3. the model BUNDLED in the image (no download, works offline)
+      4. download the small quantised model into the data volume
+    """
+    explicit = os.environ.get("THRESHERR_LID_MODEL")
+    if explicit:
+        return explicit
+
+    for directory in (_LID_MODEL_DIR, _LID_BUNDLED_MODEL_DIR):
+        for name in _LID_MODEL_FILENAMES:
+            candidate = os.path.join(directory, name)
+            if os.path.exists(candidate):
+                return candidate
+
     os.makedirs(_LID_MODEL_DIR, exist_ok=True)
-    if not os.path.exists(_LID_MODEL_PATH):
-        tmp = _LID_MODEL_PATH + ".tmp"
-        urllib.request.urlretrieve(_LID_MODEL_URL, tmp)
-        os.replace(tmp, _LID_MODEL_PATH)
-    return _LID_MODEL_PATH
+    target = os.path.join(_LID_MODEL_DIR, _LID_MODEL_DOWNLOAD_NAME)
+    tmp = target + ".tmp"
+    logger.info("Downloading fastText model: %s -> %s", _LID_MODEL_URL, target)
+    with urllib.request.urlopen(_LID_MODEL_URL, timeout=120) as response:
+        with open(tmp, "wb") as handle:
+            shutil.copyfileobj(response, handle)
+    os.replace(tmp, target)
+    logger.info("fastText model ready: %s", target)
+    return target
 
 
 def _extract_subtitle_text(path: str, track_idx: int = 0) -> str:
@@ -228,25 +273,104 @@ def _extract_subtitle_text(path: str, track_idx: int = 0) -> str:
     return text.strip()
 
 
-def detect_subtitle_language_fasttext(path: str) -> list[dict]:
-    """Language of the first TEXT subtitle track (fastText lid.176)."""
-    text = _extract_subtitle_text(path)
-    if len(text) < 40:
+# fastText model cache. Loading lid.176 (131 MB) takes seconds, and the
+# cascade asks for it once per file with unresolved subtitles, so reloading it
+# per file dominated the language pass.
+_LID_MODEL = None
+_LID_MODEL_FAILED = False
+
+
+def _lid_model():
+    """The fastText language-id model, loaded ONCE per process.
+
+    fastText is imported lazily so the dependency stays optional. A load
+    failure is remembered too: without that, a missing model (or no network to
+    download it) would be retried - a 131 MB download attempt - for every
+    single file.
+    """
+    global _LID_MODEL, _LID_MODEL_FAILED
+    if _LID_MODEL is None:
+        if _LID_MODEL_FAILED:
+            raise RuntimeError("fastText model unavailable (see earlier warning)")
+        try:
+            import fasttext
+            _LID_MODEL = fasttext.load_model(_resolve_lid_model())
+        except Exception as exc:
+            _LID_MODEL_FAILED = True
+            logger.warning(
+                "fastText model unavailable; subtitle language detection "
+                "disabled for this process: %s", exc,
+            )
+            raise
+    return _LID_MODEL
+
+
+# Subtitle codecs that carry IMAGES instead of text: converting them to SRT
+# yields nothing, so they are skipped rather than spending an ffmpeg pass.
+_IMAGE_SUBTITLE_CODECS = {
+    "hdmv_pgs_subtitle", "pgs", "dvd_subtitle", "dvdsub", "xsub",
+    "dvb_subtitle", "dvb_teletext", "dvb_ttx",
+}
+
+# Values that mean "this stream does not declare a language".
+_NO_LANGUAGE = {"", "und", "undetermined", "unknown", "undefined", "none", "null", "-"}
+
+
+def _und_text_subtitle_tracks(path: str) -> list[int]:
+    """Ordinals (for -map 0:s:N) of the TEXT subtitle tracks with no language.
+
+    Only the unresolved tracks are worth inspecting: a track that already
+    declares a language is left alone. Image subtitles are excluded, there is
+    no text to analyse.
+    """
+    rc, out, _ = _run(
+        ["ffprobe", "-v", "quiet", "-print_format", "json",
+         "-show_streams", "-select_streams", "s", path],
+        timeout=60,
+    )
+    if rc != 0 or not out.strip():
         return []
     try:
-        import fasttext
-    except ImportError:
-        return []
-    try:
-        model = fasttext.load_model(_lid_model_path())
-        labels, _ = model.predict(text[:2000].replace("\n", " "))
-        lang = labels[0].replace("__label__", "")
-        lang = _normalize_lang(lang)
-        if lang and lang in _DETECTABLE:
-            return [{"track": 0, "language": lang, "source": "fasttext"}]
+        streams = json.loads(out).get("streams") or []
     except Exception:
-        pass
-    return []
+        return []
+
+    ordinals = []
+    for ordinal, stream in enumerate(streams):
+        codec = str(stream.get("codec_name") or "").strip().lower()
+        if codec in _IMAGE_SUBTITLE_CODECS:
+            continue
+        tags = {k.lower(): v for k, v in (stream.get("tags") or {}).items()}
+        language = str(tags.get("language") or "").strip().lower()
+        if language not in _NO_LANGUAGE:
+            continue  # already known: nothing to resolve
+        ordinals.append(ordinal)
+    return ordinals
+
+
+def detect_subtitle_language_fasttext(path: str) -> list[dict]:
+    """Language of every TEXT subtitle track whose language is unresolved.
+
+    Inspects ALL the 'und' text tracks instead of only the first one: the
+    first is often empty while the next ones carry the text. Tracks that
+    already declare a language are skipped. Returns one entry per track that
+    could be resolved.
+    """
+    results = []
+    for track_idx in _und_text_subtitle_tracks(path):
+        text = _extract_subtitle_text(path, track_idx)
+        if len(text) < 40:
+            continue
+        try:
+            labels, _ = _lid_model().predict(text[:2000].replace("\n", " "))
+            lang = _normalize_lang(labels[0].replace("__label__", ""))
+        except Exception:
+            continue
+        if lang and lang in _DETECTABLE:
+            results.append(
+                {"track": track_idx, "language": lang, "source": "fasttext"}
+            )
+    return results
 
 
 # -------------------------------------------------

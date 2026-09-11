@@ -17,11 +17,15 @@ import time
 from datetime import datetime, timezone
 
 import models
-from scanner import scan_libraries
+import artwork
+from scanner import scan_libraries, clear_stale_scanning
 import backups
 import settings
 import language_detect
 import connect
+from logging_setup import get_logger
+
+logger = get_logger("tasks")
 
 # Task identifiers, in UI order
 TASK_SCAN = "scan"
@@ -60,6 +64,46 @@ def scan_interval_hours(db) -> int:
         return 0
 
 
+def _set_status_bulk(db, ids, status: str, only_if: str | None = None) -> int:
+    """Bulk status change with NO ORM rowcount check.
+
+    Used for the transient 'scanning' badge. The old dirty-object flush raised
+    StaleDataError ("expected to update 85 row(s); 61 were matched") when
+    another process removed some of those rows meanwhile (deleting a library
+    cascades to its media_files), and that killed the whole language pass.
+    A bulk UPDATE cannot fail that way. Chunked to stay under SQLite's
+    parameter limit.
+    """
+    total = 0
+    for start in range(0, len(ids), 500):
+        chunk = ids[start:start + 500]
+        query = db.query(models.MediaFile).filter(models.MediaFile.id.in_(chunk))
+        if only_if is not None:
+            query = query.filter(models.MediaFile.status == only_if)
+        total += query.update(
+            {models.MediaFile.status: status}, synchronize_session=False
+        )
+        db.commit()
+    return total
+
+
+def _resolve_language(media, db, resolver) -> bool:
+    """Run one language resolver for one file.
+
+    A row can vanish mid-pass (deleting a library cascades to its files); that
+    must skip the file, never abort the whole cascade.
+    """
+    try:
+        return bool(resolver(media, db))
+    except Exception as exc:
+        db.rollback()
+        logger.warning(
+            "Language pass skipped media_file id=%s (%s): %s",
+            media.id, media.file_name, exc,
+        )
+        return False
+
+
 def run_language_cascade(db) -> dict:
     """
     Resolve 'und' files automatically after a scan, in decreasing scope:
@@ -83,35 +127,39 @@ def run_language_cascade(db) -> dict:
     if not und_files:
         return stats
 
-    for mf in und_files:
-        mf.status = "scanning"
-    db.commit()
+    # Capture id/path up front: a commit expires every loaded object, so
+    # touching attributes later could trigger a reload of a deleted row.
+    targets = [(mf.id, (mf.full_path or "")) for mf in und_files]
+    _set_status_bulk(db, [t[0] for t in targets], "scanning")
 
     try:
         # Pass 1: mkvinfo (Matroska only)
         remaining = []
-        for mf in und_files:
-            if not mf.full_path.lower().endswith(".mkv"):
-                remaining.append(mf)
+        for mf, (mf_id, mf_path) in zip(und_files, targets):
+            if not mf_path.lower().endswith(".mkv"):
+                remaining.append((mf, mf_id, mf_path))
                 continue
-            if language_detect.resolve_with_mkvinfo(mf, db):
+            if _resolve_language(mf, db, language_detect.resolve_with_mkvinfo):
                 stats["mkvinfo"] += 1
             else:
-                remaining.append(mf)
+                remaining.append((mf, mf_id, mf_path))
 
         # Pass 2: mediainfo (audio) + fastText (text subs) over the rest
-        for mf in remaining:
-            if language_detect.resolve_with_mediainfo(mf, db):
+        for mf, _mf_id, _mf_path in remaining:
+            if _resolve_language(mf, db, language_detect.resolve_with_mediainfo):
                 stats["mediainfo"] += 1
     finally:
-        for mf in und_files:
-            if mf.status == "scanning":
-                mf.status = "pending"
-        db.commit()
+        # Only rows still in the transient state go back to the queue.
+        _set_status_bulk(db, [t[0] for t in targets], "pending", only_if="scanning")
 
-    stats["und_remaining"] = sum(
-        1 for mf in und_files if language_detect.has_und_in_summary(mf)
-    )
+    und_remaining = 0
+    for mf in und_files:
+        try:
+            if language_detect.has_und_in_summary(mf):
+                und_remaining += 1
+        except Exception:
+            continue
+    stats["und_remaining"] = und_remaining
     return stats
 
 
@@ -141,11 +189,31 @@ def run_scan(db, progress=None) -> dict:
     _set_setting(db, "scan_progress_total", "0")
     db.commit()
     try:
-        new_count = scan_libraries(db, progress=progress)
+        # 'scanning' is a transient badge used while the language cascade runs.
+        # The scan lock guarantees a single scan at a time, so anything still
+        # carrying it belongs to a scan that died (crash, restart) and would
+        # otherwise stay listed as "working" for ever, out of the queue.
+        healed = clear_stale_scanning(db)
+        if healed:
+            logger.warning(
+                "Cleared %s stale 'scanning' row(s) left by a dead scan", healed
+            )
+        counters = scan_libraries(db, progress=progress)
+        new_count = counters["new"]
         cascade = run_language_cascade(db)
         duration = round(time.monotonic() - start, 1)
         resolved = cascade["mkvinfo"] + cascade["mediainfo"]
         result = f"{new_count} new file(s)"
+        if counters["replaced"]:
+            result += f" | {counters['replaced']} replaced file(s) refreshed"
+        if counters["reread"]:
+            result += f" | {counters['reread']} card(s) re-read (new rules)"
+        if counters["backfilled"]:
+            result += f" | {counters['backfilled']} mtime recorded"
+        if counters["removed"]:
+            result += f" | {counters['removed']} entry(s) removed (file gone)"
+        if counters["unreadable"]:
+            result += f" | {counters['unreadable']} unreadable file(s)"
         if resolved:
             result += f" | {resolved} language(s) resolved"
         if cascade["und_remaining"]:
@@ -154,7 +222,16 @@ def run_scan(db, progress=None) -> dict:
         _set_setting(db, "scan_last_duration", str(duration))
         _set_setting(db, "scan_last_result", result)
         db.commit()
-        out = {"ok": True, "new_count": new_count, "duration": duration, "result": result}
+        # Drop cached posters whose media row is gone (reconciliation).
+        artwork.prune_cache([row[0] for row in db.query(models.MediaFile.id).all()])
+        out = {
+            "ok": True,
+            "new_count": new_count,
+            "refreshed_count": counters["replaced"],
+            "unreadable_count": counters["unreadable"],
+            "duration": duration,
+            "result": result,
+        }
         # Connect: only actionable scans notify (new files found).
         if new_count > 0:
             connect.fire_event(
@@ -164,6 +241,18 @@ def run_scan(db, progress=None) -> dict:
                     "newFiles": new_count,
                     "result": result,
                     "duration": duration,
+                },
+            )
+        # Unreadable entries notify only when NEW ones appear, so a persistent
+        # problem does not ping on every scan.
+        if counters["unreadable_new"] > 0:
+            connect.fire_event(
+                db,
+                "FileUnreadable",
+                {
+                    "files": counters["unreadable_new"],
+                    "total": counters["unreadable"],
+                    "result": result,
                 },
             )
         return out

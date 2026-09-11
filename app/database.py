@@ -98,6 +98,30 @@ def _ensure_schema_columns() -> None:
                 )
                 con.commit()
                 print("[database] added column media_files.video_bitrate")
+            if cols and "source_changed_at" not in cols:
+                con.execute(
+                    "ALTER TABLE media_files ADD COLUMN source_changed_at DATETIME"
+                )
+                con.commit()
+                print("[database] added column media_files.source_changed_at")
+            if cols and "observed_mtime" not in cols:
+                con.execute(
+                    "ALTER TABLE media_files ADD COLUMN observed_mtime FLOAT"
+                )
+                con.commit()
+                print("[database] added column media_files.observed_mtime")
+            if cols and "summary_version" not in cols:
+                con.execute(
+                    "ALTER TABLE media_files ADD COLUMN summary_version INTEGER"
+                )
+                con.commit()
+                print("[database] added column media_files.summary_version")
+            if cols and "unreadable_at" not in cols:
+                con.execute(
+                    "ALTER TABLE media_files ADD COLUMN unreadable_at DATETIME"
+                )
+                con.commit()
+                print("[database] added column media_files.unreadable_at")
         finally:
             con.close()
     except Exception as exc:

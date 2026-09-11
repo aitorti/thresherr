@@ -7,7 +7,7 @@ import models
 
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
-from scanner import get_video_metadata
+from scanner import get_video_metadata, SUMMARY_VERSION
 from scanner import infer_stream_language
 from database import SessionLocal, engine, DB_PATH
 from logging_setup import get_logger, setup_logging
@@ -1842,8 +1842,14 @@ def run_worker():
 
                 job.full_path = final_path
                 job.file_name = os.path.basename(final_path)
+                # Card rebuilt from the final file: stamp the current version.
+                job.summary_version = SUMMARY_VERSION
                 job.status = "completed"
-                job.size_final = os.path.getsize(final_path)
+                _final_stat = os.stat(final_path)
+                job.size_final = _final_stat.st_size
+                # Reference mtime for the NEXT scan: without it, every scan
+                # would see the freshly written output as a "replaced" file.
+                job.observed_mtime = _final_stat.st_mtime
                 # Manual language overrides are processing instructions:
                 # once applied, they are consumed. The final file carries
                 # its real languages, so stale overrides would block the

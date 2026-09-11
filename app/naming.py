@@ -102,28 +102,38 @@ def clean_title(file_name: str) -> str:
     return name
 
 
+# Resolution tiers, in pixels. Each threshold sits a few percent BELOW the
+# nominal resolution on purpose: real releases are cropped, anamorphic or
+# letterboxed, so a 1080p master often measures 1918x800 or 1914x1038. With the
+# exact nominal values those fell a whole tier (a 1914x1038 file was reported as
+# 720p). Width OR height decides, so a scope release (1920x800) and a 4:3
+# master (1454x1080) still land on the right tier.
+_RESOLUTION_TIERS = (
+    ("2160p", 3800, 2000),  # nominal 3840x2160
+    ("1440p", 2500, 1400),  # nominal 2560x1440
+    ("1080p", 1900, 1000),  # nominal 1920x1080
+    ("720p", 1200, 700),    # nominal 1280x720
+    ("480p", 700, 480),     # nominal 720x576 / 854x480
+)
+
+
 def quality_from_dimensions(width: int | None, height: int | None) -> str | None:
     """
     Commercial resolution tier from stream dimensions.
 
     Uses BOTH width and height so letterboxed scope releases (1920x800,
     which are sold as 1080p) and 4:3 masters (1440x1080, sold as 1080p)
-    map to the right tier instead of the raw pixel height.
+    map to the right tier instead of the raw pixel height. The thresholds sit
+    slightly below the nominal resolution so real-world crops are not demoted
+    a whole tier.
     """
     if not width and not height:
         return None
     w = width or 0
     h = height or 0
-    if w >= 3840 or h >= 2160:
-        return "2160p"
-    if w >= 2560 or h >= 1440:
-        return "1440p"
-    if w >= 1920 or h >= 1080:
-        return "1080p"
-    if w >= 1280 or h >= 720:
-        return "720p"
-    if w >= 720 or h >= 576:
-        return "480p"
+    for label, min_width, min_height in _RESOLUTION_TIERS:
+        if w >= min_width or h >= min_height:
+            return label
     return f"{h}p" if h else None
 
 

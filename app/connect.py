@@ -45,6 +45,7 @@ INSTANCE_NAME = "Thresherr"
 # All events a connection can subscribe to (labels live in the i18n files)
 EVENTS = (
     "ScanCompleted",
+    "FileUnreadable",
     "JobCompleted",
     "JobFailed",
     "UndBlocked",
@@ -181,6 +182,15 @@ def _telegram_text(event: str, data: dict) -> str:
     """Compose the HTML message for an event (dynamic text is escaped)."""
     if event == "ScanCompleted":
         return f"🌾 <b>Scan completed</b> — {html.escape(data.get('result') or '')}"
+    if event == "FileUnreadable":
+        return (
+            "\U0001f6ab <b>Unreadable file(s)</b> \u2014 "
+            + html.escape(str(data.get("files") or "?"))
+            + " new ("
+            + html.escape(str(data.get("total") or "?"))
+            + " total)\n"
+            "The container could not be read (corrupt or truncated?)."
+        )
     if event == "JobCompleted":
         lines = [
             "✅ <b>" + html.escape(data.get("fileName") or "?") + "</b>",

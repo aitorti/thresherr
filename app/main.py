@@ -5,7 +5,8 @@ from fastapi import APIRouter
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from database import engine, SessionLocal, DB_PATH
-from scanner import get_video_metadata
+import artwork
+from scanner import get_video_metadata, apply_fresh_metadata, SUMMARY_FIELDS
 from typing import Optional, Dict, List
 from logging_setup import (
     TRACE,
@@ -663,6 +664,7 @@ async def dashboard(
     return render(
         request=request,
         name="dashboard.html",
+        poster_versions=artwork.cached_posters(),
         db=db,
         **stats,
         media_files=media_files,
@@ -837,6 +839,29 @@ async def update_profile(
 
 
 # --- WORKGIN WITH LIBRARIES ---
+
+@app.get("/posters/{media_id}.jpg")
+def media_poster(media_id: int, db: Session = Depends(get_db)):
+    """Serve the local poster, building the cached copy on first request.
+
+    Sync on purpose: FastAPI runs sync routes in its thread pool, so the Pillow
+    work (and the read from the library, often a network share) never blocks
+    the UI event loop. Nothing is downloaded from the internet here.
+    """
+    media = (
+        db.query(models.MediaFile)
+        .filter(models.MediaFile.id == media_id)
+        .first()
+    )
+    # ensure_poster() also decides whether the cached copy is still up to date,
+    # so it must run on EVERY request, not only when the file is missing.
+    if media is None or not artwork.ensure_poster(media, media.library):
+        raise HTTPException(status_code=404, detail="no poster")
+    return FileResponse(
+        artwork.poster_cache_path(media_id), media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=604800"},
+    )
+
 
 @app.get("/libraries", response_class=HTMLResponse)
 async def get_libraries(request: Request, db: Session = Depends(get_db)):
@@ -1264,6 +1289,42 @@ async def rescan_media(media_id: int, request: Request, db: Session = Depends(ge
 
     return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303,)
 
+@app.post("/queue/{media_id}/refresh-metadata")
+async def refresh_media_metadata(media_id: int, request: Request, db: Session = Depends(get_db)):
+    """Force a fresh ffprobe and refresh ONLY the summary card of a file.
+
+    Does NOT touch status, the queue or any processing timestamp: it just
+    brings the cached card back in sync with the file on disk and clears the
+    "source changed" marker.
+    """
+    media = (db.query(models.MediaFile).filter(models.MediaFile.id == media_id).first())
+    if media and os.path.exists(media.full_path):
+        try:
+            st = os.stat(media.full_path)
+            size, mtime = st.st_size, st.st_mtime
+        except OSError as exc:
+            size, mtime = None, None
+            ui_logger.warning(
+                "refresh-metadata: cannot stat %s: %s", media.full_path, exc
+            )
+        meta = get_video_metadata(media.full_path)
+        if any(meta.get(f) is not None for f in SUMMARY_FIELDS):
+            apply_fresh_metadata(media, meta, size, mtime)
+            media.source_changed_at = None
+            db.commit()
+            ui_logger.info(
+                "Refreshed metadata for media_file id=%s (%s)", media.id, media.file_name
+            )
+        else:
+            ui_logger.warning(
+                "refresh-metadata: ffprobe gave no usable metadata for media_file id=%s (%s)",
+                media.id, media.file_name,
+            )
+    else:
+        ui_logger.warning("refresh-metadata: file not found for media_file id=%s", media_id)
+
+    return RedirectResponse(url=request.headers.get("referer", "/"), status_code=303,)
+
 # --- WORKING WITH BATCH WORKS BY LIBRARIE ---
 
 # --- COUNTING FILES ---
@@ -1469,6 +1530,58 @@ async def rescan_library(
         status_code=303,
     )
 
+@app.post("/libraries/{library_id}/refresh-metadata")
+async def refresh_library_metadata(
+    library_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Refresh the summary card of every file in a library (fresh ffprobe).
+
+    Metadata-only: status, queue and processing timestamps are untouched.
+    """
+    media_files = (
+        db.query(models.MediaFile)
+        .filter(models.MediaFile.library_id == library_id)
+        .all()
+    )
+
+    refreshed = 0
+    skipped = 0
+    for media in media_files:
+        if not os.path.exists(media.full_path):
+            skipped += 1
+            continue
+        try:
+            st = os.stat(media.full_path)
+            size, mtime = st.st_size, st.st_mtime
+        except OSError:
+            size, mtime = None, None
+        meta = get_video_metadata(media.full_path)
+        if not any(meta.get(f) is not None for f in SUMMARY_FIELDS):
+            skipped += 1
+            ui_logger.warning(
+                "refresh-metadata: ffprobe gave no usable metadata for media_file id=%s (%s)",
+                media.id, media.file_name,
+            )
+            continue
+        apply_fresh_metadata(media, meta, size, mtime)
+        media.source_changed_at = None
+        refreshed += 1
+
+    db.commit()
+    ui_logger.info(
+        "Refreshed metadata for %s file(s) in library id=%s", refreshed, library_id
+    )
+
+    referer = request.headers.get("referer", "/")
+    sep = "&" if "?" in referer else "?"
+    batch_msg = quote(f"Refreshed metadata: {refreshed} | Skipped: {skipped}")
+    return RedirectResponse(
+        url=f"{referer}{sep}batch={batch_msg}",
+        status_code=303,
+    )
+
 # -------------------------------------------------
 # GLOBAL SEARCH (topbar)
 # -------------------------------------------------
@@ -1632,6 +1745,17 @@ async def get_media_row(media_id: int, db: Session = Depends(get_db)):
             if media.size_original is not None
             else None
         ),
+
+        # Stale-card marker: the file behind this row was replaced on disk.
+        "source_changed": media.source_changed_at is not None,
+        "source_changed_at": (
+            media.source_changed_at.isoformat()
+            if media.source_changed_at is not None
+            else None
+        ),
+
+        # Unreadable marker: the file could not be read at all.
+        "unreadable": media.unreadable_at is not None,
     }
 
 # --- DASHBOARD STATS POLLING API ---

@@ -12,6 +12,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Modelo de deteccion de idioma (fastText lid.176.ftz, ~1 MB). Va DENTRO de la
+# imagen para que cualquier instalacion lo tenga sin descargar nada a mano:
+# la app queda plug and play y la deteccion funciona incluso sin red.
+RUN mkdir -p /opt/thresherr/models \
+ && python -c "import shutil,urllib.request as u; r=u.urlopen('https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.ftz', timeout=120); f=open('/opt/thresherr/models/lid.176.ftz','wb'); shutil.copyfileobj(r,f); f.close()" \
+ && ls -l /opt/thresherr/models
 COPY ./app /app
 
 EXPOSE 8000
