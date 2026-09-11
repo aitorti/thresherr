@@ -17,6 +17,7 @@ import time
 from datetime import datetime, timezone
 
 import models
+import artwork
 from scanner import scan_libraries, clear_stale_scanning
 import backups
 import settings
@@ -221,6 +222,8 @@ def run_scan(db, progress=None) -> dict:
         _set_setting(db, "scan_last_duration", str(duration))
         _set_setting(db, "scan_last_result", result)
         db.commit()
+        # Drop cached posters whose media row is gone (reconciliation).
+        artwork.prune_cache([row[0] for row in db.query(models.MediaFile.id).all()])
         out = {
             "ok": True,
             "new_count": new_count,

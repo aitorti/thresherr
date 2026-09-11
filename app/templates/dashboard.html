@@ -226,7 +226,7 @@
        data-und-blocked="{% if (file.audio_languages and "und" in file.audio_languages) or (file.subtitle_languages and "und" in file.subtitle_languages) %}{% if not file.stream_overrides %}true{% else %}false{% endif %}{% else %}false{% endif %}"
        data-profile-compliant="{{ 'true' if file.profile_compliant else 'false' }}"
        data-source-changed="{{ 'true' if file.source_changed_at else 'false' }}" data-unreadable="{{ 'true' if file.unreadable_at else 'false' }}">
-    {{ poster_placeholder('') }}
+    {{ poster_placeholder(file, '') }}
     <div class="p-2.5 flex-1 flex flex-col gap-1.5">
       <div class="text-xs font-semibold text-slate-100 truncate" data-field="file_name" title="{{ file.file_name }}">{{ file.file_name }}</div>
       <div class="text-[10px] text-slate-500 font-mono" data-field="poster_meta">
@@ -261,7 +261,7 @@
        data-und-blocked="{% if (file.audio_languages and "und" in file.audio_languages) or (file.subtitle_languages and "und" in file.subtitle_languages) %}{% if not file.stream_overrides %}true{% else %}false{% endif %}{% else %}false{% endif %}"
        data-profile-compliant="{{ 'true' if file.profile_compliant else 'false' }}"
        data-source-changed="{{ 'true' if file.source_changed_at else 'false' }}" data-unreadable="{{ 'true' if file.unreadable_at else 'false' }}">
-    <div class="w-16 shrink-0">{{ poster_placeholder('rounded-lg overflow-hidden text-2xl') }}</div>
+    <div class="w-16 shrink-0">{{ poster_placeholder(file, 'rounded-lg overflow-hidden text-2xl') }}</div>
     <div class="flex-1 min-w-0">
       <div class="font-semibold text-slate-100 truncate" data-field="file_name" title="{{ file.file_name }}">{{ file.file_name }}</div>
       <div class="text-xs text-slate-400 mt-0.5" data-field="overview_meta">

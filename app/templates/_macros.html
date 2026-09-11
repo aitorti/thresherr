@@ -121,8 +121,14 @@
 {% endif %}
 {% endmacro %}
 
-{% macro poster_placeholder(extra) %}
-<div class="aspect-[2/3] bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 flex items-center justify-center {{ extra }}">
+{% macro poster_placeholder(file, extra) %}
+<div class="aspect-[2/3] relative bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 flex items-center justify-center {{ extra }}">
   <span class="text-5xl opacity-40">🎬</span>
+  {# Always requested: the route builds the cached copy on first request and
+     answers 404 when there is no local art, which simply uncovers the 🔥
+     placeholder behind. #}
+  <img src="/posters/{{ file.id }}.jpg" alt="{{ file.file_name }}" loading="lazy"
+       class="absolute inset-0 w-full h-full object-cover"
+       onerror="this.style.display='none'">
 </div>
 {% endmacro %}

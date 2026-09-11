@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from database import engine, SessionLocal, DB_PATH
+import artwork
 from scanner import get_video_metadata, apply_fresh_metadata, SUMMARY_FIELDS
 from typing import Optional, Dict, List
 from logging_setup import (
@@ -837,6 +838,29 @@ async def update_profile(
 
 
 # --- WORKGIN WITH LIBRARIES ---
+
+@app.get("/posters/{media_id}.jpg")
+def media_poster(media_id: int, db: Session = Depends(get_db)):
+    """Serve the local poster, building the cached copy on first request.
+
+    Sync on purpose: FastAPI runs sync routes in its thread pool, so the Pillow
+    work (and the read from the library, often a network share) never blocks
+    the UI event loop. Nothing is downloaded from the internet here.
+    """
+    path = artwork.poster_cache_path(media_id)
+    if not os.path.exists(path):
+        media = (
+            db.query(models.MediaFile)
+            .filter(models.MediaFile.id == media_id)
+            .first()
+        )
+        if media is None or not artwork.ensure_poster(media, media.library):
+            raise HTTPException(status_code=404, detail="no poster")
+    return FileResponse(
+        path, media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=604800"},
+    )
+
 
 @app.get("/libraries", response_class=HTMLResponse)
 async def get_libraries(request: Request, db: Session = Depends(get_db)):
