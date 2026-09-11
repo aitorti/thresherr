@@ -176,7 +176,7 @@
         <tr class="hover:bg-slate-700/20 transition-colors text-sm" data-media-id="{{ file.id }}"
             data-und-blocked="{% if (file.audio_languages and "und" in file.audio_languages) or (file.subtitle_languages and "und" in file.subtitle_languages) %}{% if not file.stream_overrides %}true{% else %}false{% endif %}{% else %}false{% endif %}"
        data-profile-compliant="{{ 'true' if file.profile_compliant else 'false' }}"
-       data-source-changed="{{ 'true' if file.source_changed_at else 'false' }}">
+       data-source-changed="{{ 'true' if file.source_changed_at else 'false' }}" data-unreadable="{{ 'true' if file.unreadable_at else 'false' }}">
           <td class="px-4 py-3 font-semibold text-slate-100 truncate max-w-[280px]" data-field="file_name" title="{{ file.file_name }}">{{ file.file_name }}</td>
           <td class="px-4 py-3 text-slate-400 font-mono whitespace-nowrap">{{ file.year or '—' }}</td>
           <td class="px-4 py-3 text-slate-500 font-mono italic whitespace-nowrap">{{ file.library.name if file.library else '—' }}</td>
@@ -225,7 +225,7 @@
        data-media-id="{{ file.id }}"
        data-und-blocked="{% if (file.audio_languages and "und" in file.audio_languages) or (file.subtitle_languages and "und" in file.subtitle_languages) %}{% if not file.stream_overrides %}true{% else %}false{% endif %}{% else %}false{% endif %}"
        data-profile-compliant="{{ 'true' if file.profile_compliant else 'false' }}"
-       data-source-changed="{{ 'true' if file.source_changed_at else 'false' }}">
+       data-source-changed="{{ 'true' if file.source_changed_at else 'false' }}" data-unreadable="{{ 'true' if file.unreadable_at else 'false' }}">
     {{ poster_placeholder('') }}
     <div class="p-2.5 flex-1 flex flex-col gap-1.5">
       <div class="text-xs font-semibold text-slate-100 truncate" data-field="file_name" title="{{ file.file_name }}">{{ file.file_name }}</div>
@@ -260,7 +260,7 @@
        data-media-id="{{ file.id }}"
        data-und-blocked="{% if (file.audio_languages and "und" in file.audio_languages) or (file.subtitle_languages and "und" in file.subtitle_languages) %}{% if not file.stream_overrides %}true{% else %}false{% endif %}{% else %}false{% endif %}"
        data-profile-compliant="{{ 'true' if file.profile_compliant else 'false' }}"
-       data-source-changed="{{ 'true' if file.source_changed_at else 'false' }}">
+       data-source-changed="{{ 'true' if file.source_changed_at else 'false' }}" data-unreadable="{{ 'true' if file.unreadable_at else 'false' }}">
     <div class="w-16 shrink-0">{{ poster_placeholder('rounded-lg overflow-hidden text-2xl') }}</div>
     <div class="flex-1 min-w-0">
       <div class="font-semibold text-slate-100 truncate" data-field="file_name" title="{{ file.file_name }}">{{ file.file_name }}</div>
@@ -405,6 +405,8 @@
       refreshMetaTitle: {{ t('dash.refresh_meta_title')|tojson }},
       sourceChangedBadge: {{ t('dash.source_changed_badge')|tojson }},
       sourceChangedTitle: {{ t('dash.source_changed_title')|tojson }},
+      unreadableBadge: {{ t('dash.unreadable_badge')|tojson }},
+      unreadableTitle: {{ t('dash.unreadable_title')|tojson }},
     };
 
     const SVG = {
@@ -432,6 +434,10 @@
       return `<span class="px-2 py-0.5 rounded bg-amber-900/40 text-amber-300 text-[10px] font-bold uppercase border border-amber-700/60 align-middle" title="${I18N.sourceChangedTitle}">&#8635; ${I18N.sourceChangedBadge}</span>`;
     }
 
+    function unreadableBadgeHtml() {
+      return `<span class="px-2 py-0.5 rounded bg-red-900/50 text-red-300 text-[10px] font-bold uppercase border border-red-700/70 align-middle" title="${I18N.unreadableTitle}">&#9940; ${I18N.unreadableBadge}</span>`;
+    }
+
     function updateStatusBadge(cell, status) {
       const card = cell.closest("[data-media-id]");
       const compliant = card && card.dataset.profileCompliant === "true";
@@ -442,6 +448,9 @@
       }
       if (card && card.dataset.sourceChanged === "true") {
         html = sourceChangedBadgeHtml() + " " + html;
+      }
+      if (card && card.dataset.unreadable === "true") {
+        html = unreadableBadgeHtml() + " " + html;
       }
       cell.innerHTML = html;
     }
@@ -633,6 +642,11 @@
         // Stale-card marker (source_changed_at) from the fresh row payload
         if (typeof data.source_changed === "boolean") {
           card.dataset.sourceChanged = data.source_changed ? "true" : "false";
+        }
+
+        // Unreadable marker (probe could not read the file at all)
+        if (typeof data.unreadable === "boolean") {
+          card.dataset.unreadable = data.unreadable ? "true" : "false";
         }
 
         // Re-render status badge + actions with the fresh state

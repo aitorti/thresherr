@@ -116,6 +116,12 @@ def _ensure_schema_columns() -> None:
                 )
                 con.commit()
                 print("[database] added column media_files.summary_version")
+            if cols and "unreadable_at" not in cols:
+                con.execute(
+                    "ALTER TABLE media_files ADD COLUMN unreadable_at DATETIME"
+                )
+                con.commit()
+                print("[database] added column media_files.unreadable_at")
         finally:
             con.close()
     except Exception as exc:

@@ -90,6 +90,10 @@
 {% endmacro %}
 
 {% macro status_badge(file) %}
+{% if file.unreadable_at %}
+  <span class="px-2 py-0.5 rounded bg-red-900/50 text-red-300 text-[10px] font-bold uppercase border border-red-700/70 align-middle"
+        title="{{ t('dash.unreadable_title') }}">&#9940; {{ t('dash.unreadable_badge') }}</span>
+{% endif %}
 {% if file.source_changed_at %}
   <span class="px-2 py-0.5 rounded bg-amber-900/40 text-amber-300 text-[10px] font-bold uppercase border border-amber-700/60 align-middle"
         title="{{ t('dash.source_changed_title') }}">&#8635; {{ t('dash.source_changed_badge') }}</span>

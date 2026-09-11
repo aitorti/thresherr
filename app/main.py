@@ -1728,6 +1728,9 @@ async def get_media_row(media_id: int, db: Session = Depends(get_db)):
             if media.source_changed_at is not None
             else None
         ),
+
+        # Unreadable marker: the file could not be read at all.
+        "unreadable": media.unreadable_at is not None,
     }
 
 # --- DASHBOARD STATS POLLING API ---

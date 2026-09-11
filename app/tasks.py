@@ -197,20 +197,22 @@ def run_scan(db, progress=None) -> dict:
             logger.warning(
                 "Cleared %s stale 'scanning' row(s) left by a dead scan", healed
             )
-        (new_count, refreshed_count, reread_count,
-         backfilled_count, removed_count) = scan_libraries(db, progress=progress)
+        counters = scan_libraries(db, progress=progress)
+        new_count = counters["new"]
         cascade = run_language_cascade(db)
         duration = round(time.monotonic() - start, 1)
         resolved = cascade["mkvinfo"] + cascade["mediainfo"]
         result = f"{new_count} new file(s)"
-        if refreshed_count:
-            result += f" | {refreshed_count} replaced file(s) refreshed"
-        if reread_count:
-            result += f" | {reread_count} card(s) re-read (new rules)"
-        if backfilled_count:
-            result += f" | {backfilled_count} mtime recorded"
-        if removed_count:
-            result += f" | {removed_count} entry(s) removed (file gone)"
+        if counters["replaced"]:
+            result += f" | {counters['replaced']} replaced file(s) refreshed"
+        if counters["reread"]:
+            result += f" | {counters['reread']} card(s) re-read (new rules)"
+        if counters["backfilled"]:
+            result += f" | {counters['backfilled']} mtime recorded"
+        if counters["removed"]:
+            result += f" | {counters['removed']} entry(s) removed (file gone)"
+        if counters["unreadable"]:
+            result += f" | {counters['unreadable']} unreadable file(s)"
         if resolved:
             result += f" | {resolved} language(s) resolved"
         if cascade["und_remaining"]:
@@ -222,7 +224,8 @@ def run_scan(db, progress=None) -> dict:
         out = {
             "ok": True,
             "new_count": new_count,
-            "refreshed_count": refreshed_count,
+            "refreshed_count": counters["replaced"],
+            "unreadable_count": counters["unreadable"],
             "duration": duration,
             "result": result,
         }
@@ -235,6 +238,18 @@ def run_scan(db, progress=None) -> dict:
                     "newFiles": new_count,
                     "result": result,
                     "duration": duration,
+                },
+            )
+        # Unreadable entries notify only when NEW ones appear, so a persistent
+        # problem does not ping on every scan.
+        if counters["unreadable_new"] > 0:
+            connect.fire_event(
+                db,
+                "FileUnreadable",
+                {
+                    "files": counters["unreadable_new"],
+                    "total": counters["unreadable"],
+                    "result": result,
                 },
             )
         return out

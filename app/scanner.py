@@ -422,12 +422,15 @@ def scan_libraries(db: Session, batch_size: int = 250,
       is refreshed from a fresh ffprobe. Status is never touched: whether to
       re-process a replaced file stays a human decision.
 
-    Returns (new_files_count, refreshed_files_count, reread_files_count,
-             backfilled_count, removed_count).
+    Returns a dict of counters: new, replaced, reread, backfilled, removed,
+    unreadable, unreadable_new.
 
-    refreshed_files_count counts files that really CHANGED on disk;
-    reread_files_count counts cards re-read only because they were produced by
-    an older extractor/classifier (see SUMMARY_VERSION).
+    - replaced counts files that really CHANGED on disk; reread counts cards
+      re-read only because an older extractor/classifier produced them (see
+      SUMMARY_VERSION).
+    - unreadable counts entries whose file cannot be read at all (corrupt or
+      truncated container); they keep the marker and are retried on every scan.
+      unreadable_new counts the ones flagged for the first time.
 
     IMPORTANT:
     - This function ONLY discovers files and refreshes stale summaries
@@ -451,6 +454,8 @@ def scan_libraries(db: Session, batch_size: int = 250,
     reread_files_count = 0
     backfilled_count = 0
     removed_count = 0
+    unreadable_count = 0
+    new_unreadable_count = 0
     probe_workers = workers if workers is not None else PROBE_WORKERS
 
     for library in libraries:
@@ -637,23 +642,31 @@ def scan_libraries(db: Session, batch_size: int = 250,
                     _notify_progress()
                     continue
 
+                usable = any(meta.get(f) is not None for f in SUMMARY_FIELDS)
+
                 if row_id is not None:
-                    # Known path, size changed: the file was REPLACED in
-                    # place. Refresh the summary card only; status and the
+                    # Known path. Refresh the summary card only; status and the
                     # processing decision are deliberately left untouched.
                     media = db.get(models.MediaFile, row_id)
                     if media is None:
                         _notify_progress()
                         continue
-                    if not any(meta.get(f) is not None for f in SUMMARY_FIELDS):
-                        # ffprobe gave nothing usable: keep the old card.
+                    if not usable:
+                        # ffprobe could not read the file at all: keep the old
+                        # card and flag the entry so the UI can show it. The
+                        # card is NOT stamped, so the next scan retries it.
+                        if media.unreadable_at is None:
+                            media.unreadable_at = _utcnow_naive()
+                            new_unreadable_count += 1
+                        unreadable_count += 1
                         logger.warning(
-                            "ffprobe returned no usable metadata for replaced "
-                            "file %s; media_file id=%s left untouched",
-                            full_path, row_id,
+                            "Unreadable file (probe failed): id=%s (%s)",
+                            media.id, full_path,
                         )
                         _notify_progress()
                         continue
+                    if media.unreadable_at is not None:
+                        media.unreadable_at = None  # readable again
                     apply_fresh_metadata(
                         media, meta, size, mtime, replace_languages=file_changed
                     )
@@ -673,6 +686,10 @@ def scan_libraries(db: Session, batch_size: int = 250,
                             media.id, full_path,
                         )
                 else:
+                    # A brand-new file that cannot be read is STILL registered
+                    # and flagged, so the UI can show it: an invisible corrupt
+                    # file helps nobody. Leaving the card unstamped keeps it in
+                    # the retry path.
                     media = models.MediaFile(
                         file_name=os.path.basename(full_path),
                         full_path=full_path,
@@ -680,14 +697,22 @@ def scan_libraries(db: Session, batch_size: int = 250,
                         status="pending",
                         size_original=size,
                         observed_mtime=mtime,
-                        summary_version=SUMMARY_VERSION,
+                        summary_version=SUMMARY_VERSION if usable else None,
+                        unreadable_at=None if usable else _utcnow_naive(),
                         **meta,
                     )
                     db.add(media)
                     existing[full_path] = (
-                        None, size, None, "pending", mtime, SUMMARY_VERSION,
+                        None, size, None, "pending", mtime,
+                        media.summary_version,
                     )
                     new_files_count += 1
+                    if not usable:
+                        unreadable_count += 1
+                        new_unreadable_count += 1
+                        logger.warning(
+                            "New unreadable file (probe failed): %s", full_path
+                        )
 
                 pending_writes += 1
                 if pending_writes >= batch_size:
@@ -698,5 +723,12 @@ def scan_libraries(db: Session, batch_size: int = 250,
 
         db.commit()
 
-    return (new_files_count, refreshed_files_count, reread_files_count,
-            backfilled_count, removed_count)
+    return {
+        "new": new_files_count,
+        "replaced": refreshed_files_count,
+        "reread": reread_files_count,
+        "backfilled": backfilled_count,
+        "removed": removed_count,
+        "unreadable": unreadable_count,
+        "unreadable_new": new_unreadable_count,
+    }

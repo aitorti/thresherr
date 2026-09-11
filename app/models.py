@@ -132,6 +132,10 @@ class MediaFile(Base):
     # scan re-reads every card whose value differs from the code's current
     # SUMMARY_VERSION, once, so a rule change reaches the whole library.
     summary_version = Column(Integer, nullable=True)
+    # Set when the file could not be read at all (corrupt or truncated
+    # container). Cleared as soon as a probe succeeds. It keeps the entry
+    # visible and flagged instead of silently ignoring the file.
+    unreadable_at = Column(DateTime, nullable=True)
 
     # --------------------
     # Worker planning & verification
