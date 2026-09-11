@@ -110,6 +110,11 @@ class MediaFile(Base):
     audio_languages = Column(String, nullable=True)
     subtitle_codec = Column(String, nullable=True)
     subtitle_languages = Column(String, nullable=True)
+    # Set (naive UTC) when a scan detected this file was REPLACED in place
+    # (same full_path, different size). The summary above was refreshed
+    # automatically; re-processing stays a manual decision. Cleared by the
+    # manual "refresh metadata" action.
+    source_changed_at = Column(DateTime, nullable=True)
     # JSON string containing per-stream manual overrides (UI only)
     stream_overrides = Column(Text, nullable=True)
 

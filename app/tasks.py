@@ -141,11 +141,13 @@ def run_scan(db, progress=None) -> dict:
     _set_setting(db, "scan_progress_total", "0")
     db.commit()
     try:
-        new_count = scan_libraries(db, progress=progress)
+        new_count, refreshed_count = scan_libraries(db, progress=progress)
         cascade = run_language_cascade(db)
         duration = round(time.monotonic() - start, 1)
         resolved = cascade["mkvinfo"] + cascade["mediainfo"]
         result = f"{new_count} new file(s)"
+        if refreshed_count:
+            result += f" | {refreshed_count} replaced file(s) refreshed"
         if resolved:
             result += f" | {resolved} language(s) resolved"
         if cascade["und_remaining"]:
@@ -154,7 +156,13 @@ def run_scan(db, progress=None) -> dict:
         _set_setting(db, "scan_last_duration", str(duration))
         _set_setting(db, "scan_last_result", result)
         db.commit()
-        out = {"ok": True, "new_count": new_count, "duration": duration, "result": result}
+        out = {
+            "ok": True,
+            "new_count": new_count,
+            "refreshed_count": refreshed_count,
+            "duration": duration,
+            "result": result,
+        }
         # Connect: only actionable scans notify (new files found).
         if new_count > 0:
             connect.fire_event(

@@ -3,6 +3,7 @@ import re
 import subprocess
 import json
 import unicodedata
+from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from sqlalchemy.orm import Session
 import models
@@ -18,6 +19,23 @@ VIDEO_EXTENSIONS = (".mkv", ".mp4", ".avi", ".mov", ".m4v", ".webm")
 # I/O-bound (local disk or CIFS/NAS reads), so 4 workers are safe even on
 # modest CPUs. Override with the THRESHERR_SCAN_WORKERS env var when needed.
 PROBE_WORKERS = int(os.environ.get("THRESHERR_SCAN_WORKERS", "4"))
+
+# Summary fields refreshed from a fresh ffprobe. This is UI/cache data only;
+# the worker NEVER trusts it for processing decisions.
+SUMMARY_FIELDS = (
+    "video_codec",
+    "resolution",
+    "video_bitrate",
+    "audio_codec",
+    "audio_languages",
+    "subtitle_codec",
+    "subtitle_languages",
+)
+
+
+def _utcnow_naive() -> datetime:
+    """Naive UTC timestamp, coherent with the rest of the codebase."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 # -------------------------------------------------
@@ -249,6 +267,22 @@ def get_video_metadata(file_path: str) -> dict:
 # Library scan
 # -------------------------------------------------
 
+def apply_fresh_metadata(media, meta: dict, size: int | None) -> None:
+    """Refresh the summary fields of a MediaFile from a fresh ffprobe result.
+
+    SAFETY RULE: a field is only written when the fresh probe returned a
+    value. An existing value is NEVER overwritten with None, so a partial or
+    failed probe can never erase a cached card.
+    """
+    for field in SUMMARY_FIELDS:
+        value = meta.get(field)
+        if value is None:
+            continue
+        setattr(media, field, value)
+    if size is not None:
+        media.size_original = size
+
+
 def _probe_one(full_path: str):
     """
     ffprobe a single file (runs inside the scan thread pool).
@@ -267,13 +301,22 @@ def _probe_one(full_path: str):
 
 
 def scan_libraries(db: Session, batch_size: int = 250,
-                   progress=None, workers: int | None = None) -> int:
+                   progress=None, workers: int | None = None) -> tuple[int, int]:
     """
     Discover media files and register them in the database.
 
+    Two kinds of work happen here:
+    - brand-new files are inserted with status='pending' (as before);
+    - files already registered whose on-disk size NO LONGER matches the
+      stored size_original were REPLACED in the same path: their summary card
+      is refreshed from a fresh ffprobe. Status is never touched: whether to
+      re-process a replaced file stays a human decision.
+
+    Returns (new_files_count, refreshed_files_count).
+
     IMPORTANT:
-    - This function ONLY discovers files
-    - Status is always set to 'pending'
+    - This function ONLY discovers files and refreshes stale summaries
+    - Status is always set to 'pending' for NEW files (never changed here)
     - No processing decisions are made here
 
     Concurrency notes:
@@ -289,6 +332,7 @@ def scan_libraries(db: Session, batch_size: int = 250,
     """
     libraries = db.query(models.Library).all()
     new_files_count = 0
+    refreshed_files_count = 0
     probe_workers = workers if workers is not None else PROBE_WORKERS
 
     for library in libraries:
@@ -296,38 +340,54 @@ def scan_libraries(db: Session, batch_size: int = 250,
             logger.warning("Library media path missing: %s", library.media_path)
             continue
 
-        # Load existing paths once (no N+1 per file)
+        # Load existing rows once (no N+1 per file): full_path -> (id, size)
         existing = {
-            row[0]
-            for row in db.query(models.MediaFile.full_path)
+            row.full_path: (row.id, row.size_original)
+            for row in db.query(
+                models.MediaFile.id,
+                models.MediaFile.full_path,
+                models.MediaFile.size_original,
+            )
             .filter(models.MediaFile.library_id == library.id)
             .all()
         }
 
-        # Single inventory pass: we only walk the tree once and collect the
-        # files that need probing. This also gives us the total upfront so
-        # the UI can show real progress (done/total).
-        to_probe = []
+        # Single inventory pass: walk the tree once and collect the files
+        # that need probing. New files AND files whose on-disk size differs
+        # from the recorded size_original (replaced in place) are probed, so
+        # the UI still gets a real total upfront for the progress bar.
+        to_probe = []  # list of (full_path, existing_row_id | None)
         for root, _, files in os.walk(library.media_path):
             for file in files:
                 if not file.lower().endswith(VIDEO_EXTENSIONS):
                     continue
                 full_path = os.path.join(root, file)
-                if full_path in existing:
+                known = existing.get(full_path)
+                if known is None:
+                    to_probe.append((full_path, None))
                     continue
-                to_probe.append(full_path)
+                row_id, old_size = known
+                try:
+                    disk_size = os.path.getsize(full_path)
+                except OSError as exc:
+                    logger.warning("Cannot stat known file %s: %s", full_path, exc)
+                    continue
+                # size_original NULL means the cached card cannot be trusted:
+                # treat it as replaced so the summary is rebuilt.
+                if old_size is None or disk_size != old_size:
+                    to_probe.append((full_path, row_id))
 
         total = len(to_probe)
         if total == 0:
             continue
 
         logger.info(
-            "Scanning library %s: %s new file(s) with %s probe worker(s)",
+            "Scanning library %s: %s file(s) to probe with %s worker(s)",
             library.name, total, probe_workers,
         )
 
         done = 0
-        added_since_commit = 0
+        pending_writes = 0
 
         def _notify_progress() -> None:
             if progress is None:
@@ -340,11 +400,15 @@ def scan_libraries(db: Session, batch_size: int = 250,
                     logger.warning("Scan progress callback failed", exc_info=True)
 
         with ThreadPoolExecutor(max_workers=probe_workers) as pool:
-            futures = [pool.submit(_probe_one, fp) for fp in to_probe]
+            futures = {
+                pool.submit(_probe_one, full_path): (full_path, row_id)
+                for full_path, row_id in to_probe
+            }
             for future in as_completed(futures):
                 done += 1
+                full_path, row_id = futures[future]
                 try:
-                    full_path, meta, size = future.result()
+                    _, meta, size = future.result()
                 except Exception as exc:
                     # Defensive: a probe must not abort the whole scan.
                     logger.warning("Scan probe crashed: %s", exc)
@@ -355,26 +419,50 @@ def scan_libraries(db: Session, batch_size: int = 250,
                     _notify_progress()
                     continue
 
-                media = models.MediaFile(
-                    file_name=os.path.basename(full_path),
-                    full_path=full_path,
-                    library_id=library.id,
-                    status="pending",
-                    size_original=size,
-                    **meta,
-                )
+                if row_id is not None:
+                    # Known path, size changed: the file was REPLACED in
+                    # place. Refresh the summary card only; status and the
+                    # processing decision are deliberately left untouched.
+                    media = db.get(models.MediaFile, row_id)
+                    if media is None:
+                        _notify_progress()
+                        continue
+                    if not any(meta.get(f) is not None for f in SUMMARY_FIELDS):
+                        # ffprobe gave nothing usable: keep the old card.
+                        logger.warning(
+                            "ffprobe returned no usable metadata for replaced "
+                            "file %s; media_file id=%s left untouched",
+                            full_path, row_id,
+                        )
+                        _notify_progress()
+                        continue
+                    apply_fresh_metadata(media, meta, size)
+                    media.source_changed_at = _utcnow_naive()
+                    refreshed_files_count += 1
+                    logger.info(
+                        "File replaced in place, refreshed card: id=%s (%s)",
+                        media.id, full_path,
+                    )
+                else:
+                    media = models.MediaFile(
+                        file_name=os.path.basename(full_path),
+                        full_path=full_path,
+                        library_id=library.id,
+                        status="pending",
+                        size_original=size,
+                        **meta,
+                    )
+                    db.add(media)
+                    existing[full_path] = (None, size)
+                    new_files_count += 1
 
-                db.add(media)
-                existing.add(full_path)
-                new_files_count += 1
-                added_since_commit += 1
-
-                if added_since_commit >= batch_size:
+                pending_writes += 1
+                if pending_writes >= batch_size:
                     db.commit()
-                    added_since_commit = 0
+                    pending_writes = 0
 
                 _notify_progress()
 
         db.commit()
 
-    return new_files_count
+    return new_files_count, refreshed_files_count

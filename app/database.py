@@ -98,6 +98,12 @@ def _ensure_schema_columns() -> None:
                 )
                 con.commit()
                 print("[database] added column media_files.video_bitrate")
+            if cols and "source_changed_at" not in cols:
+                con.execute(
+                    "ALTER TABLE media_files ADD COLUMN source_changed_at DATETIME"
+                )
+                con.commit()
+                print("[database] added column media_files.source_changed_at")
         finally:
             con.close()
     except Exception as exc:
