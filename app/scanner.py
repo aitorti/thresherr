@@ -267,19 +267,35 @@ def get_video_metadata(file_path: str) -> dict:
 # Library scan
 # -------------------------------------------------
 
+def was_processed(media) -> bool:
+    """True when the row already went through the worker.
+
+    For such a row full_path now points at the TRANSCODED OUTPUT, so:
+    - size_original holds the pre-transcode SOURCE size (savings accounting)
+    - size_final holds the size of the file currently on disk
+    Neither of them may be overwritten by a fresh probe.
+    """
+    return media.status == "completed" or media.size_final is not None
+
+
 def apply_fresh_metadata(media, meta: dict, size: int | None) -> None:
     """Refresh the summary fields of a MediaFile from a fresh ffprobe result.
 
-    SAFETY RULE: a field is only written when the fresh probe returned a
+    SAFETY RULE 1: a field is only written when the fresh probe returned a
     value. An existing value is NEVER overwritten with None, so a partial or
     failed probe can never erase a cached card.
+
+    SAFETY RULE 2: size_original is only rewritten for a row that was NEVER
+    processed. For a processed row it is the historical source size used by
+    the savings accounting (size_original - size_final); overwriting it with
+    the output size destroys the stats.
     """
     for field in SUMMARY_FIELDS:
         value = meta.get(field)
         if value is None:
             continue
         setattr(media, field, value)
-    if size is not None:
+    if size is not None and not was_processed(media):
         media.size_original = size
 
 
@@ -340,13 +356,19 @@ def scan_libraries(db: Session, batch_size: int = 250,
             logger.warning("Library media path missing: %s", library.media_path)
             continue
 
-        # Load existing rows once (no N+1 per file): full_path -> (id, size)
+        # Load existing rows once (no N+1 per file):
+        # full_path -> (id, size_original, size_final, status)
+        # size_final/status pick the right reference size: for an already
+        # processed row, size_original is the pre-transcode SOURCE size, not
+        # the size of the file currently on disk.
         existing = {
-            row.full_path: (row.id, row.size_original)
+            row.full_path: (row.id, row.size_original, row.size_final, row.status)
             for row in db.query(
                 models.MediaFile.id,
                 models.MediaFile.full_path,
                 models.MediaFile.size_original,
+                models.MediaFile.size_final,
+                models.MediaFile.status,
             )
             .filter(models.MediaFile.library_id == library.id)
             .all()
@@ -366,15 +388,21 @@ def scan_libraries(db: Session, batch_size: int = 250,
                 if known is None:
                     to_probe.append((full_path, None))
                     continue
-                row_id, old_size = known
+                row_id, old_size, final_size, status = known
                 try:
                     disk_size = os.path.getsize(full_path)
                 except OSError as exc:
                     logger.warning("Cannot stat known file %s: %s", full_path, exc)
                     continue
-                # size_original NULL means the cached card cannot be trusted:
+                # Reference size for THIS path. A processed row is compared
+                # against size_final (the file on disk is the output); a row
+                # never processed against size_original. Comparing a processed
+                # row against size_original would flag EVERY completed file as
+                # "replaced" and wipe the savings accounting.
+                reference = final_size if status == "completed" else old_size
+                # NULL reference means the cached card cannot be trusted:
                 # treat it as replaced so the summary is rebuilt.
-                if old_size is None or disk_size != old_size:
+                if reference is None or disk_size != reference:
                     to_probe.append((full_path, row_id))
 
         total = len(to_probe)
