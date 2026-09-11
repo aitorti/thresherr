@@ -6,6 +6,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     DateTime,
+    Float,
     Text
 )
 from sqlalchemy.orm import relationship
@@ -123,6 +124,10 @@ class MediaFile(Base):
     # --------------------
     size_original = Column(BigInteger, nullable=True)
     size_final = Column(BigInteger, nullable=True)
+    # mtime of the file at full_path as we last saw it (scan probe, manual
+    # refresh, or the worker right after writing the output). Lets a scan
+    # detect an in-place replacement even when the size did not change.
+    observed_mtime = Column(Float, nullable=True)
 
     # --------------------
     # Worker planning & verification

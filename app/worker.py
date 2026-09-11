@@ -1843,7 +1843,11 @@ def run_worker():
                 job.full_path = final_path
                 job.file_name = os.path.basename(final_path)
                 job.status = "completed"
-                job.size_final = os.path.getsize(final_path)
+                _final_stat = os.stat(final_path)
+                job.size_final = _final_stat.st_size
+                # Reference mtime for the NEXT scan: without it, every scan
+                # would see the freshly written output as a "replaced" file.
+                job.observed_mtime = _final_stat.st_mtime
                 # Manual language overrides are processing instructions:
                 # once applied, they are consumed. The final file carries
                 # its real languages, so stale overrides would block the

@@ -1275,15 +1275,16 @@ async def refresh_media_metadata(media_id: int, request: Request, db: Session = 
     media = (db.query(models.MediaFile).filter(models.MediaFile.id == media_id).first())
     if media and os.path.exists(media.full_path):
         try:
-            size = os.path.getsize(media.full_path)
+            st = os.stat(media.full_path)
+            size, mtime = st.st_size, st.st_mtime
         except OSError as exc:
-            size = None
+            size, mtime = None, None
             ui_logger.warning(
                 "refresh-metadata: cannot stat %s: %s", media.full_path, exc
             )
         meta = get_video_metadata(media.full_path)
         if any(meta.get(f) is not None for f in SUMMARY_FIELDS):
-            apply_fresh_metadata(media, meta, size)
+            apply_fresh_metadata(media, meta, size, mtime)
             media.source_changed_at = None
             db.commit()
             ui_logger.info(
@@ -1527,9 +1528,10 @@ async def refresh_library_metadata(
             skipped += 1
             continue
         try:
-            size = os.path.getsize(media.full_path)
+            st = os.stat(media.full_path)
+            size, mtime = st.st_size, st.st_mtime
         except OSError:
-            size = None
+            size, mtime = None, None
         meta = get_video_metadata(media.full_path)
         if not any(meta.get(f) is not None for f in SUMMARY_FIELDS):
             skipped += 1
@@ -1538,7 +1540,7 @@ async def refresh_library_metadata(
                 media.id, media.file_name,
             )
             continue
-        apply_fresh_metadata(media, meta, size)
+        apply_fresh_metadata(media, meta, size, mtime)
         media.source_changed_at = None
         refreshed += 1
 

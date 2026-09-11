@@ -104,6 +104,12 @@ def _ensure_schema_columns() -> None:
                 )
                 con.commit()
                 print("[database] added column media_files.source_changed_at")
+            if cols and "observed_mtime" not in cols:
+                con.execute(
+                    "ALTER TABLE media_files ADD COLUMN observed_mtime FLOAT"
+                )
+                con.commit()
+                print("[database] added column media_files.observed_mtime")
         finally:
             con.close()
     except Exception as exc:

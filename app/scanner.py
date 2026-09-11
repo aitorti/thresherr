@@ -32,6 +32,11 @@ SUMMARY_FIELDS = (
     "subtitle_languages",
 )
 
+# Two mtimes closer than this are considered the same file. Filesystems (and
+# especially the CIFS share) round mtimes, so an exact comparison would flag
+# files that were merely copied around.
+MTIME_TOLERANCE = 1.0
+
 
 def _utcnow_naive() -> datetime:
     """Naive UTC timestamp, coherent with the rest of the codebase."""
@@ -278,7 +283,8 @@ def was_processed(media) -> bool:
     return media.status == "completed" or media.size_final is not None
 
 
-def apply_fresh_metadata(media, meta: dict, size: int | None) -> None:
+def apply_fresh_metadata(media, meta: dict, size: int | None,
+                         mtime: float | None = None) -> None:
     """Refresh the summary fields of a MediaFile from a fresh ffprobe result.
 
     SAFETY RULE 1: a field is only written when the fresh probe returned a
@@ -297,23 +303,28 @@ def apply_fresh_metadata(media, meta: dict, size: int | None) -> None:
         setattr(media, field, value)
     if size is not None and not was_processed(media):
         media.size_original = size
+    # observed_mtime always tracks the file we just looked at, whatever the
+    # row state: it is the reference for the next scan's change detection.
+    # Unlike size_original it is safe to refresh for processed rows too.
+    if mtime is not None:
+        media.observed_mtime = mtime
 
 
 def _probe_one(full_path: str):
     """
     ffprobe a single file (runs inside the scan thread pool).
 
-    Returns (full_path, meta, size) on success, or (full_path, None, None)
-    when the file is unreadable. Never raises: a single broken file must
-    not abort the whole scan.
+    Returns (full_path, meta, size, mtime) on success, or
+    (full_path, None, None, None) when the file is unreadable. Never raises:
+    a single broken file must not abort the whole scan.
     """
     try:
         meta = get_video_metadata(full_path)
-        size = os.path.getsize(full_path)
-        return full_path, meta, size
+        st = os.stat(full_path)
+        return full_path, meta, st.st_size, st.st_mtime
     except OSError as exc:
         logger.warning("Skipping unreadable file %s: %s", full_path, exc)
-        return full_path, None, None
+        return full_path, None, None, None
 
 
 def scan_libraries(db: Session, batch_size: int = 250,
@@ -349,6 +360,7 @@ def scan_libraries(db: Session, batch_size: int = 250,
     libraries = db.query(models.Library).all()
     new_files_count = 0
     refreshed_files_count = 0
+    backfilled_count = 0
     probe_workers = workers if workers is not None else PROBE_WORKERS
 
     for library in libraries:
@@ -362,13 +374,17 @@ def scan_libraries(db: Session, batch_size: int = 250,
         # processed row, size_original is the pre-transcode SOURCE size, not
         # the size of the file currently on disk.
         existing = {
-            row.full_path: (row.id, row.size_original, row.size_final, row.status)
+            row.full_path: (
+                row.id, row.size_original, row.size_final, row.status,
+                row.observed_mtime,
+            )
             for row in db.query(
                 models.MediaFile.id,
                 models.MediaFile.full_path,
                 models.MediaFile.size_original,
                 models.MediaFile.size_final,
                 models.MediaFile.status,
+                models.MediaFile.observed_mtime,
             )
             .filter(models.MediaFile.library_id == library.id)
             .all()
@@ -379,6 +395,7 @@ def scan_libraries(db: Session, batch_size: int = 250,
         # from the recorded size_original (replaced in place) are probed, so
         # the UI still gets a real total upfront for the progress bar.
         to_probe = []  # list of (full_path, existing_row_id | None)
+        to_backfill = []  # legacy rows (observed_mtime NULL): (row_id, mtime)
         for root, _, files in os.walk(library.media_path):
             for file in files:
                 if not file.lower().endswith(VIDEO_EXTENSIONS):
@@ -388,12 +405,13 @@ def scan_libraries(db: Session, batch_size: int = 250,
                 if known is None:
                     to_probe.append((full_path, None))
                     continue
-                row_id, old_size, final_size, status = known
+                row_id, old_size, final_size, status, obs_mtime = known
                 try:
-                    disk_size = os.path.getsize(full_path)
+                    st = os.stat(full_path)
                 except OSError as exc:
                     logger.warning("Cannot stat known file %s: %s", full_path, exc)
                     continue
+                disk_size, disk_mtime = st.st_size, st.st_mtime
                 # Reference size for THIS path. A processed row is compared
                 # against size_final (the file on disk is the output); a row
                 # never processed against size_original. Comparing a processed
@@ -402,8 +420,39 @@ def scan_libraries(db: Session, batch_size: int = 250,
                 reference = final_size if status == "completed" else old_size
                 # NULL reference means the cached card cannot be trusted:
                 # treat it as replaced so the summary is rebuilt.
-                if reference is None or disk_size != reference:
+                size_changed = reference is None or disk_size != reference
+                # mtime hardening: catches a replacement that kept the same
+                # size. Only usable with a reference; legacy rows have NULL and
+                # are backfilled below (NOT treated as changed).
+                mtime_changed = (
+                    obs_mtime is not None
+                    and abs(disk_mtime - obs_mtime) > MTIME_TOLERANCE
+                )
+                if size_changed or mtime_changed:
                     to_probe.append((full_path, row_id))
+                elif obs_mtime is None:
+                    # Legacy row: record the reference mtime without touching
+                    # the card, so the next scan can use mtime detection.
+                    to_backfill.append((row_id, disk_mtime))
+
+        done = 0
+        pending_writes = 0
+
+        # Legacy rows (observed_mtime IS NULL): record the reference mtime
+        # without touching the card or the status. Runs EVEN when the library
+        # has nothing to probe, so mtime coverage is backfilled on the first
+        # scan after the column was introduced.
+        for row_id, disk_mtime in to_backfill:
+            media = db.get(models.MediaFile, row_id)
+            if media is None or media.observed_mtime is not None:
+                continue
+            media.observed_mtime = disk_mtime
+            backfilled_count += 1
+            pending_writes += 1
+            if pending_writes >= batch_size:
+                db.commit()
+                pending_writes = 0
+        db.commit()
 
         total = len(to_probe)
         if total == 0:
@@ -413,9 +462,6 @@ def scan_libraries(db: Session, batch_size: int = 250,
             "Scanning library %s: %s file(s) to probe with %s worker(s)",
             library.name, total, probe_workers,
         )
-
-        done = 0
-        pending_writes = 0
 
         def _notify_progress() -> None:
             if progress is None:
@@ -436,7 +482,7 @@ def scan_libraries(db: Session, batch_size: int = 250,
                 done += 1
                 full_path, row_id = futures[future]
                 try:
-                    _, meta, size = future.result()
+                    _, meta, size, mtime = future.result()
                 except Exception as exc:
                     # Defensive: a probe must not abort the whole scan.
                     logger.warning("Scan probe crashed: %s", exc)
@@ -464,7 +510,7 @@ def scan_libraries(db: Session, batch_size: int = 250,
                         )
                         _notify_progress()
                         continue
-                    apply_fresh_metadata(media, meta, size)
+                    apply_fresh_metadata(media, meta, size, mtime)
                     media.source_changed_at = _utcnow_naive()
                     refreshed_files_count += 1
                     logger.info(
@@ -478,10 +524,11 @@ def scan_libraries(db: Session, batch_size: int = 250,
                         library_id=library.id,
                         status="pending",
                         size_original=size,
+                        observed_mtime=mtime,
                         **meta,
                     )
                     db.add(media)
-                    existing[full_path] = (None, size)
+                    existing[full_path] = (None, size, None, "pending", mtime)
                     new_files_count += 1
 
                 pending_writes += 1
@@ -493,4 +540,4 @@ def scan_libraries(db: Session, batch_size: int = 250,
 
         db.commit()
 
-    return new_files_count, refreshed_files_count
+    return new_files_count, refreshed_files_count, backfilled_count
