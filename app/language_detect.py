@@ -25,6 +25,10 @@ import re
 import subprocess
 import urllib.request
 
+from logging_setup import get_logger
+
+logger = get_logger("language")
+
 # Track-name keywords per language (mkvinfo/mediainfo "title" fallback)
 _TRACK_NAME_HINTS = {
     "spa": ["castellano", "espanol", "español", "spanish", "castilian", "latino", "latam", "es"],
@@ -228,17 +232,45 @@ def _extract_subtitle_text(path: str, track_idx: int = 0) -> str:
     return text.strip()
 
 
+# fastText model cache. Loading lid.176 (131 MB) takes seconds, and the
+# cascade asks for it once per file with unresolved subtitles, so reloading it
+# per file dominated the language pass.
+_LID_MODEL = None
+_LID_MODEL_FAILED = False
+
+
+def _lid_model():
+    """The fastText language-id model, loaded ONCE per process.
+
+    fastText is imported lazily so the dependency stays optional. A load
+    failure is remembered too: without that, a missing model (or no network to
+    download it) would be retried - a 131 MB download attempt - for every
+    single file.
+    """
+    global _LID_MODEL, _LID_MODEL_FAILED
+    if _LID_MODEL is None:
+        if _LID_MODEL_FAILED:
+            raise RuntimeError("fastText model unavailable (see earlier warning)")
+        try:
+            import fasttext
+            _LID_MODEL = fasttext.load_model(_lid_model_path())
+        except Exception as exc:
+            _LID_MODEL_FAILED = True
+            logger.warning(
+                "fastText model unavailable; subtitle language detection "
+                "disabled for this process: %s", exc,
+            )
+            raise
+    return _LID_MODEL
+
+
 def detect_subtitle_language_fasttext(path: str) -> list[dict]:
     """Language of the first TEXT subtitle track (fastText lid.176)."""
     text = _extract_subtitle_text(path)
     if len(text) < 40:
         return []
     try:
-        import fasttext
-    except ImportError:
-        return []
-    try:
-        model = fasttext.load_model(_lid_model_path())
+        model = _lid_model()
         labels, _ = model.predict(text[:2000].replace("\n", " "))
         lang = labels[0].replace("__label__", "")
         lang = _normalize_lang(lang)
