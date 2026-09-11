@@ -352,6 +352,25 @@ def _probe_one(full_path: str):
         return full_path, None, None, None
 
 
+def clear_stale_scanning(db: Session) -> int:
+    """Send rows stuck in the transient 'scanning' badge back to 'pending'.
+
+    'scanning' only exists while the language cascade runs, and the scan lock
+    (settings.scan_running) guarantees a single scan at a time, so any row
+    still carrying it when a scan starts is debris from a scan that died
+    (crash, kill, container restart). Without this the row keeps being listed
+    as "working" for ever and never re-enters the queue. The worker does the
+    same on boot, but that only happens on a restart.
+    """
+    moved = (
+        db.query(models.MediaFile)
+        .filter(models.MediaFile.status == "scanning")
+        .update({models.MediaFile.status: "pending"}, synchronize_session=False)
+    )
+    db.commit()
+    return moved
+
+
 def scan_libraries(db: Session, batch_size: int = 250,
                    progress=None, workers: int | None = None) -> tuple[int, int]:
     """
