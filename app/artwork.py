@@ -38,20 +38,31 @@ def poster_cache_path(media_id: int) -> str:
     return os.path.join(POSTER_DIR, "%s.jpg" % media_id)
 
 
-def cached_ids() -> set:
-    """Ids that already have a cached poster (one listdir, cheap)."""
-    ids = set()
+def cached_posters() -> dict:
+    """{media_id: cache mtime} for the cached posters (one listdir, cheap).
+
+    The mtime doubles as a cache-busting version in the image URL, so a poster
+    that gets rebuilt reaches the browser immediately instead of waiting for
+    the HTTP cache to expire.
+    """
+    posters = {}
     try:
         names = os.listdir(POSTER_DIR)
     except OSError:
-        return ids
+        return posters
     for name in names:
         if not name.endswith(".jpg"):
             continue
         stem = name.rsplit(".", 1)[0]
-        # Keep integers as integers: templates compare them with media.id
-        ids.add(int(stem) if stem.isdigit() else stem)
-    return ids
+        if not stem.isdigit():
+            continue
+        try:
+            posters[int(stem)] = int(
+                os.path.getmtime(os.path.join(POSTER_DIR, name))
+            )
+        except OSError:
+            continue
+    return posters
 
 
 def find_local_poster(media_path: str, library_root: str | None = None) -> str | None:

@@ -664,6 +664,7 @@ async def dashboard(
     return render(
         request=request,
         name="dashboard.html",
+        poster_versions=artwork.cached_posters(),
         db=db,
         **stats,
         media_files=media_files,
@@ -847,17 +848,17 @@ def media_poster(media_id: int, db: Session = Depends(get_db)):
     work (and the read from the library, often a network share) never blocks
     the UI event loop. Nothing is downloaded from the internet here.
     """
-    path = artwork.poster_cache_path(media_id)
-    if not os.path.exists(path):
-        media = (
-            db.query(models.MediaFile)
-            .filter(models.MediaFile.id == media_id)
-            .first()
-        )
-        if media is None or not artwork.ensure_poster(media, media.library):
-            raise HTTPException(status_code=404, detail="no poster")
+    media = (
+        db.query(models.MediaFile)
+        .filter(models.MediaFile.id == media_id)
+        .first()
+    )
+    # ensure_poster() also decides whether the cached copy is still up to date,
+    # so it must run on EVERY request, not only when the file is missing.
+    if media is None or not artwork.ensure_poster(media, media.library):
+        raise HTTPException(status_code=404, detail="no poster")
     return FileResponse(
-        path, media_type="image/jpeg",
+        artwork.poster_cache_path(media_id), media_type="image/jpeg",
         headers={"Cache-Control": "public, max-age=604800"},
     )
 

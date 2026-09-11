@@ -127,7 +127,7 @@
   {# Always requested: the route builds the cached copy on first request and
      answers 404 when there is no local art, which simply uncovers the 🔥
      placeholder behind. #}
-  <img src="/posters/{{ file.id }}.jpg" alt="{{ file.file_name }}" loading="lazy"
+  <img src="/posters/{{ file.id }}.jpg?v={{ (poster_versions or {}).get(file.id, 0) }}" alt="{{ file.file_name }}" loading="lazy"
        class="absolute inset-0 w-full h-full object-cover"
        onerror="this.style.display='none'">
 </div>
