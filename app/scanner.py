@@ -37,6 +37,21 @@ SUMMARY_FIELDS = (
 # files that were merely copied around.
 MTIME_TOLERANCE = 1.0
 
+# Safety rails for the "entry whose file no longer exists" reconciliation.
+# Removing rows is irreversible, and a dead CIFS mount looks exactly like
+# "someone deleted the whole library". Under REMOVAL_MIN_ROWS, or at or below
+# REMOVAL_MAX_FRACTION of a library, a wave of missing files is treated as a
+# broken scan and nothing is removed.
+REMOVAL_MIN_ROWS = 5
+REMOVAL_MAX_FRACTION = 0.25
+
+
+def removal_looks_dangerous(total: int, missing: int) -> bool:
+    """True when removing `missing` of `total` rows looks like a broken scan."""
+    if total <= 0 or missing < REMOVAL_MIN_ROWS:
+        return False
+    return (missing / total) > REMOVAL_MAX_FRACTION
+
 
 def _utcnow_naive() -> datetime:
     """Naive UTC timestamp, coherent with the rest of the codebase."""
@@ -339,7 +354,8 @@ def scan_libraries(db: Session, batch_size: int = 250,
       is refreshed from a fresh ffprobe. Status is never touched: whether to
       re-process a replaced file stays a human decision.
 
-    Returns (new_files_count, refreshed_files_count).
+    Returns (new_files_count, refreshed_files_count, backfilled_count,
+             removed_count).
 
     IMPORTANT:
     - This function ONLY discovers files and refreshes stale summaries
@@ -361,6 +377,7 @@ def scan_libraries(db: Session, batch_size: int = 250,
     new_files_count = 0
     refreshed_files_count = 0
     backfilled_count = 0
+    removed_count = 0
     probe_workers = workers if workers is not None else PROBE_WORKERS
 
     for library in libraries:
@@ -396,11 +413,17 @@ def scan_libraries(db: Session, batch_size: int = 250,
         # the UI still gets a real total upfront for the progress bar.
         to_probe = []  # list of (full_path, existing_row_id | None)
         to_backfill = []  # legacy rows (observed_mtime NULL): (row_id, mtime)
-        for root, _, files in os.walk(library.media_path):
+        seen = set()  # every video file found on disk in this library
+        walk_errors = []  # os.walk failures: the inventory cannot be trusted
+
+        def _on_walk_error(exc) -> None:
+            walk_errors.append(exc)
+        for root, _, files in os.walk(library.media_path, onerror=_on_walk_error):
             for file in files:
                 if not file.lower().endswith(VIDEO_EXTENSIONS):
                     continue
                 full_path = os.path.join(root, file)
+                seen.add(full_path)
                 known = existing.get(full_path)
                 if known is None:
                     to_probe.append((full_path, None))
@@ -453,6 +476,41 @@ def scan_libraries(db: Session, batch_size: int = 250,
                 db.commit()
                 pending_writes = 0
         db.commit()
+
+        # --- Reconciliation: entries whose file is GONE from disk ----------
+        # The database must mirror the disk: an entry whose file no longer
+        # exists (deleted, moved, or replaced by another release) is removed,
+        # whatever the reason and whatever the row status. Guards: a scan that
+        # cannot be trusted never deletes anything.
+        missing = [fp for fp in existing if fp not in seen]
+        if missing and walk_errors:
+            logger.warning(
+                "Library %s: %s entrie(s) not found on disk, but the walk "
+                "reported an error (%s). Nothing removed.",
+                library.name, len(missing), walk_errors[0],
+            )
+        elif missing and removal_looks_dangerous(len(existing), len(missing)):
+            logger.warning(
+                "Library %s: %s of %s entrie(s) look missing at once; refusing "
+                "to remove them (is the share still mounted?). Nothing removed.",
+                library.name, len(missing), len(existing),
+            )
+        elif missing:
+            for missing_path in missing:
+                media = db.get(models.MediaFile, existing[missing_path][0])
+                if media is None:
+                    continue
+                logger.info(
+                    "File no longer on disk, removing entry: id=%s (%s)",
+                    media.id, missing_path,
+                )
+                db.delete(media)
+                removed_count += 1
+                pending_writes += 1
+                if pending_writes >= batch_size:
+                    db.commit()
+                    pending_writes = 0
+            db.commit()
 
         total = len(to_probe)
         if total == 0:
@@ -540,4 +598,4 @@ def scan_libraries(db: Session, batch_size: int = 250,
 
         db.commit()
 
-    return new_files_count, refreshed_files_count, backfilled_count
+    return new_files_count, refreshed_files_count, backfilled_count, removed_count

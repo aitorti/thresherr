@@ -141,7 +141,7 @@ def run_scan(db, progress=None) -> dict:
     _set_setting(db, "scan_progress_total", "0")
     db.commit()
     try:
-        new_count, refreshed_count, backfilled_count = scan_libraries(db, progress=progress)
+        new_count, refreshed_count, backfilled_count, removed_count = scan_libraries(db, progress=progress)
         cascade = run_language_cascade(db)
         duration = round(time.monotonic() - start, 1)
         resolved = cascade["mkvinfo"] + cascade["mediainfo"]
@@ -150,6 +150,8 @@ def run_scan(db, progress=None) -> dict:
             result += f" | {refreshed_count} replaced file(s) refreshed"
         if backfilled_count:
             result += f" | {backfilled_count} mtime recorded"
+        if removed_count:
+            result += f" | {removed_count} entry(s) removed (file gone)"
         if resolved:
             result += f" | {resolved} language(s) resolved"
         if cascade["und_remaining"]:
