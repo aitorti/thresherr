@@ -287,6 +287,16 @@ def get_video_metadata(file_path: str) -> dict:
 # Library scan
 # -------------------------------------------------
 
+def was_processed_row(status: str | None, size_final: int | None) -> bool:
+    """True when a row already went through the worker.
+
+    Decided on the DATA, never on the status alone: a rescan sets a processed
+    row back to 'pending' while the file on disk is still the transcoded
+    output. Single source of truth for that question.
+    """
+    return status == "completed" or size_final is not None
+
+
 def was_processed(media) -> bool:
     """True when the row already went through the worker.
 
@@ -295,7 +305,7 @@ def was_processed(media) -> bool:
     - size_final holds the size of the file currently on disk
     Neither of them may be overwritten by a fresh probe.
     """
-    return media.status == "completed" or media.size_final is not None
+    return was_processed_row(media.status, media.size_final)
 
 
 def apply_fresh_metadata(media, meta: dict, size: int | None,
@@ -435,15 +445,21 @@ def scan_libraries(db: Session, batch_size: int = 250,
                     logger.warning("Cannot stat known file %s: %s", full_path, exc)
                     continue
                 disk_size, disk_mtime = st.st_size, st.st_mtime
-                # Reference size for THIS path. A processed row is compared
-                # against size_final (the file on disk is the output); a row
-                # never processed against size_original. Comparing a processed
-                # row against size_original would flag EVERY completed file as
-                # "replaced" and wipe the savings accounting.
-                reference = final_size if status == "completed" else old_size
-                # NULL reference means the cached card cannot be trusted:
-                # treat it as replaced so the summary is rebuilt.
-                size_changed = reference is None or disk_size != reference
+                # Reference size for THIS path, decided on the DATA (see
+                # was_processed_row): a processed row is compared against
+                # size_final, because the file on disk is its output. Using
+                # "status == completed" alone was wrong: a rescan sends a
+                # processed row back to 'pending' while the file on disk is
+                # still the output, and every scan re-flagged it as replaced.
+                # A NULL reference means the card cannot be trusted: treat it
+                # as replaced so the summary is rebuilt.
+                if was_processed_row(status, final_size):
+                    # No size_final to compare against: rely on the mtime.
+                    size_changed = (
+                        final_size is not None and disk_size != final_size
+                    )
+                else:
+                    size_changed = old_size is None or disk_size != old_size
                 # mtime hardening: catches a replacement that kept the same
                 # size. Only usable with a reference; legacy rows have NULL and
                 # are backfilled below (NOT treated as changed).
