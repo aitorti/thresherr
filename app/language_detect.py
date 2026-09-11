@@ -126,7 +126,15 @@ def _apply_to_summary(summary: str | None, detected: list[str]) -> str | None:
     for extra in detected[di:]:
         if extra not in out:
             out.append(extra)
-    return ", ".join(out)
+    # Dedupe preserving order: resolving SEVERAL tracks can propose a language
+    # the summary already listed ('spa, und' + [spa, eng] gave 'spa, spa, eng').
+    seen = set()
+    deduped = []
+    for lang in out:
+        if lang not in seen:
+            seen.add(lang)
+            deduped.append(lang)
+    return ", ".join(deduped)
 
 
 def has_und_in_summary(media) -> bool:
@@ -297,21 +305,72 @@ def _lid_model():
     return _LID_MODEL
 
 
-def detect_subtitle_language_fasttext(path: str) -> list[dict]:
-    """Language of the first TEXT subtitle track (fastText lid.176)."""
-    text = _extract_subtitle_text(path)
-    if len(text) < 40:
+# Subtitle codecs that carry IMAGES instead of text: converting them to SRT
+# yields nothing, so they are skipped rather than spending an ffmpeg pass.
+_IMAGE_SUBTITLE_CODECS = {
+    "hdmv_pgs_subtitle", "pgs", "dvd_subtitle", "dvdsub", "xsub",
+    "dvb_subtitle", "dvb_teletext", "dvb_ttx",
+}
+
+# Values that mean "this stream does not declare a language".
+_NO_LANGUAGE = {"", "und", "undetermined", "unknown", "undefined", "none", "null", "-"}
+
+
+def _und_text_subtitle_tracks(path: str) -> list[int]:
+    """Ordinals (for -map 0:s:N) of the TEXT subtitle tracks with no language.
+
+    Only the unresolved tracks are worth inspecting: a track that already
+    declares a language is left alone. Image subtitles are excluded, there is
+    no text to analyse.
+    """
+    rc, out, _ = _run(
+        ["ffprobe", "-v", "quiet", "-print_format", "json",
+         "-show_streams", "-select_streams", "s", path],
+        timeout=60,
+    )
+    if rc != 0 or not out.strip():
         return []
     try:
-        model = _lid_model()
-        labels, _ = model.predict(text[:2000].replace("\n", " "))
-        lang = labels[0].replace("__label__", "")
-        lang = _normalize_lang(lang)
-        if lang and lang in _DETECTABLE:
-            return [{"track": 0, "language": lang, "source": "fasttext"}]
+        streams = json.loads(out).get("streams") or []
     except Exception:
-        pass
-    return []
+        return []
+
+    ordinals = []
+    for ordinal, stream in enumerate(streams):
+        codec = str(stream.get("codec_name") or "").strip().lower()
+        if codec in _IMAGE_SUBTITLE_CODECS:
+            continue
+        tags = {k.lower(): v for k, v in (stream.get("tags") or {}).items()}
+        language = str(tags.get("language") or "").strip().lower()
+        if language not in _NO_LANGUAGE:
+            continue  # already known: nothing to resolve
+        ordinals.append(ordinal)
+    return ordinals
+
+
+def detect_subtitle_language_fasttext(path: str) -> list[dict]:
+    """Language of every TEXT subtitle track whose language is unresolved.
+
+    Inspects ALL the 'und' text tracks instead of only the first one: the
+    first is often empty while the next ones carry the text. Tracks that
+    already declare a language are skipped. Returns one entry per track that
+    could be resolved.
+    """
+    results = []
+    for track_idx in _und_text_subtitle_tracks(path):
+        text = _extract_subtitle_text(path, track_idx)
+        if len(text) < 40:
+            continue
+        try:
+            labels, _ = _lid_model().predict(text[:2000].replace("\n", " "))
+            lang = _normalize_lang(labels[0].replace("__label__", ""))
+        except Exception:
+            continue
+        if lang and lang in _DETECTABLE:
+            results.append(
+                {"track": track_idx, "language": lang, "source": "fasttext"}
+            )
+    return results
 
 
 # -------------------------------------------------
