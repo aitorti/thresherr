@@ -422,8 +422,12 @@ def scan_libraries(db: Session, batch_size: int = 250,
       is refreshed from a fresh ffprobe. Status is never touched: whether to
       re-process a replaced file stays a human decision.
 
-    Returns (new_files_count, refreshed_files_count, backfilled_count,
-             removed_count).
+    Returns (new_files_count, refreshed_files_count, reread_files_count,
+             backfilled_count, removed_count).
+
+    refreshed_files_count counts files that really CHANGED on disk;
+    reread_files_count counts cards re-read only because they were produced by
+    an older extractor/classifier (see SUMMARY_VERSION).
 
     IMPORTANT:
     - This function ONLY discovers files and refreshes stale summaries
@@ -444,6 +448,7 @@ def scan_libraries(db: Session, batch_size: int = 250,
     libraries = db.query(models.Library).all()
     new_files_count = 0
     refreshed_files_count = 0
+    reread_files_count = 0
     backfilled_count = 0
     removed_count = 0
     probe_workers = workers if workers is not None else PROBE_WORKERS
@@ -656,11 +661,17 @@ def scan_libraries(db: Session, batch_size: int = 250,
                     # badge: a version-driven re-read must not flag anything.
                     if file_changed:
                         media.source_changed_at = _utcnow_naive()
-                    refreshed_files_count += 1
-                    logger.info(
-                        "File replaced in place, refreshed card: id=%s (%s)",
-                        media.id, full_path,
-                    )
+                        refreshed_files_count += 1
+                        logger.info(
+                            "File replaced in place, refreshed card: id=%s (%s)",
+                            media.id, full_path,
+                        )
+                    else:
+                        reread_files_count += 1
+                        logger.info(
+                            "Card re-read (older rules): id=%s (%s)",
+                            media.id, full_path,
+                        )
                 else:
                     media = models.MediaFile(
                         file_name=os.path.basename(full_path),
@@ -687,4 +698,5 @@ def scan_libraries(db: Session, batch_size: int = 250,
 
         db.commit()
 
-    return new_files_count, refreshed_files_count, backfilled_count, removed_count
+    return (new_files_count, refreshed_files_count, reread_files_count,
+            backfilled_count, removed_count)

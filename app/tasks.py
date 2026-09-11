@@ -197,13 +197,16 @@ def run_scan(db, progress=None) -> dict:
             logger.warning(
                 "Cleared %s stale 'scanning' row(s) left by a dead scan", healed
             )
-        new_count, refreshed_count, backfilled_count, removed_count = scan_libraries(db, progress=progress)
+        (new_count, refreshed_count, reread_count,
+         backfilled_count, removed_count) = scan_libraries(db, progress=progress)
         cascade = run_language_cascade(db)
         duration = round(time.monotonic() - start, 1)
         resolved = cascade["mkvinfo"] + cascade["mediainfo"]
         result = f"{new_count} new file(s)"
         if refreshed_count:
             result += f" | {refreshed_count} replaced file(s) refreshed"
+        if reread_count:
+            result += f" | {reread_count} card(s) re-read (new rules)"
         if backfilled_count:
             result += f" | {backfilled_count} mtime recorded"
         if removed_count:
