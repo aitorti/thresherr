@@ -110,6 +110,12 @@ def _ensure_schema_columns() -> None:
                 )
                 con.commit()
                 print("[database] added column media_files.observed_mtime")
+            if cols and "summary_version" not in cols:
+                con.execute(
+                    "ALTER TABLE media_files ADD COLUMN summary_version INTEGER"
+                )
+                con.commit()
+                print("[database] added column media_files.summary_version")
         finally:
             con.close()
     except Exception as exc:

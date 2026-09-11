@@ -128,6 +128,10 @@ class MediaFile(Base):
     # refresh, or the worker right after writing the output). Lets a scan
     # detect an in-place replacement even when the size did not change.
     observed_mtime = Column(Float, nullable=True)
+    # Version of the extractor/classifier that produced the summary above. A
+    # scan re-reads every card whose value differs from the code's current
+    # SUMMARY_VERSION, once, so a rule change reaches the whole library.
+    summary_version = Column(Integer, nullable=True)
 
     # --------------------
     # Worker planning & verification

@@ -32,6 +32,16 @@ SUMMARY_FIELDS = (
     "subtitle_languages",
 )
 
+# Fields whose value can be inferred (the language pass) and must therefore
+# never be *downgraded* by a plain refresh.
+LANGUAGE_FIELDS = ("audio_languages", "subtitle_languages")
+
+# Version of the summary card: the extractor + classifier that produced it.
+# Bump it whenever either changes; the next scan then re-reads every card
+# stamped with a different value, once, automatically. That is how a rule
+# change reaches the whole library without re-probing everything every scan.
+SUMMARY_VERSION = 1
+
 # Two mtimes closer than this are considered the same file. Filesystems (and
 # especially the CIFS share) round mtimes, so an exact comparison would flag
 # files that were merely copied around.
@@ -308,8 +318,29 @@ def was_processed(media) -> bool:
     return was_processed_row(media.status, media.size_final)
 
 
+def _merge_languages(stored: str | None, fresh: str | None) -> str | None:
+    """Union of the languages we already knew and the ones the probe reports.
+
+    A probe answers 'und' when the file simply does not say (untagged subtitle
+    tracks, for instance). That is the ABSENCE of information, not a new
+    value: replacing a resolved 'spa' with 'und' throws away what the language
+    pass worked out, and the next scan resolves it again, for ever.
+    """
+    def split(value):
+        return [part.strip() for part in (value or "").split(",") if part.strip()]
+
+    known = [part for part in split(stored) if part != "und"]
+    for part in split(fresh):
+        if part != "und" and part not in known:
+            known.append(part)
+    if known:
+        return ", ".join(known)
+    return fresh
+
+
 def apply_fresh_metadata(media, meta: dict, size: int | None,
-                         mtime: float | None = None) -> None:
+                         mtime: float | None = None,
+                         replace_languages: bool = False) -> None:
     """Refresh the summary fields of a MediaFile from a fresh ffprobe result.
 
     SAFETY RULE 1: a field is only written when the fresh probe returned a
@@ -320,11 +351,17 @@ def apply_fresh_metadata(media, meta: dict, size: int | None,
     processed. For a processed row it is the historical source size used by
     the savings accounting (size_original - size_final); overwriting it with
     the output size destroys the stats.
+
+    SAFETY RULE 3: the languages are MERGED, never replaced, unless the caller
+    knows the file itself changed (replace_languages=True). A refresh must not
+    undo what the language pass resolved.
     """
     for field in SUMMARY_FIELDS:
         value = meta.get(field)
         if value is None:
             continue
+        if not replace_languages and field in LANGUAGE_FIELDS:
+            value = _merge_languages(getattr(media, field), value)
         setattr(media, field, value)
     if size is not None and not was_processed(media):
         media.size_original = size
@@ -333,6 +370,8 @@ def apply_fresh_metadata(media, meta: dict, size: int | None,
     # Unlike size_original it is safe to refresh for processed rows too.
     if mtime is not None:
         media.observed_mtime = mtime
+    # The card was just rebuilt with the current extractor/classifier.
+    media.summary_version = SUMMARY_VERSION
 
 
 def _probe_one(full_path: str):
@@ -422,7 +461,7 @@ def scan_libraries(db: Session, batch_size: int = 250,
         existing = {
             row.full_path: (
                 row.id, row.size_original, row.size_final, row.status,
-                row.observed_mtime,
+                row.observed_mtime, row.summary_version,
             )
             for row in db.query(
                 models.MediaFile.id,
@@ -431,6 +470,7 @@ def scan_libraries(db: Session, batch_size: int = 250,
                 models.MediaFile.size_final,
                 models.MediaFile.status,
                 models.MediaFile.observed_mtime,
+                models.MediaFile.summary_version,
             )
             .filter(models.MediaFile.library_id == library.id)
             .all()
@@ -440,7 +480,7 @@ def scan_libraries(db: Session, batch_size: int = 250,
         # that need probing. New files AND files whose on-disk size differs
         # from the recorded size_original (replaced in place) are probed, so
         # the UI still gets a real total upfront for the progress bar.
-        to_probe = []  # list of (full_path, existing_row_id | None)
+        to_probe = []  # list of (full_path, row_id | None, file_changed)
         to_backfill = []  # legacy rows (observed_mtime NULL): (row_id, mtime)
         seen = set()  # every video file found on disk in this library
         walk_errors = []  # os.walk failures: the inventory cannot be trusted
@@ -455,9 +495,9 @@ def scan_libraries(db: Session, batch_size: int = 250,
                 seen.add(full_path)
                 known = existing.get(full_path)
                 if known is None:
-                    to_probe.append((full_path, None))
+                    to_probe.append((full_path, None, False))
                     continue
-                row_id, old_size, final_size, status, obs_mtime = known
+                row_id, old_size, final_size, status, obs_mtime, card_version = known
                 try:
                     st = os.stat(full_path)
                 except OSError as exc:
@@ -486,8 +526,14 @@ def scan_libraries(db: Session, batch_size: int = 250,
                     obs_mtime is not None
                     and abs(disk_mtime - obs_mtime) > MTIME_TOLERANCE
                 )
-                if size_changed or mtime_changed:
-                    to_probe.append((full_path, row_id))
+                # Card produced by an older extractor/classifier: re-read it
+                # once. This is how a rule change reaches the whole library
+                # without re-probing everything on every scan.
+                stale_card = card_version != SUMMARY_VERSION
+                if stale_card or size_changed or mtime_changed:
+                    to_probe.append(
+                        (full_path, row_id, size_changed or mtime_changed)
+                    )
                 elif obs_mtime is None:
                     # Legacy row: record the reference mtime without touching
                     # the card, so the next scan can use mtime detection.
@@ -568,12 +614,12 @@ def scan_libraries(db: Session, batch_size: int = 250,
 
         with ThreadPoolExecutor(max_workers=probe_workers) as pool:
             futures = {
-                pool.submit(_probe_one, full_path): (full_path, row_id)
-                for full_path, row_id in to_probe
+                pool.submit(_probe_one, full_path): (full_path, row_id, changed)
+                for full_path, row_id, changed in to_probe
             }
             for future in as_completed(futures):
                 done += 1
-                full_path, row_id = futures[future]
+                full_path, row_id, file_changed = futures[future]
                 try:
                     _, meta, size, mtime = future.result()
                 except Exception as exc:
@@ -603,8 +649,13 @@ def scan_libraries(db: Session, batch_size: int = 250,
                         )
                         _notify_progress()
                         continue
-                    apply_fresh_metadata(media, meta, size, mtime)
-                    media.source_changed_at = _utcnow_naive()
+                    apply_fresh_metadata(
+                        media, meta, size, mtime, replace_languages=file_changed
+                    )
+                    # Only a file that really changed on disk deserves the
+                    # badge: a version-driven re-read must not flag anything.
+                    if file_changed:
+                        media.source_changed_at = _utcnow_naive()
                     refreshed_files_count += 1
                     logger.info(
                         "File replaced in place, refreshed card: id=%s (%s)",
@@ -618,10 +669,13 @@ def scan_libraries(db: Session, batch_size: int = 250,
                         status="pending",
                         size_original=size,
                         observed_mtime=mtime,
+                        summary_version=SUMMARY_VERSION,
                         **meta,
                     )
                     db.add(media)
-                    existing[full_path] = (None, size, None, "pending", mtime)
+                    existing[full_path] = (
+                        None, size, None, "pending", mtime, SUMMARY_VERSION,
+                    )
                     new_files_count += 1
 
                 pending_writes += 1
